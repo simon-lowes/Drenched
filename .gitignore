@@ -7,3 +7,4 @@ dist/
 .idea/
 *.user
 compile_commands.json
+packages/

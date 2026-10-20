@@ -12,5 +12,29 @@ added to this repository.
 | [clap-juce-extensions](https://github.com/free-audio/clap-juce-extensions) | CLAP format | MIT |
 | [CLAP](https://github.com/free-audio/clap) | CLAP format | MIT |
 | [Catch2](https://github.com/catchorg/Catch2) | Unit tests (not shipped) | BSL-1.0 |
+| [Microsoft WebView2 SDK](https://developer.microsoft.com/microsoft-edge/webview2/) | Interface web view on Windows (loader linked statically) | Microsoft WebView2 SDK licence (redistributable) |
+
+## Typefaces
+
+The interface embeds these typefaces, all under the
+[SIL Open Font Licence 1.1](source/ui/fonts/LICENSE-OFL.txt), as Latin
+subsets from the [Fontsource](https://fontsource.org) packages.
+
+| Typeface | Author |
+| --- | --- |
+| Fraunces | Undercase Type |
+| Inter | Rasmus Andersson |
+| IBM Plex Sans, IBM Plex Mono | IBM |
+| Instrument Sans | Rodrigo Fuenzalida, Jordan Egstad |
+| Geist, Geist Mono | Vercel |
+| Space Grotesk | Florian Karsten |
+| JetBrains Mono | JetBrains |
+| Hanken Grotesk | Alfredo Marco Pradil, Hanken Design Co. |
+
+## Images
+
+The space photographs in `source/ui/spaces/` are placeholder renders made for
+this project. They are replaced by capture photography as the space library
+is recorded.
 
 VST is a registered trademark of Steinberg Media Technologies GmbH.
