@@ -49,3 +49,23 @@ set_target_properties(drenched_pffft PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(MSVC)
     target_compile_definitions(drenched_pffft PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
+
+# r8brain-free-src (MIT): high-quality offline resampling of loaded impulse
+# responses to the session rate. Its FFT is Takuya Ooura's (free for any use).
+# Only r8bbase.cpp is compiled; its benchmarks and DLL are not used.
+FetchContent_Declare(r8brain
+    GIT_REPOSITORY https://github.com/avaneev/r8brain-free-src.git
+    GIT_TAG        3c930bf6825c0cfea4a813210c83b1a650c820b5 # version-6.5
+    SOURCE_SUBDIR  do-not-add-subdirectory)
+FetchContent_MakeAvailable(r8brain)
+
+add_library(drenched_r8brain STATIC ${r8brain_SOURCE_DIR}/r8bbase.cpp)
+target_include_directories(drenched_r8brain SYSTEM PUBLIC ${r8brain_SOURCE_DIR})
+target_compile_features(drenched_r8brain PUBLIC cxx_std_20)
+set_target_properties(drenched_r8brain PROPERTIES POSITION_INDEPENDENT_CODE ON)
+find_package(Threads REQUIRED)
+target_link_libraries(drenched_r8brain PUBLIC Threads::Threads)
+if(WIN32)
+    # r8brain's headers include windows.h; keep its min and max macros out of our code.
+    target_compile_definitions(drenched_r8brain PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()

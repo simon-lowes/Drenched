@@ -49,6 +49,7 @@ private:
     void onParams (const juce::var&);
     void onGesture (const juce::var&);
     void onUi (const juce::var&);
+    void onLoadIr (const juce::var&);
 
     void parameterChanged (const juce::String& id, float value) override;
     void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override;
@@ -67,6 +68,9 @@ private:
     std::set<juce::String> activeGestures;
     std::array<float, 4> meterDb { -60.0f, -60.0f, -60.0f, -60.0f };
     bool metersWereLive = false;
+
+    std::unique_ptr<juce::FileChooser> chooser;
+    bool choosing = false;
 
     juce::WebBrowserComponent web;
 

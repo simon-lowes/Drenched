@@ -10,6 +10,14 @@ var SPACES=[
  {name:'Car Park Level 2',no:'Concrete 02',kind:'garage',place:'Underground deck',W:44,D:58,H:3.2,mat:'Bare concrete',bands:[1.5,1.8,2.0,1.9,1.8,1.6,1.3,0.9],pre:9,rec:'Cardioid pair, bay 14',date:'June 2024'},
  {name:'Live Room B',no:'Room 11',kind:'room',place:'Studio live room',W:9,D:12,H:4.2,mat:'Timber and diffusers',bands:[0.72,0.66,0.6,0.55,0.52,0.5,0.45,0.38],pre:4,rec:'Room pair, 3 m',date:'January 2025'}
 ];
+/* A loaded impulse response joins the list as a fifth space, described by the plugin: its
+   measured decay and the room size its echo density implies. A missing file keeps its slot
+   so the session still says what it used. */
+var USER=4;
+function setUserSpace(ir){SPACES.length=USER;if(!ir)return;var miss=!!ir.missing;
+ SPACES.push({name:String(ir.name||'Your impulse response'),no:'Your IR',kind:'user',place:miss?'File not found':'Your own impulse response',
+  W:+ir.W||10,D:+ir.D||14,H:+ir.H||5.5,mat:'Measured from the file',bands:(ir.bands||[1,1,1,1,1,1,1,1]).map(function(b){return clamp(+b||1,0.1,20);}),pre:0,
+  rec:miss?'Load it again to hear it':(+ir.ch===4?'True-stereo':+ir.ch===2?'Stereo':'Mono')+' file, '+Math.round(+ir.rate||48000)+' Hz',date:miss?'file missing':'by you',missing:miss});}
 /* The twelve skins. Each is a token set plus a composition in COMPOSE; the ids match the
    CSS (.s-<id>) and the value saved in the plugin state. Order is the picker order. */
 var SKINS=[
@@ -215,7 +223,8 @@ function ridgesSVG(s,w,h){var sp=spOf(s),b=s.bands,nat=sp.bands,L=64,R=40,T=56,B
 var MAT={hall:{g:'#2A1F17',p:'#33271E',r:'#3F3128',ln:'#574538',tx:'#F3E9DB',tx2:'#B9A48F',ac:'#E0A458',onac:'#1C120A'},
  chapel:{g:'#D8D1C2',p:'#E5DFD1',r:'#CBC3B1',ln:'#B0A794',tx:'#262219',tx2:'#6B6355',ac:'#8C4A3C',onac:'#FFFFFF'},
  garage:{g:'#55585A',p:'#606366',r:'#6E7174',ln:'#85888B',tx:'#F2F2F0',tx2:'#D2D4D3',ac:'#FFD23F',onac:'#1A1A1A'},
- room:{g:'#1E2522',p:'#27302C',r:'#313B36',ln:'#44504A',tx:'#EDEFEA',tx2:'#A4ADA6',ac:'#F2845C',onac:'#1A0E08'}};
+ room:{g:'#1E2522',p:'#27302C',r:'#313B36',ln:'#44504A',tx:'#EDEFEA',tx2:'#A4ADA6',ac:'#F2845C',onac:'#1A0E08'},
+ user:{g:'#24262A',p:'#2C2F34',r:'#363A40',ln:'#4A4F57',tx:'#ECEDEF',tx2:'#A7ABB2',ac:'#8FB8DE',onac:'#0B1622'}};
 function matStyle(k){var m=MAT[k];return '--g:'+m.g+';--p:'+m.p+';--r:'+m.r+';--ln:'+m.ln+';--tx:'+m.tx+';--tx2:'+m.tx2+';--ac:'+m.ac+';--ac2:'+m.ac+';--onac:'+m.onac+';--num:'+m.tx+';--mtr:'+m.ac+';--focus:'+m.tx;}
 var STYLE={material:function(s){return matStyle(spOf(s).kind);}};
 
@@ -229,7 +238,7 @@ function hintText(s){var t;if(s.note)t=s.note;else if(s.hint){var k=s.hint,ov=is
 function dbText(v){return v<=-60?'\u2212\u221e':v.toFixed(1).replace('-','\u2212');}
 function meterPct(v){return clamp(1+v/60,0,1)*100;}
 function meters(){var i=Math.max(st.inL,st.inR),o=Math.max(st.outL,st.outR);return '<div class="mm">In<span class="bar"><i data-m="in" style="width:'+meterPct(i).toFixed(0)+'%"></i></span><em data-mt="in">'+dbText(i)+'</em></div><div class="mm">Out<span class="bar"><i data-m="out" style="width:'+meterPct(o).toFixed(0)+'%"></i></span><em data-mt="out">'+dbText(o)+'</em></div>';}
-function menuHTML(s){return '<div class="menu" role="menu"><div class="mh"><span>Example spaces</span><span>RT60, volume</span></div>'+SPACES.map(function(sp,i){return '<button role="menuitem" data-act="pick" data-v="'+i+'" aria-current="'+(i===s.sp)+'"><span>'+esc(sp.name)+'</span><small>'+f1(decayOf(sp.bands))+' s, '+vol(sp)+'</small></button>';}).join('')+'</div>';}
+function menuHTML(s){return '<div class="menu" role="menu"><div class="mh"><span>Example spaces</span><span>RT60, volume</span></div>'+SPACES.map(function(sp,i){return '<button role="menuitem" data-act="pick" data-v="'+i+'" aria-current="'+(i===s.sp)+'"><span>'+esc(sp.name)+'</span><small>'+f1(decayOf(sp.bands))+' s, '+vol(sp)+'</small></button>';}).join('')+'<button role="menuitem" class="mload" data-act="loadir"><span>Load your own IR\u2026</span><small>WAV, AIFF, FLAC</small></button></div>';}
 function advRows(s){
  var deepRow=function(k){if(k==='preSync')return '<div class="row"><span>'+P[k].l+'</span><button class="tg" data-act="toggle" data-k="preSync" aria-pressed="'+(s.preSync>=0.5)+'">'+fmt(s,k)+'</button></div>';return '<div class="row"><span>'+P[k].l+'</span>'+roEl(s,k)+'</div>';};
  return '<div class="ph"><span class="lbl">All parameters</span><span class="ph-r"><button data-act="skins" aria-expanded="'+s.skins+'">Look: '+esc(skinOf(s.skin).name)+'</button><button data-act="adv" aria-label="Close all parameters">Close</button></span></div>'+MAIN.map(function(k){return '<div class="row"><span>'+P[k].l+'</span>'+roEl(s,k)+'</div>';}).join('')+DEEP.map(deepRow).join('')+'<div class="row"><span>Early pattern</span><em>As captured</em></div>';}
@@ -291,7 +300,7 @@ var COMPOSE={
    '<div class="fi-bands">'+s.bands.map(function(v,i){var ed=Math.abs(v-sp.bands[i])>0.004;return '<input class="ro'+(ed?' ed':'')+'" data-type="band" data-i="'+i+'" data-fid="bi-'+i+'" value="'+v.toFixed(2)+'" aria-label="Decay at '+FREQ[i]+'Hz, seconds" spellcheck="false">';}).join('')+'</div>'+
    '<div class="fi-strip">'+hintText(s)+meters()+'</div>';},
 
- vitrine:function(s){var sp=spOf(s),pv=SPACES[(s.sp+3)%4],nx=SPACES[(s.sp+1)%4];
+ vitrine:function(s){var sp=spOf(s),nsp=SPACES.length,pv=SPACES[(s.sp+nsp-1)%nsp],nx=SPACES[(s.sp+1)%nsp];
   var ctl=function(k){return '<div class="vi-ctl">'+knobEl(s,k,64,'vitrine')+roEl(s,k)+'<span class="nm">'+P[k].l+ovrEl(s,k)+'</span></div>';};
   var rail=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="vi-rail"><div class="vi-mix">'+knobEl(s,'mix',96,'vitrine')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div></div><div class="vi-grid">'+MAIN.map(ctl).join('')+'</div><div class="vi-acts"><button class="vi-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="vi-btn" data-act="match">'+ICON.match+'Match</button><button class="vi-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'More</button></div></div>';
   return '<div class="vi-photo">'+photoEl(s,0,0,'position:absolute;inset:0')+'</div><div class="vi-grade"></div>'+

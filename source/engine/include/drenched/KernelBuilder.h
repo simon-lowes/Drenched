@@ -13,7 +13,7 @@ namespace drenched
 
 class ConvolutionReverb;
 
-/** Builds impulse responses and convolution kernels on its own thread and
+/** Builds impulse responses (synthesised, or shaped from a loaded file) and convolution kernels on its own thread and
     hands them to a ConvolutionReverb. It also frees the kernels the reverb
     retires, so nothing is ever allocated or freed on the audio thread.
 
@@ -55,6 +55,10 @@ private:
     bool quit = false;
 
     std::mutex buildMutex; // one build at a time
+
+    // Guarded by buildMutex: the last loaded response, at the session rate.
+    std::shared_ptr<const RecordedResponse> resampledFrom;
+    ImpulseResponseSet resampled;
     std::thread worker;
 };
 

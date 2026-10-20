@@ -25,6 +25,8 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .sys input{-webkit-user-select:text;user-select:text}
 /* Photographs of the spaces (placeholder renders until the capture library lands). */
 .sp0{background-image:url(../spaces/hall.jpg)}.sp1{background-image:url(../spaces/chapel.jpg)}.sp2{background-image:url(../spaces/garage.jpg)}.sp3{background-image:url(../spaces/room.jpg)}
+/* A loaded impulse response has no photograph: a quiet field of its own instead. */
+.sp4{background-color:#1d2024;background-image:radial-gradient(ellipse 70% 55% at 50% 62%,rgba(143,184,222,.28),transparent 70%),repeating-radial-gradient(ellipse at 50% 62%,rgba(255,255,255,.07) 0 1px,transparent 1px 26px)}
 .si-room .sp0{background-image:url(../spaces/px/hall.png)}.si-room .sp1{background-image:url(../spaces/px/chapel.png)}.si-room .sp2{background-image:url(../spaces/px/garage.png)}.si-room .sp3{background-image:url(../spaces/px/room.png)}
 
 /* ===== shared engine styling (the parts every screen uses) ===== */
@@ -60,6 +62,7 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .menu button{width:100%;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;border:0;border-radius:var(--rad);background:transparent;color:var(--tx);text-align:left;font-size:13px}
 .menu button:hover,.menu button[aria-current="true"]{background:var(--r)}
 .menu small{color:var(--tx2);font:11px var(--fnum)}
+.menu .mload{margin-top:4px;border-top:1px solid var(--ln);border-radius:0 0 var(--rad) var(--rad);color:var(--ac)}
 .menu .mh{font-size:11px;color:var(--tx2);padding:6px 12px 4px;display:flex;justify-content:space-between}
 .ib{width:30px;height:30px;display:inline-grid;place-items:center;border:0;background:transparent;color:var(--tx2);border-radius:var(--rad);padding:0}
 .ib:hover{color:var(--tx)}

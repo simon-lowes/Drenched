@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
 namespace drenched
 {
@@ -45,13 +46,15 @@ DrenchedProcessor::DrenchedProcessor()
 DrenchedProcessor::~DrenchedProcessor()
 {
     stopTimer();
+    lifetime.reset();
+    loader.removeAllJobs (true, 10000);
     builder.reset();
 }
 
 void DrenchedProcessor::cacheUiState()
 {
     auto ui = getUiState();
-    spaceIndex.store (juce::jlimit (0, static_cast<int> (bundledSpaces.size()) - 1, static_cast<int> (ui.getProperty (UiIDs::space, 0))));
+    spaceIndex.store (juce::jlimit (0, userSpace, static_cast<int> (ui.getProperty (UiIDs::space, 0))));
     listenerX.store (juce::jlimit (0.0f, 1.0f, static_cast<float> (static_cast<double> (ui.getProperty (UiIDs::listenerX, 0.5)))));
 }
 
@@ -60,6 +63,14 @@ ImpulseResponseRequest DrenchedProcessor::currentRequest (double sampleRate) con
     ImpulseResponseRequest request;
     request.sampleRate = sampleRate;
     request.space = spaceIndex.load();
+
+    if (request.space == userSpace)
+    {
+        // A loaded response, or the first bundled space while its file is missing.
+        request.space = 0;
+        const std::lock_guard lock (recordedLock);
+        request.recorded = recorded;
+    }
     request.listenerX = listenerX.load();
     request.sizePercent = params.size->load();
     request.distancePercent = params.distance->load();
@@ -98,6 +109,193 @@ float DrenchedProcessor::predelayMs (float requested)
     }
 
     return requested;
+}
+
+//==============================================================================
+std::shared_ptr<const RecordedResponse> DrenchedProcessor::readImpulseResponse (const juce::File& file, juce::String& error)
+{
+    constexpr double maxSeconds = 31.0; // the engine keeps 30 s once the silence is trimmed
+
+    if (! file.existsAsFile())
+    {
+        error = "Drenched can't find " + file.getFileName() + ".";
+        return nullptr;
+    }
+
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
+
+    if (reader == nullptr)
+    {
+        error = file.getFileName() + " isn't an audio file Drenched can read. Use WAV, AIFF or FLAC.";
+        return nullptr;
+    }
+
+    const auto channels = static_cast<int> (reader->numChannels);
+    const auto length = static_cast<int> (std::min<juce::int64> (reader->lengthInSamples,
+                                                                   static_cast<juce::int64> (maxSeconds * reader->sampleRate)));
+
+    if (channels < 1 || channels > 16 || length <= 0)
+    {
+        error = file.getFileName() + " has no audio in it.";
+        return nullptr;
+    }
+
+    juce::AudioBuffer<float> buffer (channels, length);
+
+    if (! reader->read (&buffer, 0, length, 0, true, true))
+    {
+        error = "Drenched couldn't read " + file.getFileName() + ".";
+        return nullptr;
+    }
+
+    std::vector<std::vector<float>> audio (static_cast<size_t> (channels));
+
+    for (int c = 0; c < channels; ++c)
+        audio[static_cast<size_t> (c)].assign (buffer.getReadPointer (c), buffer.getReadPointer (c) + length);
+
+    try
+    {
+        return prepareRecordedResponse (audio, reader->sampleRate, file.getFileNameWithoutExtension().toStdString());
+    }
+    catch (const std::invalid_argument& e)
+    {
+        error = juce::String (e.what());
+    }
+    catch (const std::exception&)
+    {
+        error = file.getFileName() + " is too large to load.";
+    }
+
+    return nullptr;
+}
+
+void DrenchedProcessor::loadImpulseResponseAsync (const juce::File& file)
+{
+    std::weak_ptr<int> alive = lifetime;
+
+    loader.addJob ([this, file, alive]
+    {
+        juce::String error;
+        auto loaded = readImpulseResponse (file, error);
+
+        juce::MessageManager::callAsync ([this, file, alive, loaded = std::move (loaded), error]() mutable
+        {
+            if (! alive.expired())
+                applyLoadedImpulseResponse (file, std::move (loaded), error);
+        });
+    });
+}
+
+void DrenchedProcessor::applyLoadedImpulseResponse (const juce::File& file, std::shared_ptr<const RecordedResponse> loaded,
+                                                    const juce::String& error)
+{
+    auto ui = getUiState();
+    ui.setProperty (UiIDs::irEvent, static_cast<int> (ui.getProperty (UiIDs::irEvent, 0)) + 1, nullptr);
+
+    if (loaded == nullptr)
+    {
+        ui.setProperty (UiIDs::irError, error, nullptr);
+        return;
+    }
+
+    const auto measured = loaded->room.decaySeconds;
+
+    {
+        const std::lock_guard lock (recordedLock);
+        recorded = std::move (loaded);
+        recordedPath = file.getFullPathName();
+        recordedMissing = false;
+    }
+
+    ui.removeProperty (UiIDs::irError, nullptr);
+    ui.setProperty (UiIDs::irPath, file.getFullPathName(), nullptr);
+    ui.setProperty (UiIDs::irName, file.getFileNameWithoutExtension(), nullptr);
+
+    // The graph opens on the room's own decay, so editing it reshapes from there.
+    for (size_t band = 0; band < measured.size(); ++band)
+    {
+        if (auto* parameter = state.getParameter (ParamIDs::decay[band]))
+        {
+            parameter->beginChangeGesture();
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 (measured[band]));
+            parameter->endChangeGesture();
+        }
+    }
+
+    ui.setProperty (UiIDs::space, userSpace, nullptr);
+    cacheUiState();
+}
+
+void DrenchedProcessor::restoreImpulseResponse()
+{
+    const auto path = getUiState().getProperty (UiIDs::irPath, "").toString();
+
+    {
+        const std::lock_guard lock (recordedLock);
+
+        if (path.isEmpty())
+        {
+            recorded.reset();
+            recordedPath = {};
+            recordedMissing = false;
+            return;
+        }
+
+        if (path == recordedPath && recorded != nullptr)
+            return;
+    }
+
+    // Sessions load this way before playback starts, so read it now: the first
+    // bounce must already use it.
+    juce::String error;
+    auto loaded = juce::File::isAbsolutePath (path) ? readImpulseResponse (juce::File (path), error) : nullptr;
+
+    const std::lock_guard lock (recordedLock);
+    recorded = std::move (loaded);
+    recordedPath = path;
+    recordedMissing = recorded == nullptr;
+}
+
+juce::var DrenchedProcessor::impulseResponseInfo()
+{
+    auto ui = getUiState();
+    const auto name = ui.getProperty (UiIDs::irName, "").toString();
+
+    std::shared_ptr<const RecordedResponse> current;
+    bool missing = false;
+
+    {
+        const std::lock_guard lock (recordedLock);
+        current = recorded;
+        missing = recordedMissing;
+    }
+
+    if (current == nullptr && ! missing)
+        return {};
+
+    auto object = std::make_unique<juce::DynamicObject>();
+    object->setProperty ("name", current != nullptr ? juce::String (current->name) : name);
+    object->setProperty ("missing", missing);
+
+    juce::Array<juce::var> decay;
+
+    for (size_t band = 0; band < params.decay.size(); ++band)
+        decay.add (static_cast<double> (current != nullptr ? current->room.decaySeconds[band] : params.decay[band]->load()));
+
+    object->setProperty ("bands", decay);
+
+    if (current != nullptr)
+    {
+        object->setProperty ("ch", current->channels);
+        object->setProperty ("rate", current->responses.sampleRate);
+        object->setProperty ("W", static_cast<double> (current->room.width));
+        object->setProperty ("D", static_cast<double> (current->room.depth));
+        object->setProperty ("H", static_cast<double> (current->room.height));
+    }
+
+    return juce::var (object.release());
 }
 
 juce::ValueTree DrenchedProcessor::getUiState()
@@ -209,6 +407,7 @@ void DrenchedProcessor::setStateInformation (const void* data, int sizeInBytes)
         if (xml->hasTagName (state.state.getType()))
             state.replaceState (juce::ValueTree::fromXml (*xml));
 
+    restoreImpulseResponse();
     cacheUiState();
 
     if (const auto rate = preparedRate.load(); rate > 0.0)

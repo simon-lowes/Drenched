@@ -4,11 +4,16 @@
 
 #include <drenched/ConvolutionReverb.h>
 #include <drenched/KernelBuilder.h>
+#include <drenched/RecordedResponse.h>
+#include <drenched/Spaces.h>
 
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <array>
 #include <atomic>
+#include <memory>
+#include <mutex>
 
 namespace drenched
 {
@@ -49,6 +54,19 @@ public:
     /** The interface's session state (space, locks, view, skin), kept inside the plugin state. */
     juce::ValueTree getUiState();
 
+    /** The space index a loaded impulse response plays in: just after the bundled spaces. */
+    static constexpr int userSpace = static_cast<int> (bundledSpaces.size());
+
+    /** Reads and analyses an impulse response file on a background thread, then (on the
+        message thread) plays it, sets the decay graph to its measured decay and saves its
+        path in the session. A file that can't be used leaves an error in the interface state
+        instead. Message thread only. */
+    void loadImpulseResponseAsync (const juce::File& file);
+
+    /** The loaded impulse response for the interface: name, channels, rate, measured decay
+        and room size, or whether its file is missing. Void when none is loaded. */
+    juce::var impulseResponseInfo();
+
     /** Peak input and output levels since the last call, in linear gain, then reset to zero.
         Read from the message thread by the editor's meters. */
     struct Peaks { float inL, inR, outL, outR; };
@@ -64,6 +82,14 @@ private:
     void cacheUiState();
 
     float predelayMs (float requested);
+
+    /** Decodes and prepares a file. On failure returns null and says why in `error`. */
+    static std::shared_ptr<const RecordedResponse> readImpulseResponse (const juce::File& file, juce::String& error);
+
+    /** After a session loads: reloads the impulse response it names, if it isn't loaded already. */
+    void restoreImpulseResponse();
+
+    void applyLoadedImpulseResponse (const juce::File& file, std::shared_ptr<const RecordedResponse> loaded, const juce::String& error);
 
     juce::AudioProcessorValueTreeState state;
 
@@ -90,6 +116,17 @@ private:
     std::atomic<int> spaceIndex { 0 };
     std::atomic<float> listenerX { 0.5f };
     std::atomic<double> preparedRate { 0.0 };
+
+    // The loaded impulse response, shared with the builder through requests. Read and
+    // written on the message thread and in prepareToPlay and setStateInformation, never on
+    // the audio thread.
+    mutable std::mutex recordedLock;
+    std::shared_ptr<const RecordedResponse> recorded;
+    juce::String recordedPath;
+    bool recordedMissing = false;
+
+    juce::ThreadPool loader { juce::ThreadPoolOptions{}.withThreadName ("Drenched IR loader").withNumberOfThreads (1) };
+    std::shared_ptr<int> lifetime = std::make_shared<int> (0); // guards callbacks posted by the loader
 
     ConvolutionReverb reverb;
     std::unique_ptr<KernelBuilder> builder; // after reverb: stops before it is destroyed

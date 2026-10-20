@@ -52,7 +52,7 @@ namespace ParamIDs
 }
 
 /** Interface state that is not a parameter but still belongs to the session: the chosen
-    space, the listener position, the locks, the view and the skin. It lives in a child of the
+    space (or a loaded impulse response), the listener position, the locks, the view and the skin. It lives in a child of the
     plugin's state tree so presets and sessions carry it. */
 namespace UiIDs
 {
@@ -64,6 +64,14 @@ namespace UiIDs
     inline const juce::Identifier view { "view" };
     inline const juce::Identifier skin { "skin" };
     inline const juce::Identifier width { "width" };
+
+    // A loaded impulse response: the file it came from, its name, and the
+    // outcome of the last load (an error to show, and a counter that changes
+    // on every attempt so the page can tell a new outcome from an old one).
+    inline const juce::Identifier irPath { "irPath" };
+    inline const juce::Identifier irName { "irName" };
+    inline const juce::Identifier irError { "irError" };
+    inline const juce::Identifier irEvent { "irEvent" };
 }
 
 /** The default decay-by-frequency curve of the first bundled space (Grand Hall), in seconds. */

@@ -7,13 +7,14 @@ add_library(drenched_engine STATIC
     src/ImpulseResponseSynth.cpp
     src/ConvolutionReverb.cpp
     src/KernelBuilder.cpp
-    src/LivingTail.cpp)
+    src/LivingTail.cpp
+    src/RecordedResponse.cpp)
 
 target_include_directories(drenched_engine PUBLIC include)
 
 target_compile_features(drenched_engine PUBLIC cxx_std_20)
 
-target_link_libraries(drenched_engine PRIVATE drenched_pffft)
+target_link_libraries(drenched_engine PRIVATE drenched_pffft drenched_r8brain)
 
 find_package(Threads REQUIRED)
 target_link_libraries(drenched_engine PUBLIC Threads::Threads)
