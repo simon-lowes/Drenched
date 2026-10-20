@@ -9,7 +9,8 @@ add_library(drenched_engine STATIC
     src/KernelBuilder.cpp
     src/LivingTail.cpp
     src/RecordedResponse.cpp
-    src/SweepCapture.cpp)
+    src/SweepCapture.cpp
+    src/SurroundResponse.cpp)
 
 target_include_directories(drenched_engine PUBLIC include)
 

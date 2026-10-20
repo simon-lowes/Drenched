@@ -84,7 +84,10 @@ void KernelBuilder::build (const ImpulseResponseRequest& wanted)
         resampled = {};
     }
 
-    auto kernel = std::make_unique<TrueStereoKernel> (responses, designLivingTail (wanted, responses));
+    const auto tail = designLivingTail (wanted, responses);
+    auto kernel = wanted.outputs == layouts::stereo()
+                    ? std::make_unique<ReverbKernel> (responses, tail)
+                    : std::make_unique<ReverbKernel> (spreadResponses (responses, wanted.outputs, mixingTimeSeconds (wanted)), tail);
     reverb.submit (std::move (kernel));
 
     const std::lock_guard lock (mutex);

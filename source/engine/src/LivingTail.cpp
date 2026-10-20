@@ -22,6 +22,34 @@ constexpr std::array<float, N> inRight  {  1,  1, -1,  1,  1, -1, -1,  1, -1,  1
 constexpr std::array<float, N> outLeft  { -1,  1,  1, -1,  1,  1, -1,  1, -1, -1,  1,  1, -1,  1, -1,  1 };
 constexpr std::array<float, N> outRight {  1,  1, -1, -1, -1,  1,  1,  1,  1, -1, -1,  1, -1, -1,  1,  1 };
 
+// Taps for every output: left and right as above, then the left pattern
+// modulated by each Walsh function, so surround outputs are decorrelated
+// from each other and from the front pair.
+constexpr std::array<std::array<float, N>, maxChannels> outputTaps = []
+{
+    std::array<std::array<float, N>, maxChannels> taps {};
+    taps[0] = outLeft;
+    taps[1] = outRight;
+
+    for (std::size_t m = 2; m < maxChannels; ++m)
+    {
+        for (std::size_t i = 0; i < N; ++i)
+        {
+            std::size_t bits = m & i, parity = 0;
+
+            while (bits != 0)
+            {
+                parity ^= bits & 1u;
+                bits >>= 1;
+            }
+
+            taps[m][i] = parity != 0 ? -outLeft[i] : outLeft[i];
+        }
+    }
+
+    return taps;
+}();
+
 std::size_t nextPowerOfTwo (std::size_t n) noexcept
 {
     std::size_t p = 1;
@@ -213,32 +241,47 @@ void LivingTail::applyLoopFilters() noexcept
 
 void LivingTail::process (const float* inL, const float* inR, float* outL, float* outR, std::size_t numSamples) noexcept
 {
+    float* const outputs[] { outL, outR };
+    process (inL, inR, outputs, 2, 1.0f, numSamples);
+}
+
+void LivingTail::process (const float* inL, const float* inR, float* const* outputs, std::size_t numOutputs, float scale,
+                          std::size_t numSamples) noexcept
+{
+    numOutputs = std::min (numOutputs, maxChannels);
+
     if (! current.valid)
     {
-        std::fill_n (outL, numSamples, 0.0f);
-        std::fill_n (outR, numSamples, 0.0f);
+        for (std::size_t k = 0; k < numOutputs; ++k)
+            std::fill_n (outputs[k], numSamples, 0.0f);
+
         return;
     }
 
-    const auto gain = current.outputGain;
+    const auto gain = current.outputGain * scale;
     std::array<float, N> v {};
 
     for (std::size_t n = 0; n < numSamples; ++n)
     {
         // Tap before the loop filter, so switching between frozen and
         // decaying changes what recirculates, never what is heard now.
-        float l = 0.0f, r = 0.0f;
+        std::array<float, N> taps;
 
         for (std::size_t i = 0; i < N; ++i)
         {
-            const auto tap = buffer[i * capacity + ((write - current.delays[i]) & mask)];
-            l += outLeft[i] * tap;
-            r += outRight[i] * tap;
-            v[i] = tap * loopGain[i];
+            taps[i] = buffer[i * capacity + ((write - current.delays[i]) & mask)];
+            v[i] = taps[i] * loopGain[i];
         }
 
-        outL[n] = l * gain;
-        outR[n] = r * gain;
+        for (std::size_t k = 0; k < numOutputs; ++k)
+        {
+            float y = 0.0f;
+
+            for (std::size_t i = 0; i < N; ++i)
+                y += outputTaps[k][i] * taps[i];
+
+            outputs[k][n] = y * gain;
+        }
 
         for (std::size_t s = 0; s < S; ++s)
         {
