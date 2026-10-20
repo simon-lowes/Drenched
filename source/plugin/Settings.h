@@ -51,6 +51,13 @@ namespace settings
         file.saveIfNeeded();
     }
 
+    /** Where captured spaces are saved: Documents/Drenched/Captures. */
+    inline juce::File capturesFolder()
+    {
+        return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+            .getChildFile ("Drenched").getChildFile ("Captures");
+    }
+
     /** Where the Windows WebView2 runtime may keep its cache for this plugin. */
     inline juce::File webViewDataFolder()
     {

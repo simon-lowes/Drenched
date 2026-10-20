@@ -51,12 +51,37 @@ function pickerHTML(){var ts=Object.assign({},st,{browse:false,adv:false,skins:f
   '<div class="grid">'+SKINS.map(function(x){return '<div class="sk" role="button" tabindex="0" data-act="skin" data-v="'+x.id+'" aria-current="'+(x.id===st.skin)+'" aria-label="'+x.name+', '+x.tag.toLowerCase()+'"><div class="fr" inert>'+thumb(x)+'</div><div class="t"><b>'+x.name+'</b><span>'+x.tag+'</span></div></div>';}).join('')+'</div>'+
   '<div class="ft">Click the Drenched name in any look to come back here. The look is saved with this instance and becomes the default for new ones.</div></div>';}
 
+/* ---- capturing a space: the plugin plays a sweep and records the room ---- */
+st.capture=false;st.cap={speakers:1,sweep:10,tail:6,level:-12};st.capStatus={stage:'idle',progress:0,peakDb:-100,message:''};
+var CAP_OPTS={speakers:[[1,'Left only'],[2,'Left, then right']],sweep:[[5,'5 s'],[10,'10 s'],[20,'20 s']],tail:[[3,'3 s'],[6,'6 s'],[12,'12 s']],level:[[-24,'\u221224 dB'],[-18,'\u221218 dB'],[-12,'\u221212 dB'],[-6,'\u22126 dB']]};
+var CAP_ROWS=[['speakers','Speakers','Left, then right gives true stereo when you record with two microphones.'],['sweep','Sweep length','A longer sweep rises further above background noise.'],['tail','Ring-out','Make it longer than the room takes to fall silent.'],['level','Sweep level','Start low. Aim for a mic peak around \u221212 dB.']];
+function capBusy(){var g=st.capStatus.stage;return g==='playing'||g==='working';}
+function capPeak(){var p=+st.capStatus.peakDb;return p<=-99?'Mic peak: nothing yet':'Mic peak '+dbText(p)+' dB';}
+function captureHTML(){var c=st.cap,cs=st.capStatus,busy=capBusy(),secs=c.speakers*(c.sweep+c.tail);
+ var rows=CAP_ROWS.map(function(r){return '<div class="cr"><span class="cl" id="cl-'+r[0]+'">'+r[1]+'</span><span class="seg" role="radiogroup" aria-labelledby="cl-'+r[0]+'">'+CAP_OPTS[r[0]].map(function(o){return '<button role="radio" data-act="capopt" data-k="'+r[0]+'" data-v="'+o[0]+'" aria-checked="'+(c[r[0]]===o[0])+'"'+(busy?' disabled':'')+'>'+o[1]+'</button>';}).join('')+'</span><small>'+r[2]+'</small></div>';}).join('');
+ var status=cs.stage==='playing'?'<div class="cpr"><span class="bar"><i data-cap="p" style="width:'+(clamp(+cs.progress||0,0,1)*100).toFixed(1)+'%"></i></span><em data-cap="pk">'+capPeak()+'</em></div><span>'+esc(cs.message)+'</span>'
+  :cs.stage==='working'?'<span>Working out the impulse response.</span>'
+  :cs.message?'<span class="'+(cs.stage==='failed'?'err':'')+'">'+esc(cs.message)+'</span>':'';
+ var action=cs.stage==='playing'?'<button class="cgo stop" data-act="capstop">Stop capture</button>'
+  :cs.stage==='working'?'<button class="cgo" disabled>Working\u2026</button>'
+  :'<button class="cgo" data-act="capstart">Start capture</button><span class="ct">Takes '+secs+' seconds. Captures are saved in Documents, Drenched, Captures.</span>';
+ return '<div class="cap" role="dialog" aria-modal="true" aria-labelledby="cap-h"><div class="cbox"><div class="chd"><h2 id="cap-h">Capture a space</h2><button class="cx" data-act="capture" aria-label="Close">Close</button></div>'+
+  '<p>Drenched plays a sweep through your speakers, records it with your microphone and turns the recording into an impulse response for this instance.</p>'+
+  '<p>Put Drenched on a track whose input is the room microphone, turn input monitoring on, and set your speakers to a comfortable level.</p>'+
+  rows+'<div class="cst" aria-live="polite">'+status+'</div><div class="cft">'+action+'</div></div></div>';}
+/* capture progress arrives often; it updates in place unless the stage changes */
+function onCapture(m){if(!m)return;var was=st.capStatus.stage,msgWas=st.capStatus.message;st.capStatus={stage:String(m.stage||'idle'),progress:+m.progress||0,peakDb:m.peakDb==null?-100:+m.peakDb,message:String(m.message||'')};
+ if(was==='playing'&&st.capStatus.stage==='playing'&&msgWas===st.capStatus.message){var bar=live.querySelector('[data-cap="p"]'),pk=live.querySelector('[data-cap="pk"]');if(bar)bar.style.width=(clamp(st.capStatus.progress,0,1)*100).toFixed(1)+'%';if(pk)pk.textContent=capPeak();return;}
+ // A finished capture loads straight away: close, so the room and its decay are in view.
+ if(was==='working'&&st.capStatus.stage==='idle')st.capture=false;
+ renderLive();}
+
 /* ---- rendering ---- */
 function fit(){var w=live.clientWidth,h=live.clientHeight,sc=Math.min(w/W,h/H),el=live.firstElementChild;if(!el)return;
  el.style.transform='translate('+((w-W*sc)/2).toFixed(2)+'px,'+((h-H*sc)/2).toFixed(2)+'px) scale('+sc.toFixed(5)+')';
  var frs=live.querySelectorAll('.skins .fr');for(var i=0;i<frs.length;i++){var s2=frs[i].firstElementChild;if(s2)s2.style.transform='scale('+(frs[i].clientWidth/W).toFixed(5)+')';}}
 function renderLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAttribute('data-fid'):null;
- var html=screenHTML(st.skin,st);if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';
+ var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';
  live.innerHTML=html;fit();
  if(fid){var n=live.querySelector('[data-fid="'+fid+'"]');if(n)n.focus({preventScroll:true});}}
 var raf=0;function schedule(){if(!raf)raf=requestAnimationFrame(function(){raf=0;renderLive();sync();syncUi();});}
@@ -95,7 +120,7 @@ live.addEventListener('pointermove',function(e){if(!drag)return;
 function endDrag(){if(drag){var ids=drag.ids;drag=null;schedule();gesture(ids,false);}}
 live.addEventListener('pointerup',endDrag);live.addEventListener('pointercancel',endDrag);
 live.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1,PageUp:10,PageDown:-10};
- if(e.key==='Escape'&&(st.skins||st.browse)){st.skins=false;st.browse=false;e.preventDefault();renderLive();return;}
+ if(e.key==='Escape'&&(st.skins||st.browse||st.capture)){if(st.skins||st.browse){st.skins=false;st.browse=false;}else st.capture=false;e.preventDefault();renderLive();return;}
  if(t.matches('.sk')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.click();return;}
  if(t.matches('[data-knob]')){var k=t.getAttribute('data-knob'),p=P[k];if(e.key==='Home')setParam(st,k,p.min);else if(e.key==='End')setParam(st,k,p.max);else if(keys[e.key])setParam(st,k,from01(k,to01(k,getV(st,k))+keys[e.key]*(e.shiftKey?0.002:0.02)));else return;e.preventDefault();schedule();}
  else if(t.matches('[data-node]')){var i=+t.getAttribute('data-node');if(e.key==='ArrowLeft'||e.key==='ArrowRight'){var ni=clamp(i+(e.key==='ArrowRight'?1:-1),0,7);st.lastBand=ni;e.preventDefault();renderLive();var n2=live.querySelector('[data-fid="nd-'+ni+'"]');if(n2)n2.focus({preventScroll:true});return;}
@@ -123,6 +148,11 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'view':st.view=v;break;
   case 'browse':st.browse=!st.browse;break;
   case 'loadir':st.browse=false;st.hint=null;if(JUCE){JUCE.emitEvent('loadIr',{});st.note='Choose a WAV, AIFF or FLAC impulse response: mono, stereo or four-channel true stereo.';}else st.note='<b>Load your own IR</b> opens a file chooser in the plugin.';break;
+  case 'capture':st.capture=!st.capture;st.hint=null;if(st.capture&&!capBusy()&&st.capStatus.stage!=='failed')st.capStatus.message='';break;
+  case 'capopt':var ck=b.getAttribute('data-k');if(CAP_OPTS[ck]&&!capBusy())st.cap[ck]=+v;break;
+  case 'capstart':if(JUCE){st.capStatus={stage:'playing',progress:0,peakDb:-100,message:''};JUCE.emitEvent('startCapture',{speakers:st.cap.speakers,sweepSeconds:st.cap.sweep,tailSeconds:st.cap.tail,levelDb:st.cap.level});}
+   else st.capStatus={stage:'failed',progress:0,peakDb:-100,message:'Capturing works inside the plugin, where Drenched can reach your speakers and microphone.'};break;
+  case 'capstop':if(JUCE)JUCE.emitEvent('cancelCapture',{});break;
   case 'pick':st.browse=false;changeSpace(+v);break;
   case 'prev':changeSpace((st.sp+SPACES.length-1)%SPACES.length);break;
   case 'next':changeSpace((st.sp+1)%SPACES.length);break;
@@ -132,7 +162,9 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
  renderLive();sync();syncUi();
  if(a==='browse'&&st.browse){var mi=live.querySelector('.menu button[aria-current="true"]');if(mi)mi.focus({preventScroll:true});}
  else if(a==='skins'&&st.skins){var sk=live.querySelector('.skins .sk[aria-current="true"]');if(sk)sk.focus({preventScroll:true});}
- else{var same=live.querySelector('[data-act="'+a+'"]'+(v!=null?'[data-v="'+v+'"]':'')+(a==='lock'||a==='toggle'?'[data-k="'+b.getAttribute('data-k')+'"]':''));if(same)same.focus({preventScroll:true});}});
+ else if(a==='capture'&&st.capture){var cf=live.querySelector('.cap .cgo');if(cf)cf.focus({preventScroll:true});}
+ else if(a==='capstart'||a==='capstop'){var cg=live.querySelector('.cap .cgo:not([disabled])')||live.querySelector('.cap .cx');if(cg)cg.focus({preventScroll:true});}
+ else{var same=live.querySelector('[data-act="'+a+'"]'+(v!=null?'[data-v="'+v+'"]':'')+(a==='lock'||a==='toggle'||a==='capopt'?'[data-k="'+b.getAttribute('data-k')+'"]':''));if(same)same.focus({preventScroll:true});}});
 /* the host may hand us a context menu on right click; the interface has none */
 live.addEventListener('contextmenu',function(e){e.preventDefault();});
 
@@ -143,6 +175,6 @@ if(init)applyFromHost(init);
 try{var hs=(location.hash||'').slice(1);if(SKINS.some(function(x){return x.id===hs;}))st.skin=hs;}catch(_){}
 Object.assign(lastSent,paramValues(st));Object.assign(lastUi,uiState(st));
 renderLive();
-if(JUCE){JUCE.addEventListener('state',applyFromHost);JUCE.addEventListener('meters',onMeters);JUCE.emitEvent('ready',{});}
+if(JUCE){JUCE.addEventListener('state',applyFromHost);JUCE.addEventListener('meters',onMeters);JUCE.addEventListener('capture',onCapture);JUCE.emitEvent('ready',{});}
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);
 })();
