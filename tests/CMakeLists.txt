@@ -7,7 +7,8 @@ add_executable(drenched_tests
     ConvolutionReverbTests.cpp
     LivingTailTests.cpp
     RecordedResponseTests.cpp
-    SweepCaptureTests.cpp)
+    SweepCaptureTests.cpp
+    SurroundTests.cpp)
 
 target_link_libraries(drenched_tests PRIVATE drenched_engine Catch2::Catch2WithMain)
 

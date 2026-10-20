@@ -2,6 +2,7 @@
 
 #include "drenched/Biquad.h"
 #include "drenched/ImpulseResponseSynth.h"
+#include "drenched/SpeakerLayout.h"
 
 #include <array>
 #include <cstddef>
@@ -65,6 +66,12 @@ public:
 
     /** Overwrites outL and outR. */
     void process (const float* inL, const float* inR, float* outL, float* outR, std::size_t numSamples) noexcept;
+
+    /** Overwrites numOutputs outputs (up to maxChannels), each decorrelated
+        from the others; the first two are the stereo pair. scale multiplies
+        the room-matched level. */
+    void process (const float* inL, const float* inR, float* const* outputs, std::size_t numOutputs, float scale,
+                  std::size_t numSamples) noexcept;
 
 private:
     static constexpr std::size_t N = LivingTailDesign::numLines;

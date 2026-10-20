@@ -1,5 +1,7 @@
 #pragma once
 
+#include "drenched/SpeakerLayout.h"
+
 #include <array>
 #include <cstddef>
 #include <memory>
@@ -27,6 +29,10 @@ struct ImpulseResponseRequest
     // A loaded impulse response to play instead of the bundled space. Size,
     // distance and listener position only shape synthesised spaces.
     std::shared_ptr<const RecordedResponse> recorded {};
+
+    // The speakers the kernel feeds. The response itself is always true
+    // stereo; the builder spreads it over these (see spreadResponses()).
+    SpeakerLayout outputs = layouts::stereo();
 
     bool operator== (const ImpulseResponseRequest&) const = default;
 };

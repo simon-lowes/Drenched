@@ -134,6 +134,10 @@ private:
         std::array<std::atomic<float>*, 8> decay {};
     } params;
 
+    // The output speakers, for kernel requests. Written in prepareToPlay, read by the timer.
+    mutable std::mutex layoutLock;
+    SpeakerLayout outputSpeakers = layouts::stereo();
+
     std::atomic<int> spaceIndex { 0 };
     std::atomic<float> listenerX { 0.5f };
     std::atomic<double> preparedRate { 0.0 };

@@ -36,10 +36,10 @@ namespace
         return e;
     }
 
-    std::unique_ptr<TrueStereoKernel> kernelWithTail (const ImpulseResponseRequest& request)
+    std::unique_ptr<ReverbKernel> kernelWithTail (const ImpulseResponseRequest& request)
     {
         const auto responses = synthesiseImpulseResponse (request);
-        return std::make_unique<TrueStereoKernel> (responses, designLivingTail (request, responses));
+        return std::make_unique<ReverbKernel> (responses, designLivingTail (request, responses));
     }
 
     std::vector<float> octaveBand (std::vector<float> x, double sampleRate, double centre)
@@ -107,7 +107,7 @@ TEST_CASE ("Fully dry passes the input through untouched", "[reverb]")
 {
     ConvolutionReverb reverb;
     reverb.prepare (48000.0);
-    reverb.submit (std::make_unique<TrueStereoKernel> (synthesiseImpulseResponse (hall (48000.0))));
+    reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (48000.0))));
 
     auto l = testing::noise (20000, 1), r = testing::noise (20000, 2);
     const auto inL = l, inR = r;
@@ -130,7 +130,7 @@ TEST_CASE ("Fully wet plays the impulse response, after the pre-delay", "[reverb
 
     ConvolutionReverb reverb;
     reverb.prepare (sr);
-    reverb.submit (std::make_unique<TrueStereoKernel> (set));
+    reverb.submit (std::make_unique<ReverbKernel> (set));
 
     std::vector<float> l (set.length() + 4800, 0.0f), r (l.size(), 0.0f);
     l[0] = 1.0f;
@@ -173,14 +173,14 @@ TEST_CASE ("Swapping kernels mid-sound keeps the old tail ringing", "[reverb]")
     {
         ConvolutionReverb unswapped;
         unswapped.prepare (sr);
-        unswapped.submit (std::make_unique<TrueStereoKernel> (synthesiseImpulseResponse (request)));
+        unswapped.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (request)));
         std::vector<float> rr (r);
         run (unswapped, reference, rr, c);
     }
 
     ConvolutionReverb swapped;
     swapped.prepare (sr);
-    swapped.submit (std::make_unique<TrueStereoKernel> (synthesiseImpulseResponse (request)));
+    swapped.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (request)));
 
     std::vector<float> sl (24000, 0.0f), sr2 (24000, 0.0f);
     for (std::size_t n = 0; n < 2400; ++n)
@@ -190,7 +190,7 @@ TEST_CASE ("Swapping kernels mid-sound keeps the old tail ringing", "[reverb]")
     for (std::size_t pos = 0; pos < sl.size(); pos += 480)
     {
         if (pos == 4800)
-            swapped.submit (std::make_unique<TrueStereoKernel> (synthesiseImpulseResponse (request)));
+            swapped.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (request)));
         swapped.process (sl.data() + pos, sr2.data() + pos, 480, c);
     }
 
@@ -209,7 +209,7 @@ TEST_CASE ("A kernel for the wrong sample rate is never played", "[reverb]")
 {
     ConvolutionReverb reverb;
     reverb.prepare (48000.0);
-    reverb.submit (std::make_unique<TrueStereoKernel> (synthesiseImpulseResponse (hall (44100.0))));
+    reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (44100.0))));
 
     std::vector<float> l (4800, 0.0f), r (4800, 0.0f);
     l[0] = 1.0f;
@@ -226,7 +226,7 @@ TEST_CASE ("Width zero makes the wet signal mono", "[reverb]")
 {
     ConvolutionReverb reverb;
     reverb.prepare (48000.0);
-    reverb.submit (std::make_unique<TrueStereoKernel> (synthesiseImpulseResponse (hall (48000.0))));
+    reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (48000.0))));
 
     auto l = testing::noise (24000, 5), r = testing::noise (24000, 6);
     ReverbControls c;
@@ -244,7 +244,7 @@ TEST_CASE ("Ducking lowers the wet signal while the input is loud", "[reverb]")
     {
         ConvolutionReverb reverb;
         reverb.prepare (48000.0);
-        reverb.submit (std::make_unique<TrueStereoKernel> (synthesiseImpulseResponse (hall (48000.0))));
+        reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (48000.0))));
 
         auto l = testing::noise (24000, 7), r = testing::noise (24000, 8);
         ReverbControls c;
@@ -261,11 +261,11 @@ TEST_CASE ("The audio path never allocates, including kernel swaps", "[reverb][r
 {
     ConvolutionReverb reverb;
     reverb.prepare (48000.0);
-    reverb.submit (std::make_unique<TrueStereoKernel> (synthesiseImpulseResponse (hall (48000.0))));
+    reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (48000.0))));
 
     auto request = hall (48000.0);
     request.decaySeconds[2] = 1.5f;
-    auto second = std::make_unique<TrueStereoKernel> (synthesiseImpulseResponse (request));
+    auto second = std::make_unique<ReverbKernel> (synthesiseImpulseResponse (request));
 
     auto l = testing::noise (48000, 9), r = testing::noise (48000, 10);
     ReverbControls c;

@@ -4,6 +4,8 @@
 #include "drenched/ImpulseResponseSynth.h"
 #include "drenched/LivingTail.h"
 #include "drenched/PartitionedConvolver.h"
+#include "drenched/SpeakerLayout.h"
+#include "drenched/SurroundResponse.h"
 
 #include <array>
 #include <atomic>
@@ -14,25 +16,31 @@
 namespace drenched
 {
 
-/** A true-stereo convolution kernel built from one impulse response set:
-    left input to both outputs, right input to both outputs, plus the living
-    tail fitted to the same room. Building it allocates and transforms the
-    responses, so it is made on a background thread and handed to the audio
-    thread ready to run. */
-class TrueStereoKernel
+/** A convolution kernel built from one impulse response set: each of the
+    two stage sources (left and right input) to every output speaker, plus
+    the living tail fitted to the same room. With a stereo layout this is
+    true stereo. Building it allocates and transforms the responses, so it is
+    made on a background thread and handed to the audio thread ready to run. */
+class ReverbKernel
 {
 public:
-    explicit TrueStereoKernel (const ImpulseResponseSet& responses, const LivingTailDesign& tail = {});
+    /** True stereo, for a stereo output. */
+    explicit ReverbKernel (const ImpulseResponseSet& responses, const LivingTailDesign& tail = {});
+
+    /** Any output layout (see spreadResponses()). */
+    explicit ReverbKernel (const SpatialResponseSet& responses, const LivingTailDesign& tail = {});
 
     double sampleRate() const noexcept { return rate; }
     std::size_t length() const noexcept { return irLength; }
+    std::size_t numOutputs() const noexcept { return fromLeft.numOutputs(); }
     const LivingTailDesign& livingTail() const noexcept { return tailDesign; }
+
     void reset() noexcept;
 
-    /** Overwrites outL and outR. scratchL and scratchR are workspace of the
-        same size. Real-time safe. */
-    void process (const float* inL, const float* inR, float* outL, float* outR,
-                  float* scratchL, float* scratchR, std::size_t numSamples) noexcept;
+    /** Overwrites numOutputs() outputs. scratch holds as many buffers of the
+        same size as workspace. Real-time safe. */
+    void process (const float* inL, const float* inR, float* const* outputs, float* const* scratch,
+                  std::size_t numSamples) noexcept;
 
 private:
     double rate;
@@ -49,7 +57,7 @@ struct ReverbControls
     float brightnessDb = 0.0f;   // tilt: half up above 2.5 kHz, half down below 250 Hz
     float lowCutHz = 20.0f;
     float highCutHz = 20000.0f;
-    float widthPercent = 100.0f; // 0 mono .. 200 extra wide
+    float widthPercent = 100.0f; // 0 mono .. 200 extra wide, across all the speakers
     float monoBelowHz = 0.0f;    // 0 = off
     float ducking = 0.0f;        // 0 .. 1
     float outputGain = 1.0f;     // linear
@@ -57,8 +65,15 @@ struct ReverbControls
     float crossoverHz = 320.0f;  // below this a frozen tail keeps decaying
 };
 
-/** The complete reverb: pre-delay, true-stereo convolution, the living
-    tail, wet tone, width, ducking and the dry/wet mix. Zero latency.
+/** The complete reverb: pre-delay, convolution from the two stage sources to
+    every output speaker, the living tail, wet tone, width, ducking and the
+    dry/wet mix. Zero latency. Mono, stereo and surround up to 9.1.6.
+
+    The input channels feed two stage sources: left-hand speakers the left
+    one, right-hand speakers the right, centred ones both. The LFE input
+    stays dry. Each output plays its dry input (the input of the same
+    speaker, or for a mono input the centre, else the front pair) mixed with
+    its own wet signal; the LFE output gets no reverberation.
 
     New kernels arrive from a background thread through submit(). The audio
     thread swaps them in without a gap: the outgoing kernel stops receiving
@@ -86,21 +101,31 @@ public:
     ConvolutionReverb (const ConvolutionReverb&) = delete;
     ConvolutionReverb& operator= (const ConvolutionReverb&) = delete;
 
-    /** Call while audio is stopped. Kernels built for another sample rate are dropped. */
-    void prepare (double sampleRate);
+    /** Call while audio is stopped. Kernels built for another sample rate or
+        output layout are dropped. Up to maxChannels each way. */
+    void prepare (double newSampleRate, const SpeakerLayout& inputs, const SpeakerLayout& outputs);
+
+    /** Stereo in and out. */
+    void prepare (double newSampleRate) { prepare (newSampleRate, layouts::stereo(), layouts::stereo()); }
 
     void reset() noexcept;
 
-    /** In place, any length. right may equal left for mono. */
+    /** In place: channels holds max(inputs, outputs) buffers; the first
+        inputs.size() carry the input and all outputs.size() are written. */
+    void process (float* const* channels, std::size_t numChannels, std::size_t numSamples,
+                  const ReverbControls& controls) noexcept;
+
+    /** Stereo layouts, in place, any length. right may equal left for a mono
+        input, and then only left is written. */
     void process (float* left, float* right, std::size_t numSamples, const ReverbControls& controls) noexcept;
 
     /** From any thread except the audio thread. A kernel that was submitted
         but not yet picked up is replaced (and freed here). */
-    void submit (std::unique_ptr<TrueStereoKernel> kernel);
+    void submit (std::unique_ptr<ReverbKernel> kernel);
 
     /** From the thread that frees kernels: returns one the audio thread no
         longer needs, or null. */
-    std::unique_ptr<TrueStereoKernel> takeRetired() noexcept;
+    std::unique_ptr<ReverbKernel> takeRetired() noexcept;
 
     /** The current tail in seconds (impulse response plus pre-delay), for
         the host; infinite while frozen. */
@@ -109,9 +134,11 @@ public:
     /** True once a kernel for the current sample rate is running. */
     bool isReady() const noexcept { return ready.load (std::memory_order_relaxed); }
 
+    std::size_t numOutputs() const noexcept { return outputLayout.size(); }
+
 private:
     void installIncoming() noexcept;
-    void retire (TrueStereoKernel* kernel) noexcept;
+    void retire (ReverbKernel* kernel) noexcept;
     void updateFilters (const ReverbControls& controls) noexcept;
     void runKernels (std::size_t numSamples) noexcept;
     void updateFreeze (const ReverbControls& controls) noexcept;
@@ -119,24 +146,31 @@ private:
 
     double sampleRate = 48000.0;
 
-    // Kernels owned by the audio thread.
-    TrueStereoKernel* current = nullptr;
-    TrueStereoKernel* ringing = nullptr;
-    TrueStereoKernel* fading = nullptr;
-    std::size_t ringRemaining = 0, fadeRemaining = 0, fadeLength = 2048;
+    // Routing, set in prepare().
+    SpeakerLayout inputLayout, outputLayout;
+    std::array<float, maxChannels> toLeftSource {}, toRightSource {}; // per input
+    std::array<std::array<float, maxChannels>, maxChannels> dryRouting {}; // [output][input]
+    std::array<bool, maxChannels> wetOutput {}; // false for LFE
+    float tailScale = 1.0f; // the living tail's level per speaker, matched to spreadResponses()
+    std::size_t numIn = 2, numOut = 2, numWet = 2;
 
-    std::atomic<TrueStereoKernel*> incoming { nullptr };
+    // Kernels owned by the audio thread.
+    ReverbKernel* current = nullptr;
+    ReverbKernel* ringing = nullptr;
+    ReverbKernel* fading = nullptr;
+    std::size_t ringRemaining = 0, fadeRemaining = 0, fadeLength = 2048;
+    std::atomic<ReverbKernel*> incoming { nullptr };
 
     // Single-producer (audio), single-consumer (builder) queue of retired kernels.
     static constexpr std::size_t retiredCapacity = 32;
-    std::array<std::atomic<TrueStereoKernel*>, retiredCapacity> retired {};
+    std::array<std::atomic<ReverbKernel*>, retiredCapacity> retired {};
     std::atomic<std::size_t> retiredWrite { 0 }, retiredRead { 0 };
-    std::array<TrueStereoKernel*, 4> deferred {};
+    std::array<ReverbKernel*, 4> deferred {};
 
     std::atomic<double> tail { 0.0 };
     std::atomic<bool> ready { false };
 
-    // Pre-delay lines.
+    // Pre-delay lines, one per stage source.
     std::vector<float> delayL, delayR;
     std::size_t delayMask = 0, delayWrite = 0;
     float delaySamples = 0.0f, delayCoef = 0.0f;
@@ -146,9 +180,8 @@ private:
     float duckEnvelope = 0.0f, attackCoef = 0.0f, releaseCoef = 0.0f;
     bool firstBlock = true;
 
-    // Wet tone.
-    std::array<Biquad, 2> lowCut, highCut, lowShelf, highShelf;
-    Biquad sideHighPass;
+    // Wet tone, per output.
+    std::array<Biquad, maxChannels> lowCut, highCut, lowShelf, highShelf, spreadHighPass;
     ReverbControls lastFilterControls;
     bool filtersValid = false;
 
@@ -160,9 +193,10 @@ private:
     float convPosition = 1.0f, tailPosition = 0.0f;
     float freezeStep = 0.0f, returnStep = 0.0f, releaseStep = 0.0f;
 
-    // Workspace, chunkSize each.
-    std::vector<float> dryL, dryR, wetInL, wetInR, wetL, wetR, tmpL, tmpR, scratchL, scratchR, zeros,
-        tailInL, tailInR, tailL, tailR;
+    // Workspace: chunkSize each, or maxChannels blocks of chunkSize.
+    std::vector<float> wetInL, wetInR, tailInL, tailInR, zeros, monoCopy;
+    std::vector<float> dry, wet, tmp, scratch, tails;
+    std::array<float*, maxChannels> wetPtr {}, tmpPtr {}, scratchPtr {}, tailPtr {};
 };
 
 } // namespace drenched

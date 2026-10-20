@@ -17,6 +17,16 @@ std::vector<std::span<const float>> pathsFrom (const ImpulseResponseSet& set, Im
     return { std::span<const float> (set.paths[a]), std::span<const float> (set.paths[b]) };
 }
 
+std::vector<std::span<const float>> pathsFrom (const std::vector<std::vector<float>>& paths)
+{
+    std::vector<std::span<const float>> spans;
+
+    for (const auto& p : paths)
+        spans.emplace_back (p);
+
+    return spans;
+}
+
 float onePole (double sampleRate, double seconds) noexcept
 {
     return static_cast<float> (std::exp (-1.0 / (sampleRate * seconds)));
@@ -37,7 +47,7 @@ bool differs (float a, float b) noexcept { return std::abs (a - b) > 1.0e-4f; }
 } // namespace
 
 //==============================================================================
-TrueStereoKernel::TrueStereoKernel (const ImpulseResponseSet& responses, const LivingTailDesign& tail)
+ReverbKernel::ReverbKernel (const ImpulseResponseSet& responses, const LivingTailDesign& tail)
     : rate (responses.sampleRate),
       irLength (responses.length()),
       fromLeft (pathsFrom (responses, ImpulseResponseSet::leftToLeft, ImpulseResponseSet::leftToRight)),
@@ -46,34 +56,48 @@ TrueStereoKernel::TrueStereoKernel (const ImpulseResponseSet& responses, const L
 {
 }
 
-void TrueStereoKernel::reset() noexcept
+ReverbKernel::ReverbKernel (const SpatialResponseSet& responses, const LivingTailDesign& tail)
+    : rate (responses.sampleRate),
+      irLength (responses.length()),
+      fromLeft (pathsFrom (responses.paths[0])),
+      fromRight (pathsFrom (responses.paths[1])),
+      tailDesign (tail)
+{
+}
+
+void ReverbKernel::reset() noexcept
 {
     fromLeft.reset();
     fromRight.reset();
 }
 
-void TrueStereoKernel::process (const float* inL, const float* inR, float* outL, float* outR,
-                                float* scratchL, float* scratchR, std::size_t numSamples) noexcept
+void ReverbKernel::process (const float* inL, const float* inR, float* const* outputs, float* const* scratch,
+                            std::size_t numSamples) noexcept
 {
-    float* const toOut[] { outL, outR };
-    float* const toScratch[] { scratchL, scratchR };
+    fromLeft.process (inL, outputs, numSamples);
+    fromRight.process (inR, scratch, numSamples);
 
-    fromLeft.process (inL, toOut, numSamples);
-    fromRight.process (inR, toScratch, numSamples);
-
-    for (std::size_t n = 0; n < numSamples; ++n)
-    {
-        outL[n] += scratchL[n];
-        outR[n] += scratchR[n];
-    }
+    for (std::size_t k = 0; k < numOutputs(); ++k)
+        for (std::size_t n = 0; n < numSamples; ++n)
+            outputs[k][n] += scratch[k][n];
 }
 
 //==============================================================================
 ConvolutionReverb::ConvolutionReverb()
 {
-    for (auto* buffer : { &dryL, &dryR, &wetInL, &wetInR, &wetL, &wetR, &tmpL, &tmpR, &scratchL, &scratchR, &zeros,
-                          &tailInL, &tailInR, &tailL, &tailR })
+    for (auto* buffer : { &wetInL, &wetInR, &tailInL, &tailInR, &zeros, &monoCopy })
         buffer->assign (chunkSize, 0.0f);
+
+    for (auto* buffer : { &dry, &wet, &tmp, &scratch, &tails })
+        buffer->assign (chunkSize * maxChannels, 0.0f);
+
+    for (std::size_t k = 0; k < maxChannels; ++k)
+    {
+        wetPtr[k] = wet.data() + k * chunkSize;
+        tmpPtr[k] = tmp.data() + k * chunkSize;
+        scratchPtr[k] = scratch.data() + k * chunkSize;
+        tailPtr[k] = tails.data() + k * chunkSize;
+    }
 
     prepare (sampleRate);
 }
@@ -92,14 +116,114 @@ ConvolutionReverb::~ConvolutionReverb()
         k.reset();
 }
 
-void ConvolutionReverb::prepare (double newSampleRate)
+void ConvolutionReverb::prepare (double newSampleRate, const SpeakerLayout& inputs, const SpeakerLayout& outputs)
 {
     sampleRate = newSampleRate;
+    inputLayout.assign (inputs.begin(), inputs.begin() + static_cast<std::ptrdiff_t> (std::min (inputs.size(), maxChannels)));
+    outputLayout.assign (outputs.begin(), outputs.begin() + static_cast<std::ptrdiff_t> (std::min (outputs.size(), maxChannels)));
+    numIn = inputLayout.size();
+    numOut = outputLayout.size();
+
+    // Inputs to the two stage sources. A lone centred input (mono) feeds both
+    // fully, as a mono source in the middle of the stage.
+    const auto monoInput = layouts::countDirectional (inputLayout) == 1 && numIn == 1 && inputLayout[0].isCentred();
+    toLeftSource.fill (0.0f);
+    toRightSource.fill (0.0f);
+
+    for (std::size_t i = 0; i < numIn; ++i)
+    {
+        const auto& in = inputLayout[i];
+
+        if (in.lfe)
+            continue;
+
+        const auto centred = monoInput ? 1.0f : std::numbers::sqrt2_v<float> / 2.0f;
+        toLeftSource[i] = in.isLeft() ? 1.0f : in.isCentred() ? centred : 0.0f;
+        toRightSource[i] = in.isRight() ? 1.0f : in.isCentred() ? centred : 0.0f;
+    }
+
+    // Dry routing: each input to the output of the same speaker. An input
+    // with no such output goes to the nearest one (a mono input with no
+    // centre to the front pair, as stereo plays it); an LFE input with no
+    // LFE output is dropped.
+    for (auto& row : dryRouting)
+        row.fill (0.0f);
+
+    for (std::size_t i = 0; i < numIn; ++i)
+    {
+        const auto& in = inputLayout[i];
+        bool routed = false;
+
+        for (std::size_t o = 0; o < numOut; ++o)
+        {
+            const auto& out = outputLayout[o];
+
+            if (out.lfe == in.lfe && (in.lfe || (std::abs (out.azimuth - in.azimuth) < 0.5f && std::abs (out.elevation - in.elevation) < 0.5f)))
+            {
+                dryRouting[o][i] = 1.0f;
+                routed = true;
+                break;
+            }
+        }
+
+        if (routed || in.lfe)
+            continue;
+
+        if (monoInput)
+        {
+            for (std::size_t o = 0; o < numOut; ++o)
+            {
+                if (outputLayout[o].isFront() && std::abs (std::abs (outputLayout[o].azimuth) - 30.0f) < 0.5f)
+                {
+                    dryRouting[o][i] = 1.0f;
+                    routed = true;
+                }
+            }
+
+            if (routed)
+                continue;
+        }
+
+        std::size_t nearest = numOut;
+        float best = 1.0e9f;
+
+        for (std::size_t o = 0; o < numOut; ++o)
+        {
+            const auto& out = outputLayout[o];
+
+            if (out.lfe)
+                continue;
+
+            auto da = std::abs (out.azimuth - in.azimuth);
+            da = std::min (da, 360.0f - da);
+            const auto distance = da + std::abs (out.elevation - in.elevation);
+
+            if (distance < best)
+            {
+                best = distance;
+                nearest = o;
+            }
+        }
+
+        if (nearest < numOut)
+            dryRouting[nearest][i] = std::numbers::sqrt2_v<float> / 2.0f;
+    }
+
+    numWet = 0;
+
+    for (std::size_t o = 0; o < maxChannels; ++o)
+    {
+        wetOutput[o] = o < numOut && ! outputLayout[o].lfe;
+        numWet += wetOutput[o] ? 1 : 0;
+    }
+
+    // spreadResponses() keeps the stereo energy over all the speakers.
+    tailScale = numWet > 0 ? std::sqrt (2.0f / static_cast<float> (numWet)) : 0.0f;
 
     // Audio is stopped, so kernels can be dropped here directly.
     for (auto** k : { &current, &ringing, &fading })
     {
-        if (*k != nullptr && (*k)->sampleRate() != sampleRate)
+        if (*k != nullptr && ((*k)->sampleRate() != sampleRate || (*k)->numOutputs() != numOut))
         {
             delete *k;
             *k = nullptr;
@@ -159,19 +283,17 @@ void ConvolutionReverb::reset() noexcept
 
     tailDesignPending = false;
 
-    for (auto* bank : { &lowCut, &highCut, &lowShelf, &highShelf })
+    for (auto* bank : { &lowCut, &highCut, &lowShelf, &highShelf, &spreadHighPass })
         for (auto& f : *bank)
             f.reset();
-
-    sideHighPass.reset();
 }
 
-void ConvolutionReverb::submit (std::unique_ptr<TrueStereoKernel> kernel)
+void ConvolutionReverb::submit (std::unique_ptr<ReverbKernel> kernel)
 {
     delete incoming.exchange (kernel.release(), std::memory_order_acq_rel);
 }
 
-std::unique_ptr<TrueStereoKernel> ConvolutionReverb::takeRetired() noexcept
+std::unique_ptr<ReverbKernel> ConvolutionReverb::takeRetired() noexcept
 {
     const auto read = retiredRead.load (std::memory_order_relaxed);
 
@@ -180,10 +302,10 @@ std::unique_ptr<TrueStereoKernel> ConvolutionReverb::takeRetired() noexcept
 
     auto* k = retired[read % retiredCapacity].exchange (nullptr, std::memory_order_relaxed);
     retiredRead.store (read + 1, std::memory_order_release);
-    return std::unique_ptr<TrueStereoKernel> (k);
+    return std::unique_ptr<ReverbKernel> (k);
 }
 
-void ConvolutionReverb::retire (TrueStereoKernel* kernel) noexcept
+void ConvolutionReverb::retire (ReverbKernel* kernel) noexcept
 {
     if (kernel == nullptr)
         return;
@@ -234,7 +356,7 @@ void ConvolutionReverb::installIncoming() noexcept
     if (fresh == nullptr)
         return;
 
-    if (fresh->sampleRate() != sampleRate)
+    if (fresh->sampleRate() != sampleRate || fresh->numOutputs() != numOut)
     {
         retire (fresh);
         return;
@@ -275,7 +397,7 @@ void ConvolutionReverb::updateFilters (const ReverbControls& c) noexcept
     const auto ls = Biquad::lowShelf (sampleRate, 250.0, -0.5 * c.brightnessDb);
     const auto hs = Biquad::highShelf (sampleRate, 2500.0, 0.5 * c.brightnessDb);
 
-    for (std::size_t ch = 0; ch < 2; ++ch)
+    for (std::size_t ch = 0; ch < maxChannels; ++ch)
     {
         lowCut[ch].setCoefficients (lc);
         highCut[ch].setCoefficients (hc);
@@ -284,7 +406,12 @@ void ConvolutionReverb::updateFilters (const ReverbControls& c) noexcept
     }
 
     if (c.monoBelowHz > 0.0f)
-        sideHighPass.setCoefficients (Biquad::highPass (sampleRate, c.monoBelowHz));
+    {
+        const auto spread = Biquad::highPass (sampleRate, c.monoBelowHz);
+
+        for (auto& f : spreadHighPass)
+            f.setCoefficients (spread);
+    }
 
     lastFilterControls = c;
     filtersValid = true;
@@ -315,23 +442,19 @@ void ConvolutionReverb::updateFreeze (const ReverbControls& c) noexcept
 void ConvolutionReverb::runKernels (std::size_t n) noexcept
 {
     if (current != nullptr)
-        current->process (wetInL.data(), wetInR.data(), wetL.data(), wetR.data(), scratchL.data(), scratchR.data(), n);
+        current->process (wetInL.data(), wetInR.data(), wetPtr.data(), scratchPtr.data(), n);
     else
-    {
-        std::fill_n (wetL.data(), n, 0.0f);
-        std::fill_n (wetR.data(), n, 0.0f);
-    }
+        for (std::size_t k = 0; k < numOut; ++k)
+            std::fill_n (wetPtr[k], n, 0.0f);
 
     // The previous kernel keeps sounding its tail but takes no new input.
     if (ringing != nullptr)
     {
-        ringing->process (zeros.data(), zeros.data(), tmpL.data(), tmpR.data(), scratchL.data(), scratchR.data(), n);
+        ringing->process (zeros.data(), zeros.data(), tmpPtr.data(), scratchPtr.data(), n);
 
-        for (std::size_t i = 0; i < n; ++i)
-        {
-            wetL[i] += tmpL[i];
-            wetR[i] += tmpR[i];
-        }
+        for (std::size_t k = 0; k < numOut; ++k)
+            for (std::size_t i = 0; i < n; ++i)
+                wetPtr[k][i] += tmpPtr[k][i];
 
         ringRemaining = ringRemaining > n ? ringRemaining - n : 0;
 
@@ -344,15 +467,17 @@ void ConvolutionReverb::runKernels (std::size_t n) noexcept
 
     if (fading != nullptr)
     {
-        fading->process (zeros.data(), zeros.data(), tmpL.data(), tmpR.data(), scratchL.data(), scratchR.data(), n);
+        fading->process (zeros.data(), zeros.data(), tmpPtr.data(), scratchPtr.data(), n);
 
         const auto step = 1.0f / static_cast<float> (std::max<std::size_t> (fadeLength, 1));
 
-        for (std::size_t i = 0; i < n; ++i)
+        for (std::size_t k = 0; k < numOut; ++k)
         {
-            const auto g = static_cast<float> (fadeRemaining > i ? fadeRemaining - i : 0) * step;
-            wetL[i] += tmpL[i] * g;
-            wetR[i] += tmpR[i] * g;
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                const auto g = static_cast<float> (fadeRemaining > i ? fadeRemaining - i : 0) * step;
+                wetPtr[k][i] += tmpPtr[k][i] * g;
+            }
         }
 
         fadeRemaining = fadeRemaining > n ? fadeRemaining - n : 0;
@@ -367,6 +492,29 @@ void ConvolutionReverb::runKernels (std::size_t n) noexcept
 
 void ConvolutionReverb::process (float* left, float* right, std::size_t numSamples, const ReverbControls& c) noexcept
 {
+    if (right != left)
+    {
+        float* channels[] { left, right };
+        process (channels, 2, numSamples, c);
+        return;
+    }
+
+    // Mono: the same signal on both inputs, and only the left output kept.
+    for (std::size_t offset = 0; offset < numSamples; offset += chunkSize)
+    {
+        const auto n = std::min (chunkSize, numSamples - offset);
+        std::copy_n (left + offset, n, monoCopy.data());
+        float* channels[] { left + offset, monoCopy.data() };
+        process (channels, 2, n, c);
+    }
+}
+
+void ConvolutionReverb::process (float* const* channels, std::size_t numChannels, std::size_t numSamples,
+                                 const ReverbControls& c) noexcept
+{
+    if (numChannels < std::max (numIn, numOut))
+        return;
+
     installIncoming();
     updateFilters (c);
     updateFreeze (c);
@@ -375,7 +523,6 @@ void ConvolutionReverb::process (float* left, float* right, std::size_t numSampl
     const auto targetDelay = static_cast<float> (std::clamp (static_cast<double> (c.predelayMs) * 0.001, 0.0, maxPredelaySeconds) * sampleRate);
     const auto width = std::clamp (c.widthPercent, 0.0f, 200.0f) / 100.0f;
     const auto duckDepthDb = 24.0f * std::clamp (c.ducking, 0.0f, 1.0f);
-    const auto stereo = right != left;
 
     if (firstBlock)
     {
@@ -389,17 +536,25 @@ void ConvolutionReverb::process (float* left, float* right, std::size_t numSampl
     for (std::size_t offset = 0; offset < numSamples; offset += chunkSize)
     {
         const auto n = std::min (chunkSize, numSamples - offset);
-        auto* L = left + offset;
-        auto* R = right + offset;
 
-        std::copy_n (L, n, dryL.data());
-        std::copy_n (stereo ? R : L, n, dryR.data());
+        for (std::size_t i = 0; i < numIn; ++i)
+            std::copy_n (channels[i] + offset, n, dry.data() + i * chunkSize);
 
-        // Pre-delay, with the delay time gliding so moving it never clicks.
-        for (std::size_t i = 0; i < n; ++i)
+        // The stage sources, through the pre-delay, with the delay time
+        // gliding so moving it never clicks.
+        for (std::size_t s = 0; s < n; ++s)
         {
-            delayL[delayWrite] = dryL[i];
-            delayR[delayWrite] = dryR[i];
+            float l = 0.0f, r = 0.0f;
+
+            for (std::size_t i = 0; i < numIn; ++i)
+            {
+                const auto x = dry[i * chunkSize + s];
+                l += toLeftSource[i] * x;
+                r += toRightSource[i] * x;
+            }
+
+            delayL[delayWrite] = l;
+            delayR[delayWrite] = r;
 
             delaySamples = targetDelay + delayCoef * (delaySamples - targetDelay);
             const auto whole = static_cast<std::size_t> (delaySamples);
@@ -407,8 +562,8 @@ void ConvolutionReverb::process (float* left, float* right, std::size_t numSampl
             const auto a = (delayWrite - whole) & delayMask;
             const auto b = (a - 1) & delayMask;
 
-            wetInL[i] = delayL[a] + frac * (delayL[b] - delayL[a]);
-            wetInR[i] = delayR[a] + frac * (delayR[b] - delayR[a]);
+            wetInL[s] = delayL[a] + frac * (delayL[b] - delayL[a]);
+            wetInR[s] = delayR[a] + frac * (delayR[b] - delayR[a]);
             delayWrite = (delayWrite + 1) & delayMask;
         }
 
@@ -429,7 +584,7 @@ void ConvolutionReverb::process (float* left, float* right, std::size_t numSampl
         }
 
         runKernels (n);
-        livingTail.process (tailInL.data(), tailInR.data(), tailL.data(), tailR.data(), n);
+        livingTail.process (tailInL.data(), tailInR.data(), tailPtr.data(), numOut, tailScale, n);
 
         // Crossfade between the convolution and the living tail.
         if (frozen || tailPosition > 0.0f || convPosition < 1.0f)
@@ -439,18 +594,24 @@ void ConvolutionReverb::process (float* left, float* right, std::size_t numSampl
             const auto convStep = frozen ? freezeStep : returnStep;
             const auto tailStep = frozen ? freezeStep : releaseStep;
             constexpr auto quarter = static_cast<float> (std::numbers::pi / 2.0);
+            const auto startConv = convPosition, startTail = tailPosition;
 
-            for (std::size_t i = 0; i < n; ++i)
+            for (std::size_t k = 0; k < numOut; ++k)
             {
-                convPosition = convPosition < convTarget ? std::min (convTarget, convPosition + convStep)
-                                                         : std::max (convTarget, convPosition - convStep);
-                tailPosition = tailPosition < tailTarget ? std::min (tailTarget, tailPosition + tailStep)
-                                                         : std::max (tailTarget, tailPosition - tailStep);
+                auto cp = startConv, tp = startTail;
 
-                const auto gc = std::sin (convPosition * quarter);
-                const auto gt = std::sin (tailPosition * quarter);
-                wetL[i] = wetL[i] * gc + tailL[i] * gt;
-                wetR[i] = wetR[i] * gc + tailR[i] * gt;
+                for (std::size_t i = 0; i < n; ++i)
+                {
+                    cp = cp < convTarget ? std::min (convTarget, cp + convStep) : std::max (convTarget, cp - convStep);
+                    tp = tp < tailTarget ? std::min (tailTarget, tp + tailStep) : std::max (tailTarget, tp - tailStep);
+                    wetPtr[k][i] = wetPtr[k][i] * std::sin (cp * quarter) + tailPtr[k][i] * std::sin (tp * quarter);
+                }
+
+                if (k + 1 == numOut)
+                {
+                    convPosition = cp;
+                    tailPosition = tp;
+                }
             }
 
             if (! tailAudible() && tailDesignPending && current != nullptr)
@@ -460,42 +621,73 @@ void ConvolutionReverb::process (float* left, float* right, std::size_t numSampl
             }
         }
 
-        // Wet tone.
-        for (std::size_t ch = 0; ch < 2; ++ch)
+        // Wet tone; the LFE channel carries no reverberation.
+        for (std::size_t k = 0; k < numOut; ++k)
         {
-            auto* w = ch == 0 ? wetL.data() : wetR.data();
+            auto* w = wetPtr[k];
+
+            if (! wetOutput[k])
+            {
+                std::fill_n (w, n, 0.0f);
+                continue;
+            }
 
             if (c.lowCutHz > 20.5f)
-                lowCut[ch].process (w, n);
+                lowCut[k].process (w, n);
 
             if (c.highCutHz < 19999.0f)
-                highCut[ch].process (w, n);
+                highCut[k].process (w, n);
 
             if (std::abs (c.brightnessDb) > 0.01f)
             {
-                lowShelf[ch].process (w, n);
-                highShelf[ch].process (w, n);
+                lowShelf[k].process (w, n);
+                highShelf[k].process (w, n);
             }
         }
 
-        // Width and mono bass, in mid/side.
-        for (std::size_t i = 0; i < n; ++i)
+        // Width and mono bass: each speaker's difference from the mean of all
+        // of them is scaled (and high-passed). In stereo this is mid/side.
+        if (numWet > 1)
         {
-            const auto mid = 0.5f * (wetL[i] + wetR[i]);
-            auto side = 0.5f * (wetL[i] - wetR[i]);
+            const auto inverse = 1.0f / static_cast<float> (numWet);
 
-            if (c.monoBelowHz > 0.0f)
-                side = sideHighPass.processSample (side);
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                float mean = 0.0f;
 
-            side *= width;
-            wetL[i] = mid + side;
-            wetR[i] = mid - side;
+                for (std::size_t k = 0; k < numOut; ++k)
+                    mean += wetOutput[k] ? wetPtr[k][i] : 0.0f;
+
+                mean *= inverse;
+
+                for (std::size_t k = 0; k < numOut; ++k)
+                {
+                    if (! wetOutput[k])
+                        continue;
+
+                    auto spread = wetPtr[k][i] - mean;
+
+                    if (c.monoBelowHz > 0.0f)
+                        spread = spreadHighPass[k].processSample (spread);
+
+                    wetPtr[k][i] = mean + spread * width;
+                }
+            }
         }
 
-        // Ducking follows the dry level; then the mix and output gain.
+        // Ducking follows the dry level; then the mix and output gain, with
+        // the per-sample gains kept in tmp for every output to share.
+        auto* dryGains = tmpPtr[0];
+        auto* wetGains = tmpPtr[1];
+        auto* outGains = tmpPtr[2];
+
         for (std::size_t i = 0; i < n; ++i)
         {
-            const auto level = std::max (std::abs (dryL[i]), std::abs (dryR[i]));
+            float level = 0.0f;
+
+            for (std::size_t in = 0; in < numIn; ++in)
+                level = std::max (level, std::abs (dry[in * chunkSize + i]));
+
             const auto coef = level > duckEnvelope ? attackCoef : releaseCoef;
             duckEnvelope = level + coef * (duckEnvelope - level);
 
@@ -513,11 +705,24 @@ void ConvolutionReverb::process (float* left, float* right, std::size_t numSampl
             outGain = c.outputGain + gainCoef * (outGain - c.outputGain);
             duckGain = duckTarget + gainCoef * (duckGain - duckTarget);
 
-            const auto wg = wetGain * duckGain;
-            L[i] = (dryL[i] * dryGain + wetL[i] * wg) * outGain;
+            dryGains[i] = dryGain * outGain;
+            wetGains[i] = wetGain * duckGain * outGain;
+            outGains[i] = outGain;
+        }
 
-            if (stereo)
-                R[i] = (dryR[i] * dryGain + wetR[i] * wg) * outGain;
+        for (std::size_t k = 0; k < numOut; ++k)
+        {
+            auto* out = channels[k] + offset;
+
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                float d = 0.0f;
+
+                for (std::size_t in = 0; in < numIn; ++in)
+                    d += dryRouting[k][in] * dry[in * chunkSize + i];
+
+                out[i] = d * dryGains[i] + wetPtr[k][i] * wetGains[i];
+            }
         }
     }
 
