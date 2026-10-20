@@ -1,0 +1,15 @@
+# The Drenched activation server on Cloudflare Workers, with its licences in D1.
+# Deploying is described in README.md.
+
+name = "drenched-licence"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "drenched-licences"
+database_id = "set-when-created" # from: npx wrangler d1 create drenched-licences
+
+# Secrets, set with `npx wrangler secret put <NAME>`, never in this file:
+#   SIGNING_KEY  the private signing key (JWK) from scripts/make-keys.mjs
+#   ADMIN_TOKEN  a long random string for the /v1/admin routes

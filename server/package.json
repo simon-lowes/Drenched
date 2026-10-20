@@ -1,0 +1,11 @@
+{
+  "name": "drenched-activation-server",
+  "private": true,
+  "type": "module",
+  "description": "Licence numbers and activation codes for Drenched, as a Cloudflare Worker",
+  "scripts": {
+    "test": "node --test --no-warnings=ExperimentalWarning test/*.test.js",
+    "keys": "node scripts/make-keys.mjs"
+  },
+  "engines": { "node": ">=22.5" }
+}

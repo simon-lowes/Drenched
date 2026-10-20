@@ -14,6 +14,7 @@ namespace
     const juce::Identifier eventState { "state" };
     const juce::Identifier eventMeters { "meters" };
     const juce::Identifier eventCapture { "capture" };
+    const juce::Identifier eventLicence { "licence" };
 
     juce::String mimeTypeFor (const juce::String& path)
     {
@@ -55,6 +56,7 @@ DrenchedEditor::DrenchedEditor (DrenchedProcessor& p)
         state.addParameterListener (id, this);
 
     state.state.addListener (this);
+    processor.getLicence().addChangeListener (this);
 
     addAndMakeVisible (web);
     web.goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
@@ -73,6 +75,7 @@ DrenchedEditor::~DrenchedEditor()
 {
     stopTimer();
     cancelPendingUpdate();
+    processor.getLicence().removeChangeListener (this);
     state.state.removeListener (this);
 
     for (const auto& id : ParamIDs::all())
@@ -94,11 +97,30 @@ juce::WebBrowserComponent::Options DrenchedEditor::makeOptions()
         .withEventListener ("ui",      [this] (const juce::var& v) { onUi (v); })
         .withEventListener ("loadIr",  [this] (const juce::var& v) { onLoadIr (v); })
         .withEventListener ("startCapture",  [this] (const juce::var& v) { processor.startCapture (v); sendCaptureStatus(); })
-        .withEventListener ("cancelCapture", [this] (const juce::var&) { processor.cancelCapture(); sendCaptureStatus(); });
+        .withEventListener ("cancelCapture", [this] (const juce::var&) { processor.cancelCapture(); sendCaptureStatus(); })
+        .withEventListener ("licenceOpen",       [this] (const juce::var&) { processor.getLicence().open(); })
+        .withEventListener ("licenceActivate",   [this] (const juce::var& v) { processor.getLicence().activate (v["licence"].toString()); })
+        .withEventListener ("licenceCode",       [this] (const juce::var& v) { processor.getLicence().useCode (v["code"].toString()); })
+        .withEventListener ("licenceDeactivate", [this] (const juce::var&) { processor.getLicence().deactivate(); })
+        .withEventListener ("licencePage",       [this] (const juce::var&)
+        {
+            juce::URL (processor.getLicence().status()["page"].toString()).launchInDefaultBrowser();
+        })
+        // Some hosts keep copy and paste shortcuts from reaching a plugin window, so the page
+        // has its own buttons for them, served by the system clipboard.
+        .withEventListener ("copyText", [] (const juce::var& v) { juce::SystemClipboard::copyTextToClipboard (v["text"].toString()); })
+        .withEventListener ("pasteText", [this] (const juce::var& v)
+        {
+            auto reply = std::make_unique<juce::DynamicObject>();
+            reply->setProperty ("target", v["target"]);
+            reply->setProperty ("text", juce::SystemClipboard::getTextFromClipboard().substring (0, 4096));
+            web.emitEventIfBrowserIsVisible ("pasted", juce::var (reply.release()));
+        });
 
     auto initial = std::make_unique<juce::DynamicObject>();
     initial->setProperty ("params", parameterValues (false));
     initial->setProperty ("ui", uiValues());
+    initial->setProperty ("licence", processor.getLicence().status());
     options = options.withInitialisationData ("drenched", juce::var (initial.release()));
 
    #if JUCE_WINDOWS
@@ -193,6 +215,7 @@ void DrenchedEditor::sendFullState()
 
     lastCaptureStatus.clear();
     sendCaptureStatus();
+    sendLicenceStatus();
 }
 
 //==============================================================================
@@ -362,6 +385,17 @@ void DrenchedEditor::sendCaptureStatus()
 
     lastCaptureStatus = text;
     web.emitEventIfBrowserIsVisible (eventCapture, status);
+}
+
+void DrenchedEditor::sendLicenceStatus()
+{
+    if (pageReady)
+        web.emitEventIfBrowserIsVisible (eventLicence, processor.getLicence().status());
+}
+
+void DrenchedEditor::changeListenerCallback (juce::ChangeBroadcaster*)
+{
+    sendLicenceStatus();
 }
 
 void DrenchedEditor::timerCallback()

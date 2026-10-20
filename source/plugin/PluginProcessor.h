@@ -1,5 +1,6 @@
 #pragma once
 
+#include "LicenceManager.h"
 #include "Parameters.h"
 
 #include <drenched/ConvolutionReverb.h>
@@ -54,6 +55,9 @@ public:
 
     /** The interface's session state (space, locks, view, skin), kept inside the plugin state. */
     juce::ValueTree getUiState();
+
+    /** The licence on this computer, shared by every instance. Message thread. */
+    LicenceManager& getLicence() noexcept { return *licence; }
 
     /** The space index a loaded impulse response plays in: just after the bundled spaces. */
     static constexpr int userSpace = static_cast<int> (bundledSpaces.size());
@@ -161,6 +165,8 @@ private:
     CaptureStage captureStage = CaptureStage::idle;
     juce::String captureMessage;
     std::atomic<bool> captureInterrupted { false };
+
+    juce::SharedResourcePointer<LicenceManager> licence;
 
     ConvolutionReverb reverb;
     std::unique_ptr<KernelBuilder> builder; // after reverb: stops before it is destroyed

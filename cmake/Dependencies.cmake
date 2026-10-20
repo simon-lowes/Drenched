@@ -69,3 +69,19 @@ if(WIN32)
     # r8brain's headers include windows.h; keep its min and max macros out of our code.
     target_compile_definitions(drenched_r8brain PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
+
+# Monocypher 4.0.2 (BSD-2-Clause or CC0-1.0): checks the Ed25519 signature on
+# activation codes. Only the core and its Ed25519 (SHA-512) option are compiled.
+FetchContent_Declare(monocypher
+    GIT_REPOSITORY https://github.com/LoupVaillant/Monocypher.git
+    GIT_TAG        0d85f98c9d9b0227e42cf795cb527dff372b40a4 # 4.0.2
+    SOURCE_SUBDIR  do-not-add-subdirectory)
+FetchContent_MakeAvailable(monocypher)
+
+add_library(drenched_monocypher STATIC
+    ${monocypher_SOURCE_DIR}/src/monocypher.c
+    ${monocypher_SOURCE_DIR}/src/optional/monocypher-ed25519.c)
+target_include_directories(drenched_monocypher SYSTEM PUBLIC
+    ${monocypher_SOURCE_DIR}/src
+    ${monocypher_SOURCE_DIR}/src/optional)
+set_target_properties(drenched_monocypher PROPERTIES POSITION_INDEPENDENT_CODE ON)

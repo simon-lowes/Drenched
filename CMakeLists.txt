@@ -17,6 +17,7 @@ option(DRENCHED_BUILD_CLAP "Build the CLAP format" ON)
 include(cmake/Dependencies.cmake)
 
 add_subdirectory(source/engine)
+add_subdirectory(source/licence)
 add_subdirectory(source/plugin)
 
 if(DRENCHED_BUILD_TESTS)
