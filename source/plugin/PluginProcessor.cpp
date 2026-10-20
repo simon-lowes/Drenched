@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "Settings.h"
+#include "ChannelLayouts.h"
 
 #include <drenched/Mix.h>
 #include <drenched/Spaces.h>
@@ -72,6 +73,11 @@ ImpulseResponseRequest DrenchedProcessor::currentRequest (double sampleRate) con
         const std::lock_guard lock (recordedLock);
         request.recorded = recorded;
     }
+    {
+        const std::lock_guard lock (layoutLock);
+        request.outputs = outputSpeakers;
+    }
+
     request.listenerX = listenerX.load();
     request.sizePercent = params.size->load();
     request.distancePercent = params.distance->load();
@@ -493,11 +499,12 @@ bool DrenchedProcessor::isBusesLayoutSupported (const BusesLayout& layouts) cons
     const auto in = layouts.getMainInputChannelSet();
     const auto out = layouts.getMainOutputChannelSet();
 
-    const auto monoOrStereo = [] (const juce::AudioChannelSet& set)
-    { return set == juce::AudioChannelSet::mono() || set == juce::AudioChannelSet::stereo(); };
+    // Any output from mono to 9.1.6 whose speakers have a place; the input
+    // mono, stereo or the same as the output.
+    if (! channelLayouts::isSupported (out))
+        return false;
 
-    // Surround layouts arrive with the multichannel engine (phase 4).
-    return monoOrStereo (in) && monoOrStereo (out);
+    return in == juce::AudioChannelSet::mono() || in == juce::AudioChannelSet::stereo() || in == out;
 }
 
 void DrenchedProcessor::prepareToPlay (double sampleRate, int)
@@ -510,7 +517,21 @@ void DrenchedProcessor::prepareToPlay (double sampleRate, int)
         captureInterrupted.store (true);
     }
 
-    reverb.prepare (sampleRate);
+    auto inputs = channelLayouts::speakersOf (getChannelLayoutOfBus (true, 0));
+    auto outputs = channelLayouts::speakersOf (getChannelLayoutOfBus (false, 0));
+
+    if (inputs.empty())
+        inputs = layouts::stereo();
+
+    if (outputs.empty())
+        outputs = layouts::stereo();
+
+    {
+        const std::lock_guard lock (layoutLock);
+        outputSpeakers = outputs;
+    }
+
+    reverb.prepare (sampleRate, inputs, outputs);
     preparedRate.store (sampleRate);
     cacheUiState();
 
@@ -536,11 +557,17 @@ void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     const auto numOutputs = getTotalNumOutputChannels();
     const auto numSamples = buffer.getNumSamples();
 
-    const auto notePeak = [this, &buffer, numSamples, numOutputs] (size_t slot)
+    const auto notePeak = [this, &buffer, numSamples] (size_t slot, int numChannels)
     {
-        for (int channel = 0; channel < std::min (numOutputs, 2); ++channel)
+        for (int meter = 0; meter < 2; ++meter)
         {
-            auto& peak = peaks[slot + static_cast<size_t> (channel)];
+            // A mono bus shows on both meters.
+            const auto channel = std::min (meter, numChannels - 1);
+
+            if (channel < 0)
+                return;
+
+            auto& peak = peaks[slot + static_cast<size_t> (meter)];
             const auto level = buffer.getMagnitude (channel, 0, numSamples);
 
             // Hold the highest value until the editor collects it.
@@ -555,15 +582,11 @@ void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     if (capture.process (buffer.getArrayOfReadPointers(), numInputs, buffer.getArrayOfWritePointers(), numOutputs,
                          static_cast<size_t> (numSamples)))
     {
-        notePeak (2);
+        notePeak (2, numOutputs);
         return;
     }
 
-    // Mono in, stereo out: copy the input to the second channel.
-    for (auto channel = numInputs; channel < numOutputs; ++channel)
-        buffer.copyFrom (channel, 0, buffer, 0, 0, numSamples);
-
-    notePeak (0);
+    notePeak (0, numInputs);
 
     ReverbControls controls;
     controls.mix = params.mix->load() / 100.0f;
@@ -578,11 +601,10 @@ void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     controls.freeze = params.freeze->load() >= 0.5f;
     controls.crossoverHz = params.crossover->load();
 
-    auto* left = buffer.getWritePointer (0);
-    auto* right = numOutputs > 1 ? buffer.getWritePointer (1) : left;
-    reverb.process (left, right, static_cast<size_t> (numSamples), controls);
+    reverb.process (buffer.getArrayOfWritePointers(), static_cast<size_t> (buffer.getNumChannels()),
+                    static_cast<size_t> (numSamples), controls);
 
-    notePeak (2);
+    notePeak (2, numOutputs);
 }
 
 juce::AudioProcessorEditor* DrenchedProcessor::createEditor()

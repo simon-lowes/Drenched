@@ -6,8 +6,9 @@ macOS and Windows.
 Status: **engine.** The plugin builds and loads in VST3, AU, CLAP and
 standalone form with the real interface (one set of controls, a decay-by-
 frequency graph you drag, a space browser, Studio and Stage views, twelve
-user-selectable looks) and a working zero-latency true-stereo convolution
-engine with a living tail: a feedback delay network fitted to each room
+user-selectable looks) and a working zero-latency convolution
+engine, true stereo and surround up to 9.1.6 (each room spreads over the
+surround and height speakers with decorrelated tails), with a living tail: a feedback delay network fitted to each room
 that powers Freeze (Crossover sets where the frozen room stops holding, so
 the bass keeps fading). You can load your own impulse response (WAV, AIFF
 or FLAC; mono, stereo or four-channel true stereo): it is resampled to the
