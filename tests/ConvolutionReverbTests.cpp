@@ -2,10 +2,12 @@
 
 #include <drenched/ConvolutionReverb.h>
 #include <drenched/KernelBuilder.h>
+#include <drenched/LivingTail.h>
 #include <drenched/Spaces.h>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cmath>
@@ -32,6 +34,63 @@ namespace
         for (auto it = x.begin() + static_cast<std::ptrdiff_t> (std::min (from, end)); it != x.begin() + static_cast<std::ptrdiff_t> (end); ++it)
             e += static_cast<double> (*it) * *it;
         return e;
+    }
+
+    std::unique_ptr<TrueStereoKernel> kernelWithTail (const ImpulseResponseRequest& request)
+    {
+        const auto responses = synthesiseImpulseResponse (request);
+        return std::make_unique<TrueStereoKernel> (responses, designLivingTail (request, responses));
+    }
+
+    std::vector<float> octaveBand (std::vector<float> x, double sampleRate, double centre)
+    {
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            Biquad hp, lp;
+            hp.setCoefficients (Biquad::highPass (sampleRate, centre / std::sqrt (2.0)));
+            lp.setCoefficients (Biquad::lowPass (sampleRate, centre * std::sqrt (2.0)));
+            hp.process (x.data(), x.size());
+            lp.process (x.data(), x.size());
+        }
+
+        return x;
+    }
+
+    double energyDb (const std::vector<float>& x, double fromSeconds, double toSeconds, double sampleRate)
+    {
+        const auto from = static_cast<std::size_t> (fromSeconds * sampleRate);
+        const auto to = static_cast<std::size_t> (toSeconds * sampleRate);
+        return 10.0 * std::log10 (energy (x, from, to) + 1.0e-30);
+    }
+
+    /** Plays `input` for its length, then silence, with freeze switched on and
+        off at the given times. Blocks are cut at those times exactly. */
+    std::vector<float> playWithFreeze (ConvolutionReverb& reverb, const std::vector<float>& input, double seconds,
+                                       double freezeAt, double releaseAt, double sampleRate, ReverbControls c = {})
+    {
+        const auto total = static_cast<std::size_t> (seconds * sampleRate);
+        std::vector<float> l (total, 0.0f), r (total, 0.0f);
+        std::copy_n (input.begin(), std::min (input.size(), total), l.begin());
+        std::copy_n (input.begin(), std::min (input.size(), total), r.begin());
+
+        const auto freezeSample = static_cast<std::size_t> (freezeAt * sampleRate);
+        const auto releaseSample = static_cast<std::size_t> (releaseAt * sampleRate);
+        constexpr std::size_t block = 480;
+
+        for (std::size_t pos = 0; pos < total;)
+        {
+            auto n = std::min (block, total - pos);
+
+            for (const auto edge : { freezeSample, releaseSample })
+                if (edge > pos && edge < pos + n)
+                    n = edge - pos;
+
+            c.freeze = pos >= freezeSample && pos < releaseSample;
+            reverb.process (l.data() + pos, r.data() + pos, n, c);
+            pos += n;
+        }
+
+        return l;
     }
 
     void run (ConvolutionReverb& reverb, std::vector<float>& l, std::vector<float>& r, const ReverbControls& c, std::size_t block = 480)
@@ -258,6 +317,137 @@ TEST_CASE ("The builder builds once the request settles and frees retired kernel
     }
 }
 
+TEST_CASE ("Freeze holds the room above the crossover, for as long as it is on", "[reverb][freeze]")
+{
+    constexpr double sr = 48000.0;
+    auto chapel = hall (sr);
+    chapel.space = 1;
+    chapel.decaySeconds = bundledSpaces[1].decaySeconds;
+
+    ConvolutionReverb reverb;
+    reverb.prepare (sr);
+    reverb.submit (kernelWithTail (chapel));
+
+    ReverbControls c;
+    c.mix = 1.0f;
+    c.crossoverHz = 320.0f;
+
+    const auto noise = testing::noise (static_cast<std::size_t> (1.0 * sr), 21);
+    const auto out = playWithFreeze (reverb, noise, 20.0, 1.0, 1.0e9, sr, c);
+    const auto high = octaveBand (out, sr, 2000.0);
+    const auto low = octaveBand (out, sr, 125.0);
+
+    const auto heldEarly = energyDb (high, 2.0, 3.0, sr), heldLate = energyDb (high, 19.0, 20.0, sr);
+    const auto bassEarly = energyDb (low, 2.0, 3.0, sr), bassLate = energyDb (low, 19.0, 20.0, sr);
+    INFO ("2 kHz " << heldEarly << " -> " << heldLate << " dB; 125 Hz " << bassEarly << " -> " << bassLate << " dB");
+
+    // The chapel decays by 60 dB in about 3 s at 2 kHz, so anything still
+    // there after 19 s is the freeze.
+    CHECK (std::abs (heldLate - heldEarly) < 1.0);
+    CHECK (bassEarly - bassLate > 20.0);
+    CHECK (std::isinf (reverb.tailSeconds()));
+
+    // The level as the freeze takes over stays close to the room's own.
+    const auto justBefore = energyDb (high, 0.9, 1.0, sr), justAfter = energyDb (high, 1.2, 1.3, sr);
+    INFO ("2 kHz just before " << justBefore << " dB, just after " << justAfter << " dB");
+    CHECK (std::abs (justAfter - justBefore) < 6.0);
+}
+
+TEST_CASE ("While frozen, new sound stays out of the wet signal", "[reverb][freeze]")
+{
+    constexpr double sr = 48000.0;
+    ReverbControls c;
+    c.mix = 1.0f;
+
+    const auto noise = testing::noise (static_cast<std::size_t> (1.0 * sr), 22);
+    auto withBurst = noise;
+    withBurst.resize (static_cast<std::size_t> (4.0 * sr), 0.0f);
+
+    for (std::size_t n = static_cast<std::size_t> (3.0 * sr); n < withBurst.size(); ++n)
+        withBurst[n] = (n % 97 == 0) ? 1.0f : 0.0f;
+
+    ConvolutionReverb a, b;
+
+    for (auto* reverb : { &a, &b })
+    {
+        reverb->prepare (sr);
+        reverb->submit (kernelWithTail (hall (sr)));
+    }
+
+    const auto quiet = playWithFreeze (a, noise, 4.0, 1.0, 1.0e9, sr, c);
+    const auto busy = playWithFreeze (b, withBurst, 4.0, 1.0, 1.0e9, sr, c);
+
+    double difference = 0.0;
+
+    for (auto n = static_cast<std::size_t> (3.0 * sr); n < quiet.size(); ++n)
+        difference += static_cast<double> (busy[n] - quiet[n]) * (busy[n] - quiet[n]);
+
+    const auto held = energy (quiet, static_cast<std::size_t> (3.0 * sr));
+    INFO ("difference " << difference << " against held " << held);
+    CHECK (difference < held * 1.0e-9);
+}
+
+TEST_CASE ("Releasing a freeze lets the room die away naturally", "[reverb][freeze]")
+{
+    constexpr double sr = 48000.0;
+    ConvolutionReverb reverb;
+    reverb.prepare (sr);
+    reverb.submit (kernelWithTail (hall (sr)));
+
+    ReverbControls c;
+    c.mix = 1.0f;
+
+    const auto noise = testing::noise (static_cast<std::size_t> (1.0 * sr), 23);
+    const auto out = playWithFreeze (reverb, noise, 7.0, 1.0, 3.0, sr, c);
+
+    const auto held = energyDb (out, 2.99, 3.0, sr);
+    const auto justAfter = energyDb (out, 3.0, 3.01, sr);
+    const auto later = energyDb (out, 6.5, 7.0, sr) - 10.0 * std::log10 (50.0); // per 10 ms
+    INFO ("held " << held << " dB, first 10 ms after release " << justAfter << " dB, 3.5 s later " << later << " dB");
+
+    // The room is decaying at 60 dB in about half a second: a little over
+    // 1 dB in 10 ms, nothing sudden.
+    CHECK (held - justAfter < 3.0);
+    CHECK (held - later > 60.0);
+    CHECK (std::isfinite (reverb.tailSeconds()));
+
+    // New sound is reverberated again once released.
+    std::vector<float> l (4800, 0.0f), r (4800, 0.0f);
+    l[0] = r[0] = 1.0f;
+    reverb.process (l.data(), r.data(), l.size(), c);
+    CHECK (energy (l, 1) > 1.0e-4);
+}
+
+TEST_CASE ("Freeze and crossover moves never allocate", "[reverb][freeze][realtime]")
+{
+    ConvolutionReverb reverb;
+    reverb.prepare (48000.0);
+    reverb.submit (kernelWithTail (hall (48000.0)));
+
+    auto second = hall (48000.0);
+    second.decaySeconds[4] = 1.2f;
+    auto pending = kernelWithTail (second);
+
+    auto l = testing::noise (96000, 31), r = testing::noise (96000, 32);
+    ReverbControls c;
+    c.mix = 0.5f;
+    reverb.process (l.data(), r.data(), 512, c);
+
+    testing::AllocationCounter counter;
+
+    for (std::size_t pos = 512, i = 0; pos + 517 <= l.size(); pos += 517, ++i)
+    {
+        c.freeze = (i / 20) % 2 == 0;
+        c.crossoverHz = 150.0f + 5.0f * static_cast<float> (i % 50);
+        reverb.process (l.data() + pos, r.data() + pos, 517, c);
+
+        if (i == 30)
+            reverb.submit (std::move (pending)); // a swap while the tail is busy
+    }
+
+    REQUIRE (counter.count() == 0);
+}
+
 TEST_CASE ("Benchmark: CPU use per space", "[.benchmark]")
 {
     for (const double sr : { 48000.0, 96000.0 })
@@ -270,7 +460,7 @@ TEST_CASE ("Benchmark: CPU use per space", "[.benchmark]")
             request.decaySeconds = bundledSpaces[static_cast<std::size_t> (space)].decaySeconds;
 
             const auto buildStart = std::chrono::steady_clock::now();
-            auto kernel = std::make_unique<TrueStereoKernel> (synthesiseImpulseResponse (request));
+            auto kernel = kernelWithTail (request);
             const auto buildTime = std::chrono::duration<double> (std::chrono::steady_clock::now() - buildStart).count();
 
             ConvolutionReverb reverb;

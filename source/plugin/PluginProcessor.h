@@ -82,6 +82,8 @@ private:
         std::atomic<float>* width = nullptr;
         std::atomic<float>* ducking = nullptr;
         std::atomic<float>* monoBelow = nullptr;
+        std::atomic<float>* freeze = nullptr;
+        std::atomic<float>* crossover = nullptr;
         std::array<std::atomic<float>*, 8> decay {};
     } params;
 

@@ -1,4 +1,5 @@
 #include "drenched/KernelBuilder.h"
+#include "drenched/LivingTail.h"
 #include "drenched/ConvolutionReverb.h"
 
 #include <exception>
@@ -61,7 +62,8 @@ void KernelBuilder::build (const ImpulseResponseRequest& wanted)
 {
     const std::lock_guard buildLock (buildMutex);
 
-    auto kernel = std::make_unique<TrueStereoKernel> (synthesiseImpulseResponse (wanted));
+    const auto responses = synthesiseImpulseResponse (wanted);
+    auto kernel = std::make_unique<TrueStereoKernel> (responses, designLivingTail (wanted, responses));
     reverb.submit (std::move (kernel));
 
     const std::lock_guard lock (mutex);

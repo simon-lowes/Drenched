@@ -31,6 +31,8 @@ DrenchedProcessor::DrenchedProcessor()
     params.width = raw (ParamIDs::width);
     params.ducking = raw (ParamIDs::ducking);
     params.monoBelow = raw (ParamIDs::monoBelow);
+    params.freeze = raw (ParamIDs::freeze);
+    params.crossover = raw (ParamIDs::crossover);
 
     for (size_t band = 0; band < params.decay.size(); ++band)
         params.decay[band] = raw (ParamIDs::decay[band]);
@@ -180,6 +182,8 @@ void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     controls.widthPercent = params.width->load();
     controls.ducking = params.ducking->load() / 100.0f;
     controls.monoBelowHz = params.monoBelow->load();
+    controls.freeze = params.freeze->load() >= 0.5f;
+    controls.crossoverHz = params.crossover->load();
 
     auto* left = buffer.getWritePointer (0);
     auto* right = numOutputs > 1 ? buffer.getWritePointer (1) : left;

@@ -4,7 +4,8 @@ add_executable(drenched_tests
     DirectConvolverTests.cpp
     PartitionedConvolverTests.cpp
     ImpulseResponseSynthTests.cpp
-    ConvolutionReverbTests.cpp)
+    ConvolutionReverbTests.cpp
+    LivingTailTests.cpp)
 
 target_link_libraries(drenched_tests PRIVATE drenched_engine Catch2::Catch2WithMain)
 

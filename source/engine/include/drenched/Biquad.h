@@ -60,6 +60,24 @@ public:
     void setCoefficients (const Coefficients& c) noexcept { coeffs = c; }
     void reset() noexcept { z1 = z2 = 0.0f; }
 
+    /** Zeroes state too small to matter, so a decaying tail never leaves
+        denormals behind. For filters run sample by sample. */
+    void flushDenormals() noexcept
+    {
+        if (std::abs (z1) < 1.0e-20f) z1 = 0.0f;
+        if (std::abs (z2) < 1.0e-20f) z2 = 0.0f;
+    }
+
+    /** The magnitude response in dB at one frequency. */
+    static double magnitudeDb (const Coefficients& c, double sampleRate, double frequency) noexcept
+    {
+        const auto w = 2.0 * std::numbers::pi * frequency / sampleRate;
+        const auto c1 = std::cos (w), s1 = std::sin (w), c2 = std::cos (2.0 * w), s2 = std::sin (2.0 * w);
+        const auto nr = c.b0 + c.b1 * c1 + c.b2 * c2, ni = -(c.b1 * s1 + c.b2 * s2);
+        const auto dr = 1.0 + c.a1 * c1 + c.a2 * c2, di = -(c.a1 * s1 + c.a2 * s2);
+        return 10.0 * std::log10 ((nr * nr + ni * ni) / (dr * dr + di * di));
+    }
+
     float processSample (float x) noexcept
     {
         const auto y = coeffs.b0 * x + z1;
@@ -74,8 +92,7 @@ public:
             data[n] = processSample (data[n]);
 
         // Flush denormals that a decaying tail can leave in the state.
-        if (std::abs (z1) < 1.0e-20f) z1 = 0.0f;
-        if (std::abs (z2) < 1.0e-20f) z2 = 0.0f;
+        flushDenormals();
     }
 
 private:
