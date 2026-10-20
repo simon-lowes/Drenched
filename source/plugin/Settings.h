@@ -1,0 +1,47 @@
+#pragma once
+
+#include <juce_data_structures/juce_data_structures.h>
+
+namespace drenched
+{
+
+/** Per-user settings that outlive a session: today only the default look (skin) a new
+    instance opens with. Stored as a small XML file in the user's application data folder. */
+namespace settings
+{
+    inline juce::PropertiesFile::Options options()
+    {
+        juce::PropertiesFile::Options o;
+        o.applicationName = "Drenched";
+        o.filenameSuffix = "settings";
+        o.folderName = "Drenched";
+        o.osxLibrarySubFolder = "Application Support";
+        o.commonToAllUsers = false;
+        o.storageFormat = juce::PropertiesFile::storeAsXML;
+        return o;
+    }
+
+    inline constexpr auto defaultSkin = "aperture";
+
+    inline juce::String loadDefaultSkin()
+    {
+        juce::PropertiesFile file (options());
+        return file.getValue ("skin", defaultSkin);
+    }
+
+    inline void saveDefaultSkin (const juce::String& skin)
+    {
+        juce::PropertiesFile file (options());
+        file.setValue ("skin", skin);
+        file.saveIfNeeded();
+    }
+
+    /** Where the Windows WebView2 runtime may keep its cache for this plugin. */
+    inline juce::File webViewDataFolder()
+    {
+        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+            .getChildFile ("Drenched").getChildFile ("WebView2");
+    }
+}
+
+} // namespace drenched
