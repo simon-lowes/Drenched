@@ -13,6 +13,7 @@ namespace
 {
     const juce::Identifier eventState { "state" };
     const juce::Identifier eventMeters { "meters" };
+    const juce::Identifier eventCapture { "capture" };
 
     juce::String mimeTypeFor (const juce::String& path)
     {
@@ -91,7 +92,9 @@ juce::WebBrowserComponent::Options DrenchedEditor::makeOptions()
         .withEventListener ("params",  [this] (const juce::var& v) { onParams (v); })
         .withEventListener ("gesture", [this] (const juce::var& v) { onGesture (v); })
         .withEventListener ("ui",      [this] (const juce::var& v) { onUi (v); })
-        .withEventListener ("loadIr",  [this] (const juce::var& v) { onLoadIr (v); });
+        .withEventListener ("loadIr",  [this] (const juce::var& v) { onLoadIr (v); })
+        .withEventListener ("startCapture",  [this] (const juce::var& v) { processor.startCapture (v); sendCaptureStatus(); })
+        .withEventListener ("cancelCapture", [this] (const juce::var&) { processor.cancelCapture(); sendCaptureStatus(); });
 
     auto initial = std::make_unique<juce::DynamicObject>();
     initial->setProperty ("params", parameterValues (false));
@@ -187,6 +190,9 @@ void DrenchedEditor::sendFullState()
     object->setProperty ("params", parameterValues (false));
     object->setProperty ("ui", uiValues());
     web.emitEventIfBrowserIsVisible (eventState, juce::var (object.release()));
+
+    lastCaptureStatus.clear();
+    sendCaptureStatus();
 }
 
 //==============================================================================
@@ -342,10 +348,28 @@ void DrenchedEditor::handleAsyncUpdate()
     web.emitEventIfBrowserIsVisible (eventState, juce::var (object.release()));
 }
 
+void DrenchedEditor::sendCaptureStatus()
+{
+    if (! pageReady || ! web.isShowing())
+        return;
+
+    // Only changes are sent, so an idle capture costs nothing.
+    const auto status = processor.captureStatus();
+    const auto text = juce::JSON::toString (status, true);
+
+    if (text == lastCaptureStatus)
+        return;
+
+    lastCaptureStatus = text;
+    web.emitEventIfBrowserIsVisible (eventCapture, status);
+}
+
 void DrenchedEditor::timerCallback()
 {
     if (! pageReady || ! web.isShowing())
         return;
+
+    sendCaptureStatus();
 
     const auto peaks = processor.takePeaks();
     const std::array<float, 4> fresh { peaks.inL, peaks.inR, peaks.outL, peaks.outR };

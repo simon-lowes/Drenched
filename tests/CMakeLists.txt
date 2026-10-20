@@ -6,7 +6,8 @@ add_executable(drenched_tests
     ImpulseResponseSynthTests.cpp
     ConvolutionReverbTests.cpp
     LivingTailTests.cpp
-    RecordedResponseTests.cpp)
+    RecordedResponseTests.cpp
+    SweepCaptureTests.cpp)
 
 target_link_libraries(drenched_tests PRIVATE drenched_engine Catch2::Catch2WithMain)
 

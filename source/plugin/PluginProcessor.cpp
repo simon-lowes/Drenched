@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "Settings.h"
 
 #include <drenched/Mix.h>
 #include <drenched/Spaces.h>
@@ -85,6 +86,7 @@ ImpulseResponseRequest DrenchedProcessor::currentRequest (double sampleRate) con
 void DrenchedProcessor::timerCallback()
 {
     cacheUiState();
+    pollCapture();
 
     if (const auto rate = preparedRate.load(); rate > 0.0)
         builder->request (currentRequest (rate));
@@ -228,6 +230,183 @@ void DrenchedProcessor::applyLoadedImpulseResponse (const juce::File& file, std:
     cacheUiState();
 }
 
+//==============================================================================
+void DrenchedProcessor::startCapture (const juce::var& options)
+{
+    if (captureStage == CaptureStage::playing || captureStage == CaptureStage::working)
+        return;
+
+    const auto rate = preparedRate.load();
+    const auto inputs = getTotalNumInputChannels();
+    const auto outputs = getTotalNumOutputChannels();
+
+    if (rate <= 0.0 || inputs < 1 || outputs < 1)
+    {
+        captureStage = CaptureStage::failed;
+        captureMessage = "This track has no audio input. Put Drenched on a track that records the room's microphone.";
+        return;
+    }
+
+    SweepSettings settings;
+    settings.sampleRate = rate;
+    settings.sweepSeconds = juce::jlimit (2.0, 30.0, static_cast<double> (options.getProperty ("sweepSeconds", 10.0)));
+    settings.tailSeconds = juce::jlimit (1.0, 30.0, static_cast<double> (options.getProperty ("tailSeconds", 6.0)));
+    settings.levelDb = juce::jlimit (-40.0f, -3.0f, static_cast<float> (options.getProperty ("levelDb", -12.0)));
+
+    const auto speakers = juce::jlimit (1, std::min (outputs, 2), static_cast<int> (options.getProperty ("speakers", 1)));
+
+    try
+    {
+        capture.prepare (std::make_shared<const SineSweep> (settings), speakers, std::min (inputs, 2));
+    }
+    catch (const std::exception&)
+    {
+        captureStage = CaptureStage::failed;
+        captureMessage = "There isn't enough memory for a capture this long. Try a shorter sweep.";
+        return;
+    }
+
+    captureInterrupted.store (false);
+    captureStage = CaptureStage::playing;
+    captureMessage = speakers == 2 ? "Playing the sweep from the left speaker, then the right." : "Playing the sweep from the left speaker.";
+    capture.start();
+}
+
+void DrenchedProcessor::cancelCapture()
+{
+    if (captureStage != CaptureStage::playing)
+        return;
+
+    capture.cancel();
+}
+
+juce::var DrenchedProcessor::captureStatus() const
+{
+    static constexpr const char* stages[] { "idle", "playing", "working", "failed" };
+
+    auto object = std::make_unique<juce::DynamicObject>();
+    object->setProperty ("stage", stages[static_cast<int> (captureStage)]);
+    object->setProperty ("progress", static_cast<double> (captureStage == CaptureStage::playing ? capture.progress() : 0.0f));
+    object->setProperty ("peakDb", static_cast<double> (juce::Decibels::gainToDecibels (capture.inputPeak(), -100.0f)));
+    object->setProperty ("message", captureMessage);
+    return juce::var (object.release());
+}
+
+void DrenchedProcessor::pollCapture()
+{
+    if (captureStage != CaptureStage::playing)
+        return;
+
+    const auto recorderState = capture.state();
+
+    if (recorderState == CaptureRecorder::State::cancelled)
+    {
+        captureStage = CaptureStage::idle;
+        captureMessage = "Capture stopped.";
+        return;
+    }
+
+    if (recorderState != CaptureRecorder::State::finished)
+    {
+        if (recorderState == CaptureRecorder::State::idle && captureInterrupted.exchange (false))
+        {
+            captureStage = CaptureStage::failed;
+            captureMessage = "The audio settings changed during the capture. Please capture again.";
+        }
+
+        return;
+    }
+
+    captureStage = CaptureStage::working;
+    captureMessage = "Working out the impulse response.";
+
+    std::weak_ptr<int> alive = lifetime;
+    const auto peak = capture.inputPeak();
+
+    loader.addJob ([this, alive, peak]
+    {
+        juce::String error;
+        juce::File file;
+
+        if (peak >= 0.999f)
+            error = "The microphone clipped. Turn the speaker or the mic gain down and capture again.";
+        else if (peak < 1.0e-4f)
+            error = "The microphone heard almost nothing. Check this track's input, then turn the speaker or mic gain up.";
+
+        if (error.isEmpty())
+        {
+            try
+            {
+                const auto& sweep = *capture.sweep();
+                file = writeCapture (deconvolveCapture (sweep, capture.recordings(), capture.speakers()), sweep.settings().sampleRate);
+
+                if (file == juce::File())
+                    error = "The capture couldn't be saved in " + settings::capturesFolder().getFullPathName() + ".";
+            }
+            catch (const std::exception&)
+            {
+                error = "There isn't enough memory to work out this capture. Try a shorter sweep.";
+            }
+        }
+
+        juce::MessageManager::callAsync ([this, alive, file, error]
+        {
+            if (alive.expired())
+                return;
+
+            if (error.isNotEmpty())
+            {
+                captureStage = CaptureStage::failed;
+                captureMessage = error;
+                return;
+            }
+
+            captureStage = CaptureStage::idle;
+            captureMessage = "Saved as " + file.getFileName() + " in " + file.getParentDirectory().getFullPathName() + ".";
+            loadImpulseResponseAsync (file);
+        });
+    });
+}
+
+juce::File DrenchedProcessor::writeCapture (const std::vector<std::vector<float>>& channels, double sampleRate)
+{
+    const auto folder = settings::capturesFolder();
+
+    if (! folder.createDirectory())
+        return {};
+
+    const auto file = folder.getNonexistentChildFile ("Capture " + juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H-%M-%S"),
+                                                      ".wav", false);
+
+    std::unique_ptr<juce::OutputStream> stream = file.createOutputStream();
+
+    if (stream == nullptr)
+        return {};
+
+    juce::WavAudioFormat wav;
+    const auto options = juce::AudioFormatWriterOptions{}
+                             .withSampleRate (sampleRate)
+                             .withNumChannels (static_cast<int> (channels.size()))
+                             .withBitsPerSample (32)
+                             .withSampleFormat (juce::AudioFormatWriterOptions::SampleFormat::floatingPoint);
+
+    auto writer = wav.createWriterFor (stream, options);
+
+    if (writer == nullptr)
+        return {};
+
+    std::vector<const float*> pointers;
+
+    for (const auto& c : channels)
+        pointers.push_back (c.data());
+
+    if (! writer->writeFromFloatArrays (pointers.data(), static_cast<int> (pointers.size()), static_cast<int> (channels.front().size())))
+        return {};
+
+    writer.reset();
+    return file;
+}
+
 void DrenchedProcessor::restoreImpulseResponse()
 {
     const auto path = getUiState().getProperty (UiIDs::irPath, "").toString();
@@ -323,6 +502,14 @@ bool DrenchedProcessor::isBusesLayoutSupported (const BusesLayout& layouts) cons
 
 void DrenchedProcessor::prepareToPlay (double sampleRate, int)
 {
+    // A capture can't carry on across new audio settings: the audio thread is stopped now,
+    // so the take is dropped and the message thread says why.
+    if (capture.state() == CaptureRecorder::State::running)
+    {
+        capture.reset();
+        captureInterrupted.store (true);
+    }
+
     reverb.prepare (sampleRate);
     preparedRate.store (sampleRate);
     cacheUiState();
@@ -349,10 +536,6 @@ void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     const auto numOutputs = getTotalNumOutputChannels();
     const auto numSamples = buffer.getNumSamples();
 
-    // Mono in, stereo out: copy the input to the second channel.
-    for (auto channel = numInputs; channel < numOutputs; ++channel)
-        buffer.copyFrom (channel, 0, buffer, 0, 0, numSamples);
-
     const auto notePeak = [this, &buffer, numSamples, numOutputs] (size_t slot)
     {
         for (int channel = 0; channel < std::min (numOutputs, 2); ++channel)
@@ -367,6 +550,18 @@ void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             {}
         }
     };
+
+    // While capturing a space, the outputs play only the sweep.
+    if (capture.process (buffer.getArrayOfReadPointers(), numInputs, buffer.getArrayOfWritePointers(), numOutputs,
+                         static_cast<size_t> (numSamples)))
+    {
+        notePeak (2);
+        return;
+    }
+
+    // Mono in, stereo out: copy the input to the second channel.
+    for (auto channel = numInputs; channel < numOutputs; ++channel)
+        buffer.copyFrom (channel, 0, buffer, 0, 0, numSamples);
 
     notePeak (0);
 

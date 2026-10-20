@@ -6,6 +6,7 @@
 #include <drenched/KernelBuilder.h>
 #include <drenched/RecordedResponse.h>
 #include <drenched/Spaces.h>
+#include <drenched/SweepCapture.h>
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -67,6 +68,19 @@ public:
         and room size, or whether its file is missing. Void when none is loaded. */
     juce::var impulseResponseInfo();
 
+    /** Measures a space: plays a sine sweep from the outputs (the left one, or left then
+        right) while recording the inputs, then works out the impulse response, saves it as a
+        WAV file in the captures folder and loads it like any other file. options: speakers
+        (1 or 2), sweepSeconds, tailSeconds and levelDb. Message thread only. */
+    void startCapture (const juce::var& options);
+
+    /** Stops a capture that is playing. Message thread only. */
+    void cancelCapture();
+
+    /** Where a capture is up to, for the interface: stage (idle, playing, working or
+        failed), progress from 0 to 1, the loudest input so far in dB, and a message. */
+    juce::var captureStatus() const;
+
     /** Peak input and output levels since the last call, in linear gain, then reset to zero.
         Read from the message thread by the editor's meters. */
     struct Peaks { float inL, inR, outL, outR; };
@@ -90,6 +104,13 @@ private:
     void restoreImpulseResponse();
 
     void applyLoadedImpulseResponse (const juce::File& file, std::shared_ptr<const RecordedResponse> loaded, const juce::String& error);
+
+    /** Notices a capture that has finished playing, then deconvolves and saves it on the
+        loader thread. Message thread. */
+    void pollCapture();
+
+    /** Writes a captured impulse response as a 32-bit float WAV file in the captures folder. */
+    static juce::File writeCapture (const std::vector<std::vector<float>>& channels, double sampleRate);
 
     juce::AudioProcessorValueTreeState state;
 
@@ -127,6 +148,15 @@ private:
 
     juce::ThreadPool loader { juce::ThreadPoolOptions{}.withThreadName ("Drenched IR loader").withNumberOfThreads (1) };
     std::shared_ptr<int> lifetime = std::make_shared<int> (0); // guards callbacks posted by the loader
+
+    // Capturing a space. The recorder runs in the audio callback; the stage and message
+    // are the message thread's. While working, the loader thread reads the recordings, so
+    // no new capture starts until it is done.
+    enum class CaptureStage { idle, playing, working, failed };
+    CaptureRecorder capture;
+    CaptureStage captureStage = CaptureStage::idle;
+    juce::String captureMessage;
+    std::atomic<bool> captureInterrupted { false };
 
     ConvolutionReverb reverb;
     std::unique_ptr<KernelBuilder> builder; // after reverb: stops before it is destroyed
