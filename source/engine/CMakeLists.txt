@@ -6,7 +6,8 @@ add_library(drenched_engine STATIC
     src/PartitionedConvolver.cpp
     src/ImpulseResponseSynth.cpp
     src/ConvolutionReverb.cpp
-    src/KernelBuilder.cpp)
+    src/KernelBuilder.cpp
+    src/LivingTail.cpp)
 
 target_include_directories(drenched_engine PUBLIC include)
 

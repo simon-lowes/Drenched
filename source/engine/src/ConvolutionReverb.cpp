@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <numbers>
 
 namespace drenched
 {
@@ -35,11 +37,12 @@ bool differs (float a, float b) noexcept { return std::abs (a - b) > 1.0e-4f; }
 } // namespace
 
 //==============================================================================
-TrueStereoKernel::TrueStereoKernel (const ImpulseResponseSet& responses)
+TrueStereoKernel::TrueStereoKernel (const ImpulseResponseSet& responses, const LivingTailDesign& tail)
     : rate (responses.sampleRate),
       irLength (responses.length()),
       fromLeft (pathsFrom (responses, ImpulseResponseSet::leftToLeft, ImpulseResponseSet::leftToRight)),
-      fromRight (pathsFrom (responses, ImpulseResponseSet::rightToLeft, ImpulseResponseSet::rightToRight))
+      fromRight (pathsFrom (responses, ImpulseResponseSet::rightToLeft, ImpulseResponseSet::rightToRight)),
+      tailDesign (tail)
 {
 }
 
@@ -68,7 +71,8 @@ void TrueStereoKernel::process (const float* inL, const float* inR, float* outL,
 //==============================================================================
 ConvolutionReverb::ConvolutionReverb()
 {
-    for (auto* buffer : { &dryL, &dryR, &wetInL, &wetInR, &wetL, &wetR, &tmpL, &tmpR, &scratchL, &scratchR, &zeros })
+    for (auto* buffer : { &dryL, &dryR, &wetInL, &wetInR, &wetL, &wetR, &tmpL, &tmpR, &scratchL, &scratchR, &zeros,
+                          &tailInL, &tailInR, &tailL, &tailR })
         buffer->assign (chunkSize, 0.0f);
 
     prepare (sampleRate);
@@ -116,6 +120,16 @@ void ConvolutionReverb::prepare (double newSampleRate)
     releaseCoef = onePole (sampleRate, 0.25);
     fadeLength = static_cast<std::size_t> (0.04 * sampleRate);
 
+    inputCoef = onePole (sampleRate, 0.01);
+    freezeStep = static_cast<float> (1.0 / (0.15 * sampleRate));
+    returnStep = static_cast<float> (1.0 / (0.05 * sampleRate));
+
+    livingTail.prepare (sampleRate);
+
+    if (current != nullptr)
+        livingTail.setDesign (current->livingTail());
+
+    tailDesignPending = false;
     filtersValid = false;
     reset();
 }
@@ -131,6 +145,19 @@ void ConvolutionReverb::reset() noexcept
     for (auto* k : { current, ringing, fading })
         if (k != nullptr)
             k->reset();
+
+    // A cleared room has nothing to hold; the next block re-freezes if asked.
+    livingTail.reset();
+    livingTail.setFrozen (false, crossover);
+    frozen = false;
+    convInputGain = tailInputGain = 1.0f;
+    convPosition = 1.0f;
+    tailPosition = 0.0f;
+
+    if (tailDesignPending && current != nullptr)
+        livingTail.setDesign (current->livingTail());
+
+    tailDesignPending = false;
 
     for (auto* bank : { &lowCut, &highCut, &lowShelf, &highShelf })
         for (auto& f : *bank)
@@ -225,6 +252,13 @@ void ConvolutionReverb::installIncoming() noexcept
     ringRemaining = ringing != nullptr ? ringing->length() : 0;
     current = fresh;
 
+    // The living tail follows the new room at once if it is silent. While it
+    // is holding a freeze it keeps the old room until it has faded.
+    if (tailAudible())
+        tailDesignPending = true;
+    else
+        livingTail.setDesign (current->livingTail());
+
     ready.store (true, std::memory_order_relaxed);
 }
 
@@ -254,6 +288,28 @@ void ConvolutionReverb::updateFilters (const ReverbControls& c) noexcept
 
     lastFilterControls = c;
     filtersValid = true;
+}
+
+void ConvolutionReverb::updateFreeze (const ReverbControls& c) noexcept
+{
+    const auto xover = std::clamp (c.crossoverHz, 20.0f, 20000.0f);
+
+    if (c.freeze != frozen)
+    {
+        frozen = c.freeze;
+        crossover = xover;
+        livingTail.setFrozen (frozen, crossover);
+        releaseStep = static_cast<float> (1.0 / (static_cast<double> (livingTail.releaseSeconds()) * sampleRate));
+    }
+    else if (frozen && differs (xover, crossover))
+    {
+        crossover = xover;
+        livingTail.setFrozen (true, crossover);
+    }
+    else
+    {
+        crossover = xover;
+    }
 }
 
 void ConvolutionReverb::runKernels (std::size_t n) noexcept
@@ -313,6 +369,7 @@ void ConvolutionReverb::process (float* left, float* right, std::size_t numSampl
 {
     installIncoming();
     updateFilters (c);
+    updateFreeze (c);
 
     const auto mix = equalPowerMix (c.mix);
     const auto targetDelay = static_cast<float> (std::clamp (static_cast<double> (c.predelayMs) * 0.001, 0.0, maxPredelaySeconds) * sampleRate);
@@ -355,7 +412,53 @@ void ConvolutionReverb::process (float* left, float* right, std::size_t numSampl
             delayWrite = (delayWrite + 1) & delayMask;
         }
 
+        // While frozen, new sound reaches neither the convolution nor the
+        // tail. The tail starts following the input again only once a
+        // released freeze has faded out completely.
+        const auto convInputTarget = frozen ? 0.0f : 1.0f;
+        const auto tailInputTarget = tailAudible() ? 0.0f : 1.0f;
+
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            convInputGain = convInputTarget + inputCoef * (convInputGain - convInputTarget);
+            tailInputGain = tailInputTarget + inputCoef * (tailInputGain - tailInputTarget);
+            tailInL[i] = wetInL[i] * tailInputGain;
+            tailInR[i] = wetInR[i] * tailInputGain;
+            wetInL[i] *= convInputGain;
+            wetInR[i] *= convInputGain;
+        }
+
         runKernels (n);
+        livingTail.process (tailInL.data(), tailInR.data(), tailL.data(), tailR.data(), n);
+
+        // Crossfade between the convolution and the living tail.
+        if (frozen || tailPosition > 0.0f || convPosition < 1.0f)
+        {
+            const auto convTarget = frozen ? 0.0f : 1.0f;
+            const auto tailTarget = frozen ? 1.0f : 0.0f;
+            const auto convStep = frozen ? freezeStep : returnStep;
+            const auto tailStep = frozen ? freezeStep : releaseStep;
+            constexpr auto quarter = static_cast<float> (std::numbers::pi / 2.0);
+
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                convPosition = convPosition < convTarget ? std::min (convTarget, convPosition + convStep)
+                                                         : std::max (convTarget, convPosition - convStep);
+                tailPosition = tailPosition < tailTarget ? std::min (tailTarget, tailPosition + tailStep)
+                                                         : std::max (tailTarget, tailPosition - tailStep);
+
+                const auto gc = std::sin (convPosition * quarter);
+                const auto gt = std::sin (tailPosition * quarter);
+                wetL[i] = wetL[i] * gc + tailL[i] * gt;
+                wetR[i] = wetR[i] * gc + tailR[i] * gt;
+            }
+
+            if (! tailAudible() && tailDesignPending && current != nullptr)
+            {
+                livingTail.setDesign (current->livingTail());
+                tailDesignPending = false;
+            }
+        }
 
         // Wet tone.
         for (std::size_t ch = 0; ch < 2; ++ch)
@@ -421,7 +524,8 @@ void ConvolutionReverb::process (float* left, float* right, std::size_t numSampl
     if (std::abs (duckEnvelope) < 1.0e-20f)
         duckEnvelope = 0.0f;
 
-    tail.store ((current != nullptr ? static_cast<double> (current->length()) / sampleRate : 0.0) + maxPredelaySeconds * 0.25,
+    tail.store (frozen ? std::numeric_limits<double>::infinity()
+                       : (current != nullptr ? static_cast<double> (current->length()) / sampleRate : 0.0) + maxPredelaySeconds * 0.25,
                 std::memory_order_relaxed);
 }
 

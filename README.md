@@ -7,9 +7,10 @@ Status: **engine.** The plugin builds and loads in VST3, AU, CLAP and
 standalone form with the real interface (one set of controls, a decay-by-
 frequency graph you drag, a space browser, Studio and Stage views, twelve
 user-selectable looks) and a working zero-latency true-stereo convolution
-engine. Until the space library is captured, each space's impulse response
-is synthesised from its dimensions and the decay graph. Freeze and the
-crossover wait for the hybrid tail.
+engine with a living tail: a feedback delay network fitted to each room
+that powers Freeze (Crossover sets where the frozen room stops holding, so
+the bass keeps fading). Until the space library is captured, each space's
+impulse response is synthesised from its dimensions and the decay graph.
 
 ## Building
 

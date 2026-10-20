@@ -37,7 +37,7 @@ var P={
  dist:{l:'Distance',min:0,max:100,st:1,help:'moves the listener away from the source.'},
  output:{l:'Output',min:-24,max:12,st:0.1,help:'trims the plugin output.'},
  preSync:{l:'Pre-delay sync',min:0,max:1,st:1,help:'locks pre-delay to the host tempo.'},
- xover:{l:'Crossover',min:100,max:1000,st:1,log:1,help:'splits the tail into a low and a high half.'},
+ xover:{l:'Crossover',min:100,max:1000,st:1,log:1,help:'sets where Freeze stops holding. Below it, a frozen room keeps fading so the bass never builds up.'},
  locut:{l:'Wet low cut',min:20,max:1000,st:1,log:1,help:'removes low end from the wet signal.'},
  hicut:{l:'Wet high cut',min:1000,max:20000,st:10,log:1,help:'removes top end from the wet signal.'},
  width:{l:'Width',min:0,max:200,st:1,help:'narrows or widens the wet signal.'},

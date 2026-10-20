@@ -2,6 +2,7 @@
 
 #include "drenched/Biquad.h"
 #include "drenched/ImpulseResponseSynth.h"
+#include "drenched/LivingTail.h"
 #include "drenched/PartitionedConvolver.h"
 
 #include <array>
@@ -14,16 +15,18 @@ namespace drenched
 {
 
 /** A true-stereo convolution kernel built from one impulse response set:
-    left input to both outputs, right input to both outputs. Building it
-    allocates and transforms the responses, so it is made on a background
-    thread and handed to the audio thread ready to run. */
+    left input to both outputs, right input to both outputs, plus the living
+    tail fitted to the same room. Building it allocates and transforms the
+    responses, so it is made on a background thread and handed to the audio
+    thread ready to run. */
 class TrueStereoKernel
 {
 public:
-    explicit TrueStereoKernel (const ImpulseResponseSet& responses);
+    explicit TrueStereoKernel (const ImpulseResponseSet& responses, const LivingTailDesign& tail = {});
 
     double sampleRate() const noexcept { return rate; }
     std::size_t length() const noexcept { return irLength; }
+    const LivingTailDesign& livingTail() const noexcept { return tailDesign; }
     void reset() noexcept;
 
     /** Overwrites outL and outR. scratchL and scratchR are workspace of the
@@ -35,6 +38,7 @@ private:
     double rate;
     std::size_t irLength;
     PartitionedConvolver fromLeft, fromRight;
+    LivingTailDesign tailDesign;
 };
 
 /** Block-rate controls for the wet path and the mix. */
@@ -49,10 +53,12 @@ struct ReverbControls
     float monoBelowHz = 0.0f;    // 0 = off
     float ducking = 0.0f;        // 0 .. 1
     float outputGain = 1.0f;     // linear
+    bool freeze = false;         // the room sustains for ever; new sound stays dry
+    float crossoverHz = 320.0f;  // below this a frozen tail keeps decaying
 };
 
-/** The complete reverb: pre-delay, true-stereo convolution, wet tone,
-    width, ducking and the dry/wet mix. Zero latency.
+/** The complete reverb: pre-delay, true-stereo convolution, the living
+    tail, wet tone, width, ducking and the dry/wet mix. Zero latency.
 
     New kernels arrive from a background thread through submit(). The audio
     thread swaps them in without a gap: the outgoing kernel stops receiving
@@ -60,6 +66,12 @@ struct ReverbControls
     while sound is playing never cuts off what is already reverberating.
     Kernels the audio thread is finished with go back through takeRetired()
     to be freed off the audio thread.
+
+    The living tail runs alongside, following the same input. Freezing
+    crossfades from the convolution to the tail, which then holds the room
+    for ever while new input stays out of the wet path. Releasing lets the
+    tail die away at the room's own decay while the convolution takes new
+    input again.
 
     process() and reset() are real-time safe. prepare() allocates. */
 class ConvolutionReverb
@@ -90,7 +102,8 @@ public:
         longer needs, or null. */
     std::unique_ptr<TrueStereoKernel> takeRetired() noexcept;
 
-    /** The current tail in seconds (impulse response plus pre-delay), for the host. */
+    /** The current tail in seconds (impulse response plus pre-delay), for
+        the host; infinite while frozen. */
     double tailSeconds() const noexcept { return tail.load (std::memory_order_relaxed); }
 
     /** True once a kernel for the current sample rate is running. */
@@ -101,6 +114,8 @@ private:
     void retire (TrueStereoKernel* kernel) noexcept;
     void updateFilters (const ReverbControls& controls) noexcept;
     void runKernels (std::size_t numSamples) noexcept;
+    void updateFreeze (const ReverbControls& controls) noexcept;
+    bool tailAudible() const noexcept { return frozen || tailPosition > 0.0f; }
 
     double sampleRate = 48000.0;
 
@@ -137,8 +152,17 @@ private:
     ReverbControls lastFilterControls;
     bool filtersValid = false;
 
+    // Living tail and freeze. Positions run 0..1 and become equal-power gains.
+    LivingTail livingTail;
+    bool frozen = false, tailDesignPending = false;
+    float crossover = 320.0f;
+    float convInputGain = 1.0f, tailInputGain = 1.0f, inputCoef = 0.0f;
+    float convPosition = 1.0f, tailPosition = 0.0f;
+    float freezeStep = 0.0f, returnStep = 0.0f, releaseStep = 0.0f;
+
     // Workspace, chunkSize each.
-    std::vector<float> dryL, dryR, wetInL, wetInR, wetL, wetR, tmpL, tmpR, scratchL, scratchR, zeros;
+    std::vector<float> dryL, dryR, wetInL, wetInR, wetL, wetR, tmpL, tmpR, scratchL, scratchR, zeros,
+        tailInL, tailInR, tailL, tailR;
 };
 
 } // namespace drenched
