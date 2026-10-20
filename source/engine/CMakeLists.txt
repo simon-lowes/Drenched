@@ -2,11 +2,22 @@
 # tested, benchmarked and reused outside the plugin.
 
 add_library(drenched_engine STATIC
-    src/DirectConvolver.cpp)
+    src/DirectConvolver.cpp
+    src/PartitionedConvolver.cpp
+    src/ImpulseResponseSynth.cpp
+    src/ConvolutionReverb.cpp
+    src/KernelBuilder.cpp)
 
 target_include_directories(drenched_engine PUBLIC include)
 
 target_compile_features(drenched_engine PUBLIC cxx_std_20)
+
+target_link_libraries(drenched_engine PRIVATE drenched_pffft)
+
+find_package(Threads REQUIRED)
+target_link_libraries(drenched_engine PUBLIC Threads::Threads)
+
+set_target_properties(drenched_engine PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 if(MSVC)
     target_compile_options(drenched_engine PRIVATE /W4 /permissive-)
