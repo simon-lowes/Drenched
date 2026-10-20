@@ -11,5 +11,13 @@ database_name = "drenched-licences"
 database_id = "set-when-created" # from: npx wrangler d1 create drenched-licences
 
 # Secrets, set with `npx wrangler secret put <NAME>`, never in this file:
-#   SIGNING_KEY  the private signing key (JWK) from scripts/make-keys.mjs
-#   ADMIN_TOKEN  a long random string for the /v1/admin routes
+#   SIGNING_KEY            the private signing key (JWK) from scripts/make-keys.mjs
+#   ADMIN_TOKEN            a long random string for the /v1/admin routes
+#   PADDLE_WEBHOOK_SECRET  the secret of the Paddle notification destination
+#   PADDLE_API_KEY         a Paddle API key that can read customers
+#   RESEND_API_KEY         a Resend API key for the licence emails
+
+[vars]
+PADDLE_API_BASE = "https://api.paddle.com"   # https://sandbox-api.paddle.com while testing
+PADDLE_PRODUCT_ID = ""                       # Drenched's product (pro_...); empty counts every item
+MAIL_FROM = ""                               # for example "Drenched <licences@your-domain>"

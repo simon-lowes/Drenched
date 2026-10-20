@@ -21,6 +21,8 @@ button{font:inherit;font-weight:600;border:0;border-radius:6px;padding:10px 18px
 button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
 .err{color:var(--err);margin:0 0 16px}
 .out{margin-bottom:20px}
+.key{font:600 22px/1.4 ui-monospace,"SF Mono",Consolas,monospace;letter-spacing:.04em;color:var(--tx);margin:4px 0}
+a{color:var(--ac)}
 `;
 
 function page (title, body)
@@ -49,4 +51,23 @@ ${error ? `<p class="err" role="alert">${escape (error)}</p>` : ''}
 <input id="machine" name="machine" autocomplete="off" autocapitalize="characters" spellcheck="false" required value="${escape (machine)}">
 <button type="submit">Get activation code</button>
 </form>`);
+}
+
+/** After checkout: the buyer's licence numbers, or a short wait while the sale is recorded. */
+export function thanksPage ({ keys = [], transaction = '' } = {})
+{
+    if (keys.length === 0)
+    {
+        return page ('Thank you for buying Drenched', `<meta http-equiv="refresh" content="4">
+<h1>Thank you for buying Drenched</h1>
+<p role="status">Your licence number is being made. This page shows it in a moment, and it is on its way to your email too.</p>`);
+    }
+
+    const many = keys.length > 1;
+
+    return page ('Your Drenched licence', `<h1>Thank you for buying Drenched</h1>
+<p>Your licence number${many ? 's' : ''}, also sent to your email:</p>
+<div class="out">${keys.map ((k) => `<p class="key">${escape (k)}</p>`).join ('')}</div>
+<p>In Drenched, click the trial notice at the bottom of the window (or choose Licence in the space menu) and enter ${many ? 'a number' : 'it'}. Each licence works on up to three computers, and keeps working offline after activating once.</p>
+<p>No internet on the studio computer? Use <a href="/activate">offline activation</a>.</p>`);
 }

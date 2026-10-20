@@ -12,7 +12,7 @@ export function d1Store (db)
 
     const fromRow = (row) => row && {
         key: row.key, name: row.name, email: row.email, created: row.created,
-        revoked: !! row.revoked, orderRef: row.order_ref ?? null, note: row.note ?? null,
+        revoked: !! row.revoked, orderRef: row.order_ref ?? null, emailed: row.emailed ?? null, note: row.note ?? null,
     };
 
     return {
@@ -37,6 +37,16 @@ export function d1Store (db)
             await run ('UPDATE licences SET name = ?2, email = ?3, revoked = ?4, note = ?5 WHERE key = ?1', key,
                        name ?? current.name, email ?? current.email, (revoked ?? current.revoked) ? 1 : 0, note ?? current.note);
             return true;
+        },
+
+        async listByOrder (orderRef)
+        {
+            return (await all ('SELECT * FROM licences WHERE order_ref = ?1 ORDER BY created, key', orderRef)).map (fromRow);
+        },
+
+        async markEmailed (key, date)
+        {
+            await run ('UPDATE licences SET emailed = ?2 WHERE key = ?1', key, date);
         },
 
         async listActivations (key)
@@ -90,7 +100,26 @@ export function memoryStore()
         async getLicence (key)
         {
             const l = licences.get (key);
-            return l ? { ...l } : null;
+
+            if (! l)
+                return null;
+
+            const { order, ...copy } = l;
+            return copy;
+        },
+
+        async listByOrder (orderRef)
+        {
+            return [...licences.values()].filter ((l) => l.orderRef === orderRef).sort ((a, b) => a.order - b.order)
+                                         .map (({ order, ...copy }) => copy);
+        },
+
+        async markEmailed (key, date)
+        {
+            const l = licences.get (key);
+
+            if (l)
+                l.emailed = date;
         },
 
         async createLicence ({ key, name, email, created, orderRef = null, note = null })
@@ -98,7 +127,7 @@ export function memoryStore()
             if (licences.has (key))
                 return false;
 
-            licences.set (key, { key, name, email, created, revoked: false, orderRef, note });
+            licences.set (key, { key, name, email, created, revoked: false, orderRef, emailed: null, note, order: licences.size });
             return true;
         },
 

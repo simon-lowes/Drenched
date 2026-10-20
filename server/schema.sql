@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS licences (
     email     TEXT NOT NULL,
     created   TEXT NOT NULL,              -- YYYY-MM-DD
     revoked   INTEGER NOT NULL DEFAULT 0, -- refunds and chargebacks
-    order_ref TEXT,                       -- the shop's order, for support
+    order_ref TEXT,                       -- the shop's transaction
+    emailed   TEXT,                       -- when the number was emailed to the buyer
     note      TEXT
 );
 

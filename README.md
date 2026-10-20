@@ -20,6 +20,13 @@ removed, saves the result in Documents/Drenched/Captures and loads it.
 Until the space library is captured, the bundled spaces'
 impulse responses are synthesised from their dimensions and the decay graph.
 
+Licensing: a 14-day trial, then a licence number (sold through Paddle)
+activates up to three computers. Activation is online once; the signed code
+that comes back is checked offline from then on, and a computer with no
+internet can be activated from another device. After the trial without a
+licence the reverb is muted and the dry signal still plays. The activation
+server is in `server/` (see its README).
+
 ## Building
 
 Requirements: CMake 3.25+, a C++20 compiler (Xcode 15+, Visual Studio 2022,
@@ -49,14 +56,17 @@ cmake -S . -B build -DJUCE_WEBVIEW2_PACKAGE_LOCATION=%cd%/packages
 | `source/engine/` | The DSP engine: plain C++20, no JUCE, unit tested |
 | `source/plugin/` | The JUCE plugin: processor, parameters, editor |
 | `source/ui/` | The interface: one web page, twelve skins, embedded in the plugin |
-| `tests/` | Catch2 unit tests for the engine |
+| `source/licence/` | Licence numbers and activation codes: plain C++20, no JUCE |
+| `server/` | The activation server (Cloudflare Worker) and its tests |
+| `tests/` | Catch2 unit tests for the engine and licences |
 | `cmake/` | Pinned third-party dependencies |
 
 ## The interface
 
 The editor is a JUCE web view (WKWebView on macOS, WebView2 on Windows,
 WebKitGTK on Linux) showing `source/ui/index.html`, served from the plugin
-binary. Nothing is fetched from the network.
+binary. Nothing is fetched from the network; only activating a licence
+talks to the activation server.
 
 - `js/engine.js` holds the shared model and the twelve compositions, one
   function per skin. Every skin draws the same state: the space, the eight

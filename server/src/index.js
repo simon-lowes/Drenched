@@ -3,7 +3,9 @@
 // codes the plugin checks offline. See README.md for the API and deployment.
 
 import { COMPUTERS_PER_LICENCE, activationCode, cleanName, importSigningKey, makeKey, parseKey, parseMachineCode } from './licence.js';
-import { activationPage } from './pages.js';
+import { licenceEmail, resendMailer } from './mail.js';
+import { copiesIn, fetchCustomer, verifySignature } from './paddle.js';
+import { activationPage, thanksPage } from './pages.js';
 import { d1Store } from './stores.js';
 
 /** Computers a licence may release (to make room for another) in any 365 days. */
@@ -67,9 +69,95 @@ async function readBody (request)
 }
 
 /** The app, with everything it depends on passed in so the tests can run it. */
-export function createApp ({ store, signingKey, adminToken = null, today = () => new Date().toISOString().slice (0, 10),
+export function createApp ({ store, signingKey, adminToken = null, paddle = null, mailer = null,
+                             today = () => new Date().toISOString().slice (0, 10),
+                             now = () => Date.now() / 1000,
                              randomBytes = (n) => crypto.getRandomValues (new Uint8Array (n)) })
 {
+    /** A new licence with a number no other licence has. */
+    async function issue (fields)
+    {
+        for (;;)
+        {
+            const key = await makeKey (randomBytes (15));
+
+            if (await store.createLicence ({ key, created: today(), ...fields }))
+                return key;
+        }
+    }
+
+    /** Paddle's webhook: a sale issues and emails licence numbers, a refund or chargeback withdraws them. */
+    async function paddleEvent (request)
+    {
+        const raw = await request.text();
+
+        if (! paddle?.webhookSecret || ! await verifySignature (request.headers.get ('paddle-signature'), raw, paddle.webhookSecret, now()))
+            return json (401, { error: 'bad-signature' });
+
+        const event = JSON.parse (raw);
+        const data = event.data ?? {};
+
+        if (event.event_type === 'transaction.completed')
+        {
+            const copies = copiesIn (data, paddle.productId);
+
+            if (copies === 0 || ! data.id)
+                return json (200, { ok: true, licences: 0 });
+
+            // Paddle retries until it gets a 200, so each step can run again safely.
+            let licences = await store.listByOrder (data.id);
+
+            if (licences.length < copies)
+            {
+                const customer = paddle.apiKey && data.customer_id
+                    ? await fetchCustomer (data.customer_id, paddle)
+                    : { name: '', email: data.custom_data?.email ?? '' };
+
+                for (let i = licences.length; i < copies; ++i)
+                    await issue ({ name: cleanName (customer.name), email: customer.email, orderRef: data.id });
+
+                licences = await store.listByOrder (data.id);
+            }
+
+            const unsent = licences.filter ((l) => ! l.emailed);
+
+            if (mailer && unsent.length > 0 && licences[0].email)
+            {
+                await mailer ({ to: licences[0].email, ...licenceEmail ({ name: licences[0].name, keys: licences.map ((l) => l.key) }) });
+
+                for (const l of licences)
+                    await store.markEmailed (l.key, today());
+            }
+
+            return json (200, { ok: true, licences: licences.length });
+        }
+
+        const adjustment = event.event_type === 'adjustment.created' || event.event_type === 'adjustment.updated';
+
+        if (adjustment && data.status === 'approved' && (data.action === 'refund' || data.action === 'chargeback') && data.transaction_id)
+        {
+            const licences = await store.listByOrder (data.transaction_id);
+
+            for (const l of licences)
+                await store.updateLicence (l.key, { revoked: true, note: `${data.action} ${data.id ?? ''}`.trim() });
+
+            return json (200, { ok: true, revoked: licences.length });
+        }
+
+        // The bank found for us after all.
+        if (adjustment && data.status === 'approved' && data.action === 'chargeback_reverse' && data.transaction_id)
+        {
+            const licences = await store.listByOrder (data.transaction_id);
+
+            for (const l of licences)
+                await store.updateLicence (l.key, { revoked: false, note: `chargeback reversed ${data.id ?? ''}`.trim() });
+
+            return json (200, { ok: true, restored: licences.length });
+        }
+
+        return json (200, { ok: true });
+    }
+
     /** Activates a computer: { code, name } or { status, error }. */
     async function activate (typedLicence, typedMachine)
     {
@@ -139,14 +227,8 @@ export function createApp ({ store, signingKey, adminToken = null, today = () =>
             if (! body || typeof body.email !== 'string' || ! body.email.includes ('@'))
                 return failure (400, 'bad-request');
 
-            for (;;)
-            {
-                const key = await makeKey (randomBytes (15));
-
-                if (await store.createLicence ({ key, name: cleanName (body.name), email: body.email.trim(), created: today(),
-                                                 orderRef: body.orderRef ?? null, note: body.note ?? null }))
-                    return json (201, { licence: key });
-            }
+            const key = await issue ({ name: cleanName (body.name), email: body.email.trim(), orderRef: body.orderRef ?? null, note: body.note ?? null });
+            return json (201, { licence: key });
         }
 
         const match = path.match (/^\/v1\/admin\/licences\/([^/]+)(\/reset)?$/);
@@ -205,11 +287,21 @@ export function createApp ({ store, signingKey, adminToken = null, today = () =>
             if (path === '/v1/deactivate' && request.method === 'POST')
             {
                 const body = await readBody (request);
-                return body ? deactivate (body) : failure (400, 'bad-request');
+                return body ? await deactivate (body) : failure (400, 'bad-request');
             }
 
             if (path.startsWith ('/v1/admin/'))
-                return admin (request, path);
+                return await admin (request, path);
+
+            if (path === '/v1/paddle' && request.method === 'POST')
+                return await paddleEvent (request);
+
+            if (path === '/thanks' && request.method === 'GET')
+            {
+                const transaction = url.searchParams.get ('transaction') ?? '';
+                const licences = /^txn_[a-z0-9]{10,40}$/.test (transaction) ? await store.listByOrder (transaction) : [];
+                return html (200, thanksPage ({ keys: licences.filter ((l) => ! l.revoked).map ((l) => l.key), transaction }));
+            }
 
             if ((path === '/' || path === '/activate') && request.method === 'GET')
                 return html (200, activationPage());
@@ -243,7 +335,18 @@ export default {
         {
             cached = {
                 secret: env.SIGNING_KEY,
-                app: createApp ({ store: d1Store (env.DB), signingKey: importSigningKey (env.SIGNING_KEY), adminToken: env.ADMIN_TOKEN || null }),
+                app: createApp ({
+                    store: d1Store (env.DB),
+                    signingKey: importSigningKey (env.SIGNING_KEY),
+                    adminToken: env.ADMIN_TOKEN || null,
+                    paddle: env.PADDLE_WEBHOOK_SECRET ? {
+                        webhookSecret: env.PADDLE_WEBHOOK_SECRET,
+                        apiKey: env.PADDLE_API_KEY || null,
+                        apiBase: env.PADDLE_API_BASE || 'https://api.paddle.com',
+                        productId: env.PADDLE_PRODUCT_ID || null,
+                    } : null,
+                    mailer: env.RESEND_API_KEY && env.MAIL_FROM ? resendMailer ({ apiKey: env.RESEND_API_KEY, from: env.MAIL_FROM }) : null,
+                }),
             };
         }
 
