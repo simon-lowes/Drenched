@@ -30,3 +30,22 @@ if(DRENCHED_BUILD_TESTS)
         GIT_SHALLOW    TRUE)
     FetchContent_MakeAvailable(Catch2)
 endif()
+
+# PFFFT (BSD-style FFTPACK licence): the SIMD real FFT behind the partitioned
+# convolver. Only pffft.c and pffft_common.c are compiled; the project's own
+# CMakeLists (benchmarks, other FFT libraries) is deliberately not used.
+FetchContent_Declare(pffft
+    GIT_REPOSITORY https://github.com/marton78/pffft.git
+    GIT_TAG        aa16fd3db58de4ba5dae8b0438440bb9da46b6fa
+    SOURCE_SUBDIR  do-not-add-subdirectory)
+FetchContent_MakeAvailable(pffft)
+
+add_library(drenched_pffft STATIC
+    ${pffft_SOURCE_DIR}/src/pffft.c
+    ${pffft_SOURCE_DIR}/src/pffft_common.c)
+target_include_directories(drenched_pffft PUBLIC ${pffft_SOURCE_DIR}/include PRIVATE ${pffft_SOURCE_DIR}/include/pffft)
+target_compile_definitions(drenched_pffft PRIVATE _USE_MATH_DEFINES PUBLIC PFFFT_STATIC_DEFINE)
+set_target_properties(drenched_pffft PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if(MSVC)
+    target_compile_definitions(drenched_pffft PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()

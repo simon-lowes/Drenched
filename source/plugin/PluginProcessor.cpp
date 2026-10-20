@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 
 #include <drenched/Mix.h>
+#include <drenched/Spaces.h>
 
 #include <algorithm>
 #include <cmath>
@@ -15,8 +16,86 @@ DrenchedProcessor::DrenchedProcessor()
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       state (*this, nullptr, "DrenchedState", createParameterLayout())
 {
-    mixParam = state.getRawParameterValue (ParamIDs::mix);
-    outputParam = state.getRawParameterValue (ParamIDs::output);
+    const auto raw = [this] (const char* id) { return state.getRawParameterValue (id); };
+
+    params.mix = raw (ParamIDs::mix);
+    params.output = raw (ParamIDs::output);
+    params.predelay = raw (ParamIDs::predelay);
+    params.predelaySync = raw (ParamIDs::predelaySync);
+    params.size = raw (ParamIDs::size);
+    params.brightness = raw (ParamIDs::brightness);
+    params.earlyLate = raw (ParamIDs::earlyLate);
+    params.distance = raw (ParamIDs::distance);
+    params.wetLowCut = raw (ParamIDs::wetLowCut);
+    params.wetHighCut = raw (ParamIDs::wetHighCut);
+    params.width = raw (ParamIDs::width);
+    params.ducking = raw (ParamIDs::ducking);
+    params.monoBelow = raw (ParamIDs::monoBelow);
+
+    for (size_t band = 0; band < params.decay.size(); ++band)
+        params.decay[band] = raw (ParamIDs::decay[band]);
+
+    builder = std::make_unique<KernelBuilder> (reverb);
+    cacheUiState();
+    startTimerHz (20);
+}
+
+DrenchedProcessor::~DrenchedProcessor()
+{
+    stopTimer();
+    builder.reset();
+}
+
+void DrenchedProcessor::cacheUiState()
+{
+    auto ui = getUiState();
+    spaceIndex.store (juce::jlimit (0, static_cast<int> (bundledSpaces.size()) - 1, static_cast<int> (ui.getProperty (UiIDs::space, 0))));
+    listenerX.store (juce::jlimit (0.0f, 1.0f, static_cast<float> (static_cast<double> (ui.getProperty (UiIDs::listenerX, 0.5)))));
+}
+
+ImpulseResponseRequest DrenchedProcessor::currentRequest (double sampleRate) const
+{
+    ImpulseResponseRequest request;
+    request.sampleRate = sampleRate;
+    request.space = spaceIndex.load();
+    request.listenerX = listenerX.load();
+    request.sizePercent = params.size->load();
+    request.distancePercent = params.distance->load();
+    request.earlyLatePercent = params.earlyLate->load();
+
+    for (size_t band = 0; band < params.decay.size(); ++band)
+        request.decaySeconds[band] = params.decay[band]->load();
+
+    return request;
+}
+
+void DrenchedProcessor::timerCallback()
+{
+    cacheUiState();
+
+    if (const auto rate = preparedRate.load(); rate > 0.0)
+        builder->request (currentRequest (rate));
+}
+
+float DrenchedProcessor::predelayMs (float requested)
+{
+    if (params.predelaySync->load() < 0.5f)
+        return requested;
+
+    // Synced: snap to the nearest 64th note at the host tempo.
+    if (auto* head = getPlayHead())
+    {
+        if (const auto position = head->getPosition())
+        {
+            if (const auto bpm = position->getBpm(); bpm.hasValue() && *bpm > 1.0)
+            {
+                const auto step = static_cast<float> (60000.0 / *bpm / 16.0);
+                return juce::jlimit (0.0f, 1000.0f, std::round (requested / step) * step);
+            }
+        }
+    }
+
+    return requested;
 }
 
 juce::ValueTree DrenchedProcessor::getUiState()
@@ -44,15 +123,19 @@ bool DrenchedProcessor::isBusesLayoutSupported (const BusesLayout& layouts) cons
 
 void DrenchedProcessor::prepareToPlay (double sampleRate, int)
 {
-    constexpr double smoothingSeconds = 0.05;
+    reverb.prepare (sampleRate);
+    preparedRate.store (sampleRate);
+    cacheUiState();
 
-    for (auto* smoother : { &dryGain, &wetGain, &outputGain })
-        smoother->reset (sampleRate, smoothingSeconds);
-
-    const auto gains = equalPowerMix (mixParam->load() / 100.0f);
-    dryGain.setCurrentAndTargetValue (gains.dry);
-    wetGain.setCurrentAndTargetValue (gains.wet);
-    outputGain.setCurrentAndTargetValue (decibelsToGain (outputParam->load()));
+    // Build the first response now, so playback (and offline bounces) start with the right sound.
+    try
+    {
+        builder->buildNow (currentRequest (sampleRate));
+    }
+    catch (const std::exception&)
+    {
+        // Out of memory: the builder thread retries on the next change.
+    }
 
     for (auto& peak : peaks)
         peak.store (0.0f);
@@ -87,21 +170,20 @@ void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     notePeak (0);
 
-    const auto gains = equalPowerMix (mixParam->load() / 100.0f);
-    dryGain.setTargetValue (gains.dry);
-    wetGain.setTargetValue (gains.wet);
-    outputGain.setTargetValue (decibelsToGain (outputParam->load()));
+    ReverbControls controls;
+    controls.mix = params.mix->load() / 100.0f;
+    controls.outputGain = decibelsToGain (params.output->load());
+    controls.predelayMs = predelayMs (params.predelay->load());
+    controls.brightnessDb = params.brightness->load();
+    controls.lowCutHz = params.wetLowCut->load();
+    controls.highCutHz = params.wetHighCut->load();
+    controls.widthPercent = params.width->load();
+    controls.ducking = params.ducking->load() / 100.0f;
+    controls.monoBelowHz = params.monoBelow->load();
 
-    // The convolution engine plugs in here (phase 2). Until then the wet path
-    // is silent, so the plugin applies the dry share of the mix and the output gain.
-    for (int n = 0; n < numSamples; ++n)
-    {
-        const auto gain = dryGain.getNextValue() * outputGain.getNextValue();
-        wetGain.skip (1);
-
-        for (int channel = 0; channel < numOutputs; ++channel)
-            buffer.getWritePointer (channel)[n] *= gain;
-    }
+    auto* left = buffer.getWritePointer (0);
+    auto* right = numOutputs > 1 ? buffer.getWritePointer (1) : left;
+    reverb.process (left, right, static_cast<size_t> (numSamples), controls);
 
     notePeak (2);
 }
@@ -122,6 +204,11 @@ void DrenchedProcessor::setStateInformation (const void* data, int sizeInBytes)
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (state.state.getType()))
             state.replaceState (juce::ValueTree::fromXml (*xml));
+
+    cacheUiState();
+
+    if (const auto rate = preparedRate.load(); rate > 0.0)
+        builder->request (currentRequest (rate));
 }
 
 } // namespace drenched

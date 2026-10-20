@@ -12,7 +12,12 @@ added to this repository.
 | [clap-juce-extensions](https://github.com/free-audio/clap-juce-extensions) | CLAP format | MIT |
 | [CLAP](https://github.com/free-audio/clap) | CLAP format | MIT |
 | [Catch2](https://github.com/catchorg/Catch2) | Unit tests (not shipped) | BSL-1.0 |
+| [pffft](https://github.com/marton78/pffft) | FFT for convolution | BSD-style FFTPACK licence (Julien Pommier, Hayati Ayguen, Dario Mambro, UCAR) |
 | [Microsoft WebView2 SDK](https://developer.microsoft.com/microsoft-edge/webview2/) | Interface web view on Windows (loader linked statically) | Microsoft WebView2 SDK licence (redistributable) |
+
+The pffft licence requires its copyright notices and disclaimer to be
+reproduced in documentation shipped with binaries; the installer's licence
+page must include them.
 
 ## Typefaces
 

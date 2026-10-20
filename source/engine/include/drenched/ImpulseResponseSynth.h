@@ -1,0 +1,60 @@
+#pragma once
+
+#include <array>
+#include <cstddef>
+#include <vector>
+
+namespace drenched
+{
+
+/** Everything that shapes a synthesised impulse response. Two equal requests
+    always produce identical responses (the noise is seeded per path, not per
+    request), so a small edit changes the sound smoothly instead of
+    re-rolling the tail. */
+struct ImpulseResponseRequest
+{
+    double sampleRate = 48000.0;
+    int space = 0;                         // index into bundledSpaces
+    std::array<float, 8> decaySeconds {};  // RT60 per octave band, 63 Hz .. 8 kHz
+    float sizePercent = 100.0f;            // 50 .. 150, scales the room
+    float distancePercent = 40.0f;         // 0 .. 100, listener from near to far
+    float listenerX = 0.5f;                // 0 .. 1, across the room
+    float earlyLatePercent = 55.0f;        // 0 = all early, 100 = all late
+
+    bool operator== (const ImpulseResponseRequest&) const = default;
+};
+
+/** A true-stereo impulse response: four paths, each from one input channel to
+    one output channel. All paths have the same length. */
+struct ImpulseResponseSet
+{
+    enum Path { leftToLeft, leftToRight, rightToLeft, rightToRight };
+
+    double sampleRate = 0.0;
+    std::array<std::vector<float>, 4> paths;
+
+    std::size_t length() const noexcept { return paths[0].size(); }
+};
+
+/** Builds a true-stereo impulse response for a bundled space.
+
+    The early part is an image-source model of the room as a shoebox: two
+    sources on the stage, two receivers at the listener position, with
+    reflections up to the mixing time, each wall bounce attenuated per octave
+    band by the absorption the band's RT60 implies (Sabine). The late part is
+    decorrelated noise per path, split into octave bands with zero-phase,
+    perfectly reconstructing crossovers, and each band decays to -60 dB at
+    exactly its RT60. The late level follows diffuse-field theory (the
+    critical distance), so moving the listener away makes the sound more
+    reverberant, as in a real room.
+
+    This stands in for captured responses until the space library is
+    recorded. It allocates and takes tens to hundreds of milliseconds, so run
+    it away from the audio thread. */
+ImpulseResponseSet synthesiseImpulseResponse (const ImpulseResponseRequest& request);
+
+/** The listener's distance from the front wall in metres, as the interface
+    shows it: from near the source to most of the way down the room. */
+float listenerDistanceMetres (int space, float sizePercent, float distancePercent) noexcept;
+
+} // namespace drenched

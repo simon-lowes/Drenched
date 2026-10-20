@@ -1,0 +1,125 @@
+#include "drenched/KernelBuilder.h"
+#include "drenched/ConvolutionReverb.h"
+
+#include <exception>
+
+namespace drenched
+{
+
+KernelBuilder::KernelBuilder (ConvolutionReverb& target, std::chrono::milliseconds debounce)
+    : reverb (target), debounceTime (debounce), worker ([this] { run(); })
+{
+}
+
+KernelBuilder::~KernelBuilder()
+{
+    {
+        const std::lock_guard lock (mutex);
+        quit = true;
+    }
+
+    wake.notify_all();
+    worker.join();
+    freeRetired();
+}
+
+void KernelBuilder::request (const ImpulseResponseRequest& wanted)
+{
+    {
+        const std::lock_guard lock (mutex);
+
+        if (pending == wanted)
+            return;
+
+        if (! pending.has_value() && built == wanted)
+            return;
+
+        pending = wanted;
+        pendingSince = std::chrono::steady_clock::now();
+    }
+
+    wake.notify_all();
+}
+
+void KernelBuilder::buildNow (const ImpulseResponseRequest& wanted)
+{
+    build (wanted);
+
+    const std::lock_guard lock (mutex);
+
+    if (pending == wanted)
+        pending.reset();
+}
+
+std::optional<ImpulseResponseRequest> KernelBuilder::lastBuilt() const
+{
+    const std::lock_guard lock (mutex);
+    return built;
+}
+
+void KernelBuilder::build (const ImpulseResponseRequest& wanted)
+{
+    const std::lock_guard buildLock (buildMutex);
+
+    auto kernel = std::make_unique<TrueStereoKernel> (synthesiseImpulseResponse (wanted));
+    reverb.submit (std::move (kernel));
+
+    const std::lock_guard lock (mutex);
+    built = wanted;
+}
+
+void KernelBuilder::freeRetired()
+{
+    while (auto kernel = reverb.takeRetired())
+        kernel.reset();
+}
+
+void KernelBuilder::run()
+{
+    std::unique_lock lock (mutex);
+
+    while (! quit)
+    {
+        wake.wait_for (lock, std::chrono::milliseconds (25));
+
+        if (quit)
+            break;
+
+        lock.unlock();
+        freeRetired();
+        lock.lock();
+
+        if (! pending.has_value())
+            continue;
+
+        if (pending == built)
+        {
+            pending.reset();
+            continue;
+        }
+
+        // Build straight away the first time; afterwards wait for the value to settle.
+        const auto settled = std::chrono::steady_clock::now() - pendingSince >= debounceTime;
+
+        if (built.has_value() && ! settled)
+            continue;
+
+        const auto wanted = *pending;
+        pending.reset();
+
+        lock.unlock();
+
+        try
+        {
+            build (wanted);
+        }
+        catch (const std::exception&)
+        {
+            // Out of memory for a very long response: keep the current kernel.
+        }
+
+        lock.lock();
+    }
+}
+
+} // namespace drenched

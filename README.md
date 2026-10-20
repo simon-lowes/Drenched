@@ -3,11 +3,13 @@
 A premium convolution and hybrid reverb for music and post-production, on
 macOS and Windows.
 
-Status: **interface.** The plugin builds and loads in VST3, AU, CLAP and
-standalone form with the real interface: one set of controls, a decay-by-
-frequency graph you drag, a space browser, Studio and Stage views, and
-twelve user-selectable looks. The convolution engine comes next, so the
-wet path is silent for now.
+Status: **engine.** The plugin builds and loads in VST3, AU, CLAP and
+standalone form with the real interface (one set of controls, a decay-by-
+frequency graph you drag, a space browser, Studio and Stage views, twelve
+user-selectable looks) and a working zero-latency true-stereo convolution
+engine. Until the space library is captured, each space's impulse response
+is synthesised from its dimensions and the decay graph. Freeze and the
+crossover wait for the hybrid tail.
 
 ## Building
 
