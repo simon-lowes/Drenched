@@ -90,7 +90,8 @@ juce::WebBrowserComponent::Options DrenchedEditor::makeOptions()
         .withEventListener ("ready",   [this] (const juce::var& v) { onReady (v); })
         .withEventListener ("params",  [this] (const juce::var& v) { onParams (v); })
         .withEventListener ("gesture", [this] (const juce::var& v) { onGesture (v); })
-        .withEventListener ("ui",      [this] (const juce::var& v) { onUi (v); });
+        .withEventListener ("ui",      [this] (const juce::var& v) { onUi (v); })
+        .withEventListener ("loadIr",  [this] (const juce::var& v) { onLoadIr (v); });
 
     auto initial = std::make_unique<juce::DynamicObject>();
     initial->setProperty ("params", parameterValues (false));
@@ -168,6 +169,9 @@ juce::var DrenchedEditor::uiValues()
     object->setProperty ("mode", ui.getProperty (UiIDs::mode, "studio").toString());
     object->setProperty ("view", ui.getProperty (UiIDs::view, "plan").toString());
     object->setProperty ("skin", ui.getProperty (UiIDs::skin, settings::loadDefaultSkin()).toString());
+    object->setProperty ("ir", processor.impulseResponseInfo());
+    object->setProperty ("irError", ui.getProperty (UiIDs::irError, "").toString());
+    object->setProperty ("irEvent", static_cast<int> (ui.getProperty (UiIDs::irEvent, 0)));
 
     return juce::var (object.release());
 }
@@ -261,6 +265,31 @@ void DrenchedEditor::onUi (const juce::var& payload)
     });
 
     settingFromUi.store (false);
+}
+
+void DrenchedEditor::onLoadIr (const juce::var&)
+{
+    if (choosing)
+        return; // already open
+
+    choosing = true;
+    chooser = std::make_unique<juce::FileChooser> ("Load an impulse response", settings::loadIrFolder(),
+                                                   "*.wav;*.wave;*.aif;*.aiff;*.flac");
+
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              // The chooser stays alive until the next one replaces it, since
+                              // it may still be in use while this runs.
+                              const auto file = fc.getResult();
+                              choosing = false;
+
+                              if (file == juce::File())
+                                  return; // cancelled
+
+                              settings::saveIrFolder (file.getParentDirectory());
+                              processor.loadImpulseResponseAsync (file);
+                          });
 }
 
 //==============================================================================

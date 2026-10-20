@@ -22,7 +22,12 @@ function gesture(ids,begin){if(JUCE)JUCE.emitEvent('gesture',{ids:ids,begin:!!be
 
 /* state pushed by the plugin: parameter values (host automation, preset recall) and the
    saved interface state (space, locks, view, skin) */
+var irEvent=null;
 function applyFromHost(msg){if(!msg)return;var p=msg.params||{},u=msg.ui||{};
+ if('ir' in u)setUserSpace(u.ir);
+ if(u.irEvent!=null){var ev=+u.irEvent;if(irEvent!==null&&ev!==irEvent){st.hint=null;
+   st.note=u.irError?'<b>That file didn\u2019t load.</b> '+esc(u.irError):'<b>'+esc(SPACES[USER]?SPACES[USER].name:'Your IR')+'</b> loaded. The graph shows its measured decay; drag a band to reshape it.';}
+  irEvent=ev;}
  for(var id in p){var v=+p[id];if(!isFinite(v))continue;lastSent[id]=v;var bi=BAND_ID.indexOf(id);if(bi>=0){st.bands[bi]=v;continue;}
   var k=keyOf(id);if(!k)continue;if(k==='freeze')st.freeze=v>=0.5;else st[k]=v;}
  if(u.space!=null){st.sp=clamp(Math.round(+u.space)||0,0,SPACES.length-1);lastUi.space=st.sp;}
@@ -117,6 +122,7 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'lock':var lk=b.getAttribute('data-k');st.locks[lk]=!st.locks[lk];st.hint=null;st.note=(st.locks[lk]?'<b>Locked.</b> ':'<b>Unlocked.</b> ')+P[lk].l+(st.locks[lk]?' now holds when you change space.':' follows each space again.');break;
   case 'view':st.view=v;break;
   case 'browse':st.browse=!st.browse;break;
+  case 'loadir':st.browse=false;st.hint=null;if(JUCE){JUCE.emitEvent('loadIr',{});st.note='Choose a WAV, AIFF or FLAC impulse response: mono, stereo or four-channel true stereo.';}else st.note='<b>Load your own IR</b> opens a file chooser in the plugin.';break;
   case 'pick':st.browse=false;changeSpace(+v);break;
   case 'prev':changeSpace((st.sp+SPACES.length-1)%SPACES.length);break;
   case 'next':changeSpace((st.sp+1)%SPACES.length);break;

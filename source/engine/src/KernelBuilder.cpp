@@ -1,6 +1,7 @@
 #include "drenched/KernelBuilder.h"
 #include "drenched/LivingTail.h"
 #include "drenched/ConvolutionReverb.h"
+#include "drenched/RecordedResponse.h"
 
 #include <exception>
 
@@ -62,7 +63,27 @@ void KernelBuilder::build (const ImpulseResponseRequest& wanted)
 {
     const std::lock_guard buildLock (buildMutex);
 
-    const auto responses = synthesiseImpulseResponse (wanted);
+    ImpulseResponseSet responses;
+
+    if (wanted.recorded != nullptr)
+    {
+        // Resampling a long file is the slow part, and it only depends on
+        // the file and the rate, so it is kept between edits.
+        if (resampledFrom != wanted.recorded || resampled.sampleRate != wanted.sampleRate)
+        {
+            resampled = resampleResponses (wanted.recorded->responses, wanted.sampleRate);
+            resampledFrom = wanted.recorded;
+        }
+
+        responses = shapeRecordedResponse (resampled, *wanted.recorded, wanted);
+    }
+    else
+    {
+        responses = synthesiseImpulseResponse (wanted);
+        resampledFrom.reset(); // let go of the file's audio
+        resampled = {};
+    }
+
     auto kernel = std::make_unique<TrueStereoKernel> (responses, designLivingTail (wanted, responses));
     reverb.submit (std::move (kernel));
 

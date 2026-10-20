@@ -2,10 +2,13 @@
 
 #include <array>
 #include <cstddef>
+#include <memory>
 #include <vector>
 
 namespace drenched
 {
+
+struct RecordedResponse;
 
 /** Everything that shapes a synthesised impulse response. Two equal requests
     always produce identical responses (the noise is seeded per path, not per
@@ -20,6 +23,10 @@ struct ImpulseResponseRequest
     float distancePercent = 40.0f;         // 0 .. 100, listener from near to far
     float listenerX = 0.5f;                // 0 .. 1, across the room
     float earlyLatePercent = 55.0f;        // 0 = all early, 100 = all late
+
+    // A loaded impulse response to play instead of the bundled space. Size,
+    // distance and listener position only shape synthesised spaces.
+    std::shared_ptr<const RecordedResponse> recorded {};
 
     bool operator== (const ImpulseResponseRequest&) const = default;
 };

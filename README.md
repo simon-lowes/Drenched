@@ -9,8 +9,11 @@ frequency graph you drag, a space browser, Studio and Stage views, twelve
 user-selectable looks) and a working zero-latency true-stereo convolution
 engine with a living tail: a feedback delay network fitted to each room
 that powers Freeze (Crossover sets where the frozen room stops holding, so
-the bass keeps fading). Until the space library is captured, each space's
-impulse response is synthesised from its dimensions and the decay graph.
+the bass keeps fading). You can load your own impulse response (WAV, AIFF
+or FLAC; mono, stereo or four-channel true stereo): it is resampled to the
+session rate, its decay is measured into the graph, and dragging the graph
+reshapes it. Until the space library is captured, the bundled spaces'
+impulse responses are synthesised from their dimensions and the decay graph.
 
 ## Building
 

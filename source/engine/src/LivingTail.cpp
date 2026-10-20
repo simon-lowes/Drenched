@@ -1,4 +1,5 @@
 #include "drenched/LivingTail.h"
+#include "drenched/RecordedResponse.h"
 #include "drenched/Spaces.h"
 
 #include <algorithm>
@@ -279,10 +280,22 @@ LivingTailDesign designLivingTail (const ImpulseResponseRequest& request, const 
     d.sampleRate = request.sampleRate;
 
     const auto sr = request.sampleRate;
-    const auto spaceIndex = std::clamp (request.space, 0, static_cast<int> (bundledSpaces.size()) - 1);
-    const auto& room = bundledSpaces[static_cast<std::size_t> (spaceIndex)];
-    const auto scale = std::clamp (static_cast<double> (request.sizePercent), 50.0, 150.0) / 100.0;
-    const auto W = room.width * scale, D = room.depth * scale, H = room.height * scale;
+    double W, D, H;
+
+    if (request.recorded != nullptr)
+    {
+        // A loaded response: the shoebox its analysis estimated.
+        const auto& room = request.recorded->room;
+        W = room.width, D = room.depth, H = room.height;
+    }
+    else
+    {
+        const auto spaceIndex = std::clamp (request.space, 0, static_cast<int> (bundledSpaces.size()) - 1);
+        const auto& room = bundledSpaces[static_cast<std::size_t> (spaceIndex)];
+        const auto scale = std::clamp (static_cast<double> (request.sizePercent), 50.0, 150.0) / 100.0;
+        W = room.width * scale, D = room.depth * scale, H = room.height * scale;
+    }
+
     const auto volume = W * D * H;
     const auto surface = 2.0 * (W * D + W * H + D * H);
 

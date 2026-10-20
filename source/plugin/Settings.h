@@ -5,8 +5,8 @@
 namespace drenched
 {
 
-/** Per-user settings that outlive a session: today only the default look (skin) a new
-    instance opens with. Stored as a small XML file in the user's application data folder. */
+/** Per-user settings that outlive a session: the default look (skin) a new instance opens
+    with, and the folder impulse responses were last loaded from. Stored as a small XML file in the user's application data folder. */
 namespace settings
 {
     inline juce::PropertiesFile::Options options()
@@ -33,6 +33,21 @@ namespace settings
     {
         juce::PropertiesFile file (options());
         file.setValue ("skin", skin);
+        file.saveIfNeeded();
+    }
+
+    /** The folder impulse responses were last loaded from, so the file chooser opens there. */
+    inline juce::File loadIrFolder()
+    {
+        juce::PropertiesFile file (options());
+        const juce::File folder (file.getValue ("irFolder"));
+        return folder.isDirectory() ? folder : juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+    }
+
+    inline void saveIrFolder (const juce::File& folder)
+    {
+        juce::PropertiesFile file (options());
+        file.setValue ("irFolder", folder.getFullPathName());
         file.saveIfNeeded();
     }
 
