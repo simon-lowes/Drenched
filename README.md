@@ -40,7 +40,6 @@ cmake -S . -B build -DJUCE_WEBVIEW2_PACKAGE_LOCATION=%cd%/packages
 | `source/ui/` | The interface: one web page, twelve skins, embedded in the plugin |
 | `tests/` | Catch2 unit tests for the engine |
 | `cmake/` | Pinned third-party dependencies |
-| `src/`, `index.html` | A separate browser-only Web Audio demo (Vite and React); not part of the plugin |
 
 ## The interface
 
