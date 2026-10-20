@@ -1,9 +1,0 @@
-{
-  "name": "Drenched - Premium Convolution Reverb",
-  "description": "Interactive Web Audio implementation of Drenched, a high-fidelity convolution and hybrid reverb with real-time DSP, impulse response library, visualizer, and Catch2 test suite validation.",
-  "prompt": "This app was imported from GitHub repository simon-lowes/Drenched.",
-  "permissions": [],
-  "capabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}
