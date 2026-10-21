@@ -25,7 +25,12 @@ cmake -S . -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build "$BUILD_DIR" --parallel
 ctest --test-dir "$BUILD_DIR" --output-on-failure
 
-file "$BUILD_DIR/source/plugin/Drenched_artefacts/Release/VST3/Drenched.vst3/Contents/"*/Drenched.so
+# Hosts find the binary in Contents/<uname -m>-linux. JUCE names the folder
+# i386-linux, but a 32-bit system reports i686, so the bundle carries both.
+VST3="$BUILD_DIR/source/plugin/Drenched_artefacts/Release/VST3/Drenched.vst3"
+rm -rf "$VST3/Contents/i686-linux"
+cp -R "$VST3/Contents/i386-linux" "$VST3/Contents/i686-linux"
+file "$VST3/Contents/"*/Drenched.so
 
 if [ ! -x "$PLUGINVAL_DIR"/build/pluginval_artefacts/Release/pluginval ]; then
     rm -rf "$PLUGINVAL_DIR"
@@ -36,5 +41,7 @@ if [ ! -x "$PLUGINVAL_DIR"/build/pluginval_artefacts/Release/pluginval ]; then
 fi
 
 file "$PLUGINVAL_DIR"/build/pluginval_artefacts/Release/pluginval
-xvfb-run -a "$PLUGINVAL_DIR"/build/pluginval_artefacts/Release/pluginval --strictness-level 10 --skip-gui-tests \
-    --validate-in-process --validate "$BUILD_DIR/source/plugin/Drenched_artefacts/Release/VST3/Drenched.vst3"
+# The container runs on a 64-bit kernel, which reports x86_64; setarch makes
+# it report i686, as a 32-bit system would.
+setarch i686 xvfb-run -a "$PLUGINVAL_DIR"/build/pluginval_artefacts/Release/pluginval --strictness-level 10 \
+    --skip-gui-tests --validate-in-process --validate "$VST3"
