@@ -124,7 +124,10 @@ TEST_CASE ("Living tail matches the room's late level and is decorrelated", "[li
     tail.prepare (request.sampleRate);
     tail.setDesign (design);
 
-    const auto out = render (tail, std::vector<float> (1, 1.0f), responses.length());
+    // Fed as the reverb feeds it, after its input delay.
+    std::vector<float> impulse (static_cast<std::size_t> (std::lround (design.inputDelaySeconds * request.sampleRate)) + 1, 0.0f);
+    impulse.back() = 1.0f;
+    const auto out = render (tail, impulse, responses.length());
 
     // A window later than the calibration window, so this also checks that
     // the two decay together.

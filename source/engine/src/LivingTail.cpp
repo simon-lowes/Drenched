@@ -581,31 +581,45 @@ LivingTailDesign designLivingTail (const ImpulseResponseRequest& request, const 
         d.broadband[i] = static_cast<float> (std::pow (10.0, x[S] / 20.0));
     }
 
+    // The first echo leaves after the shortest line; the input waits for the
+    // rest of the mixing time.
+    const auto mixingTime = std::clamp (std::sqrt (volume) / 1000.0, 0.01, 0.2);
+    d.inputDelaySeconds = static_cast<float> (std::clamp (mixingTime - static_cast<double> (d.delays[0]) / sr, 0.0,
+                                                          LivingTail::maxInputDelaySeconds));
     d.valid = true;
 
-    // Match the late level: play an impulse into the left input and compare
-    // its energy with the response's left-input paths over the same window,
-    // just after the early reflections have died away.
-    const auto mixingTime = std::clamp (std::sqrt (volume) / 1000.0, 0.01, 0.2);
-    const auto from = static_cast<std::size_t> (2.0 * mixingTime * sr);
-    const auto to = from + static_cast<std::size_t> (0.1 * sr);
+    // Match the late level: play an impulse into both inputs, a source in
+    // the centre, and compare its energy with what the response gives the
+    // same source over the same window, just after the early reflections
+    // have died away. A centred source hears the two sides' paths summed,
+    // so a recording whose sides are alike late on is matched as it sounds.
+    // The window starts once the tail has been round its longest line three
+    // times: before that its first echoes still stand out.
+    const auto settled = d.inputDelaySeconds + 3.0 * static_cast<double> (d.delays[N - 1]) / sr;
+    const auto from = static_cast<std::size_t> (std::max (2.0 * mixingTime, settled) * sr);
+    const auto to = from + static_cast<std::size_t> (0.15 * sr);
 
     LivingTail probe;
     probe.prepare (sr);
     probe.setDesign (d);
 
-    std::vector<float> impulse (to, 0.0f), silence (to, 0.0f), l (to), r (to);
-    impulse[0] = 1.0f;
-    probe.process (impulse.data(), silence.data(), l.data(), r.data(), to);
+    std::vector<float> impulse (to, 0.0f), l (to), r (to);
+    impulse[static_cast<std::size_t> (std::lround (d.inputDelaySeconds * sr))] = 1.0f; // as the reverb feeds it
+    probe.process (impulse.data(), impulse.data(), l.data(), r.data(), to);
 
     double tailEnergy = 0.0, roomEnergy = 0.0;
 
     for (auto n = from; n < to; ++n)
         tailEnergy += static_cast<double> (l[n]) * l[n] + static_cast<double> (r[n]) * r[n];
 
-    for (const auto path : { ImpulseResponseSet::leftToLeft, ImpulseResponseSet::leftToRight })
-        for (auto n = from; n < std::min (to, responses.paths[path].size()); ++n)
-            roomEnergy += static_cast<double> (responses.paths[path][n]) * responses.paths[path][n];
+    const auto& p = responses.paths;
+
+    for (auto n = from; n < std::min (to, responses.length()); ++n)
+    {
+        const auto left = static_cast<double> (p[ImpulseResponseSet::leftToLeft][n]) + p[ImpulseResponseSet::rightToLeft][n];
+        const auto right = static_cast<double> (p[ImpulseResponseSet::leftToRight][n]) + p[ImpulseResponseSet::rightToRight][n];
+        roomEnergy += left * left + right * right;
+    }
 
     d.outputGain = tailEnergy > 0.0 && roomEnergy > 0.0 ? static_cast<float> (std::sqrt (roomEnergy / tailEnergy)) : 0.0f;
     return d;

@@ -184,6 +184,7 @@ private:
     std::vector<float> delayL, delayR;
     std::size_t delayMask = 0, delayWrite = 0;
     float delaySamples = 0.0f, delayCoef = 0.0f;
+    float tailDelaySamples = 0.0f; // the living tail's extra wait, read from the same lines
 
     // Smoothed gains.
     float dryGain = 1.0f, wetGain = 0.0f, outGain = 1.0f, duckGain = 1.0f, gainCoef = 0.0f;

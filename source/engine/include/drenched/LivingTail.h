@@ -33,6 +33,11 @@ struct LivingTailDesign
 
     float outputGain = 1.0f;
     float releaseSeconds = 1.0f; // how long a released freeze takes to fade
+
+    // How much later than the convolution the tail should hear the input, so
+    // its first echoes arrive at the mixing time, where the response's late
+    // part begins, rather than on top of the early reflections.
+    float inputDelaySeconds = 0.0f;
 };
 
 /** The living tail: a 16-line feedback delay network (Jot's structure, with a
@@ -55,6 +60,7 @@ class LivingTail
 {
 public:
     static constexpr double maxDelaySeconds = 0.2;
+    static constexpr double maxInputDelaySeconds = 0.2;
     static constexpr double maxMovementSeconds = 0.0015; // how far a line's length drifts at full movement
     static constexpr double glideSeconds = 0.25;         // how long a new design takes to glide in
 
@@ -74,6 +80,7 @@ public:
 
     bool hasDesign() const noexcept { return current.valid; }
     float releaseSeconds() const noexcept { return current.releaseSeconds; }
+    float inputDelaySeconds() const noexcept { return current.inputDelaySeconds; }
 
     /** Overwrites outL and outR. */
     void process (const float* inL, const float* inR, float* outL, float* outR, std::size_t numSamples) noexcept;
