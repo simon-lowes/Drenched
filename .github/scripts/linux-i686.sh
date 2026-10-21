@@ -14,7 +14,7 @@ PLUGINVAL_DIR="${PLUGINVAL_DIR:-pluginval-i686}"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends build-essential cmake ninja-build git ca-certificates curl \
+apt-get install -y --no-install-recommends build-essential cmake ninja-build git python3 ca-certificates curl \
     pkg-config file libasound2-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev \
     libxcomposite-dev libxext-dev libfreetype-dev libfontconfig1-dev libcurl4-openssl-dev \
     libgtk-3-dev libwebkit2gtk-4.1-dev ladspa-sdk xvfb xauth
@@ -36,6 +36,7 @@ if [ ! -x "$PLUGINVAL_DIR"/build/pluginval_artefacts/Release/pluginval ]; then
     rm -rf "$PLUGINVAL_DIR"
     git clone --depth 1 --branch "$PLUGINVAL_TAG" --recurse-submodules --shallow-submodules \
         https://github.com/Tracktion/pluginval.git "$PLUGINVAL_DIR"
+    python3 "$(dirname "$0")/patch-pluginval.py" "$PLUGINVAL_DIR"
     cmake -S "$PLUGINVAL_DIR" -B "$PLUGINVAL_DIR"/build -G Ninja -DCMAKE_BUILD_TYPE=Release
     cmake --build "$PLUGINVAL_DIR"/build --parallel
 fi

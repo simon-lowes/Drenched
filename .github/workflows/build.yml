@@ -44,19 +44,21 @@ jobs:
             cmake_args: -G "Visual Studio 17 2022" -A x64
           # 32-bit, for older hosts and 32-bit installs of Windows. pluginval only ships
           # 64-bit, and a 64-bit validator can't load a 32-bit plug-in, so a 32-bit copy is
-          # built from source (GPL, used as a test tool only; never shipped).
+          # built from source (GPL, used as a test tool only; never shipped). The Linux
+          # build is also built from source, with patch-pluginval.py's run loop fix.
           - name: Windows (x86, 32-bit)
             os: windows-2022
             artifact: Drenched-Windows-x86
             pluginval: source
-            pluginval_bin: pluginval-x86/build/pluginval_artefacts/Release/pluginval.exe
+            pluginval_bin: pluginval-build/pluginval_artefacts/Release/pluginval.exe
             pluginval_cmake_args: -G "Visual Studio 17 2022" -A Win32
             cmake_args: -G "Visual Studio 17 2022" -A Win32
           - name: Linux (x64)
             os: ubuntu-24.04
             artifact: Drenched-Linux-x64
-            pluginval: pluginval_Linux.zip
-            pluginval_bin: pluginval
+            pluginval: source
+            pluginval_bin: pluginval-build/pluginval_artefacts/Release/pluginval
+            pluginval_cmake_args: -G Ninja -DCMAKE_BUILD_TYPE=Release
             cmake_args: -G Ninja
 
     steps:
@@ -69,7 +71,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends ninja-build libasound2-dev \
             libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxcomposite-dev \
             libfreetype-dev libfontconfig1-dev libcurl4-openssl-dev libgtk-3-dev \
-            libwebkit2gtk-4.1-dev xvfb
+            libwebkit2gtk-4.1-dev ladspa-sdk xvfb
 
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
@@ -105,22 +107,24 @@ jobs:
         shell: bash
         run: ctest --test-dir build -C Release --output-on-failure
 
-      - name: Cache pluginval (32-bit)
+      - name: Cache pluginval
         if: matrix.pluginval == 'source'
         uses: actions/cache@v4
         with:
-          path: pluginval-x86/build/pluginval_artefacts
-          key: pluginval-v1.0.4-${{ matrix.artifact }}
+          path: pluginval-build/pluginval_artefacts
+          key: pluginval-v1.0.4-${{ matrix.artifact }}-${{ hashFiles('.github/scripts/patch-pluginval.py') }}
 
-      - name: Build pluginval (32-bit)
+      - name: Build pluginval
         if: matrix.pluginval == 'source'
         shell: bash
         run: |
           [ -f "${{ matrix.pluginval_bin }}" ] && exit 0
           git clone --depth 1 --branch v1.0.4 --recurse-submodules --shallow-submodules \
             https://github.com/Tracktion/pluginval.git pluginval-src
-          cmake -S pluginval-src -B pluginval-x86/build ${{ matrix.pluginval_cmake_args }}
-          cmake --build pluginval-x86/build --config Release --parallel
+          if [ "$RUNNER_OS" = "Windows" ]; then PY=python; else PY=python3; fi
+          $PY .github/scripts/patch-pluginval.py pluginval-src
+          cmake -S pluginval-src -B pluginval-build ${{ matrix.pluginval_cmake_args }}
+          cmake --build pluginval-build --config Release --parallel
 
       - name: Validate plugin (pluginval)
         shell: bash
@@ -167,7 +171,7 @@ jobs:
           path: |
             build-i686/_deps
             pluginval-i686/build/pluginval_artefacts
-          key: deps-linux-i686-${{ hashFiles('cmake/Dependencies.cmake', '.github/scripts/linux-i686.sh') }}
+          key: deps-linux-i686-${{ hashFiles('cmake/Dependencies.cmake', '.github/scripts/linux-i686.sh', '.github/scripts/patch-pluginval.py') }}
 
       - name: Build, test and validate
         run: |
