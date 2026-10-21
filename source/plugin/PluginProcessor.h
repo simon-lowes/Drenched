@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Library.h"
 #include "LicenceManager.h"
 #include "Parameters.h"
 
@@ -16,6 +17,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 
 namespace drenched
 {
@@ -59,8 +61,13 @@ public:
     /** The licence on this computer, shared by every instance. Message thread. */
     LicenceManager& getLicence() noexcept { return *licence; }
 
-    /** The space index a loaded impulse response plays in: just after the bundled spaces. */
+    /** Engine-side space indices: the modelled spaces come first, then a loaded impulse
+        response, then the chosen library recording. The interface and sessions use ids. */
     static constexpr int userSpace = static_cast<int> (bundledSpaces.size());
+    static constexpr int librarySpace = userSpace + 1;
+
+    /** The id of the chosen space: a library id, a modelled id or "user". */
+    juce::String chosenSpaceId();
 
     /** Reads and analyses an impulse response file on a background thread, then (on the
         message thread) plays it, sets the decay graph to its measured decay and saves its
@@ -93,8 +100,9 @@ public:
 private:
     void timerCallback() override;
 
-    /** What the impulse response should be built from, given the parameters and the chosen space. */
-    ImpulseResponseRequest currentRequest (double sampleRate) const;
+    /** What the impulse response should be built from, given the parameters and the chosen
+        space; nothing while the chosen recording is still loading. */
+    std::optional<ImpulseResponseRequest> currentRequest (double sampleRate) const;
 
     /** Copies the chosen space and listener position out of the interface state, for other threads. */
     void cacheUiState();
@@ -106,6 +114,10 @@ private:
 
     /** After a session loads: reloads the impulse response it names, if it isn't loaded already. */
     void restoreImpulseResponse();
+
+    /** Makes sure the chosen library recording is the one loaded: at once when `now` (a
+        session loading before playback), otherwise on the loader thread. */
+    void loadLibrarySpace (const juce::String& id, bool now);
 
     void applyLoadedImpulseResponse (const juce::File& file, std::shared_ptr<const RecordedResponse> loaded, const juce::String& error);
 
@@ -153,6 +165,11 @@ private:
     std::shared_ptr<const RecordedResponse> recorded;
     juce::String recordedPath;
     bool recordedMissing = false;
+
+    // The chosen library recording, shared with the builder the same way. libraryWanted is
+    // the id asked for most recently, so a slow load that is no longer wanted is dropped.
+    std::shared_ptr<const RecordedResponse> libraryResponse;
+    juce::String libraryLoadedId, libraryWanted;
 
     juce::ThreadPool loader { juce::ThreadPoolOptions{}.withThreadName ("Drenched IR loader").withNumberOfThreads (1) };
     std::shared_ptr<int> lifetime = std::make_shared<int> (0); // guards callbacks posted by the loader
