@@ -11,6 +11,13 @@ if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 endif()
 
+# 32-bit x86 builds (Windows Win32, Linux i686) are for older hosts and bridges.
+# MSVC targets SSE2 there already; GCC and Clang default to x87 maths, which is
+# slower, rounds differently and leaves PFFFT on its scalar fallback.
+if(CMAKE_SIZEOF_VOID_P EQUAL 4 AND NOT MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(i.86|x86|x86_64|AMD64)$")
+    add_compile_options(-msse2 -mfpmath=sse)
+endif()
+
 option(DRENCHED_BUILD_TESTS "Build the unit tests" ON)
 option(DRENCHED_BUILD_CLAP "Build the CLAP format" ON)
 

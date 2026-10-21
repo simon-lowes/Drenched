@@ -78,6 +78,12 @@ target_link_libraries(Drenched
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
 
+if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 4)
+    # The 32-bit standalone app gets 4 GB of address space on 64-bit Windows, not 2.
+    # (A plug-in gets whatever its host was linked with.)
+    target_link_options(Drenched_Standalone PRIVATE /LARGEADDRESSAWARE)
+endif()
+
 if(DRENCHED_BUILD_CLAP)
     clap_juce_extensions_plugin(TARGET Drenched
         CLAP_ID "com.drenched.drenched"

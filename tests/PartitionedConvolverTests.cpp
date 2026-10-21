@@ -82,8 +82,10 @@ TEST_CASE ("Partitioned convolution nulls against direct convolution", "[partiti
 TEST_CASE ("Long, sparse responses null across the large stages", "[partitioned]")
 {
     // A sparse response has a cheap exact reference, which lets the test reach
-    // the 4096 and 32768 sample stages.
-    constexpr std::size_t length = 150000;
+    // the 4096 and 32768 sample stages. 40000 and 300000 end just past a stage
+    // boundary, where the last stage takes more partitions instead of growing.
+    const auto length = GENERATE (std::size_t (40000), std::size_t (150000), std::size_t (300000));
+    INFO ("length " << length);
     std::vector<float> ir (length, 0.0f);
     std::mt19937 rng (3);
     std::uniform_int_distribution<std::size_t> where (0, length - 1);

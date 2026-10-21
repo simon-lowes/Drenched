@@ -121,6 +121,7 @@ juce::WebBrowserComponent::Options DrenchedEditor::makeOptions()
     initial->setProperty ("params", parameterValues (false));
     initial->setProperty ("ui", uiValues());
     initial->setProperty ("licence", processor.getLicence().status());
+    initial->setProperty ("bits", static_cast<int> (sizeof (void*) * 8));
     options = options.withInitialisationData ("drenched", juce::var (initial.release()));
 
    #if JUCE_WINDOWS
@@ -197,6 +198,8 @@ juce::var DrenchedEditor::uiValues()
     object->setProperty ("ir", processor.impulseResponseInfo());
     object->setProperty ("irError", ui.getProperty (UiIDs::irError, "").toString());
     object->setProperty ("irEvent", static_cast<int> (ui.getProperty (UiIDs::irEvent, 0)));
+    sentShortened = processor.shortenedSeconds();
+    object->setProperty ("shortened", sentShortened);
 
     return juce::var (object.release());
 }
@@ -404,6 +407,12 @@ void DrenchedEditor::timerCallback()
         return;
 
     sendCaptureStatus();
+
+    if (processor.shortenedSeconds() != sentShortened)
+    {
+        uiDirty.store (true);
+        triggerAsyncUpdate();
+    }
 
     const auto peaks = processor.takePeaks();
     const std::array<float, 4> fresh { peaks.inL, peaks.inR, peaks.outL, peaks.outR };

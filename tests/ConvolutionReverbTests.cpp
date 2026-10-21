@@ -73,8 +73,14 @@ namespace
         std::copy_n (input.begin(), std::min (input.size(), total), l.begin());
         std::copy_n (input.begin(), std::min (input.size(), total), r.begin());
 
-        const auto freezeSample = static_cast<std::size_t> (freezeAt * sampleRate);
-        const auto releaseSample = static_cast<std::size_t> (releaseAt * sampleRate);
+        // Clamped before the cast: "never release" (1e9 s) overflows a 32-bit size_t.
+        const auto sampleAt = [sampleRate, total] (double t)
+        {
+            return static_cast<std::size_t> (std::min (t * sampleRate, static_cast<double> (total)));
+        };
+
+        const auto freezeSample = sampleAt (freezeAt);
+        const auto releaseSample = sampleAt (releaseAt);
         constexpr std::size_t block = 480;
 
         for (std::size_t pos = 0; pos < total;)

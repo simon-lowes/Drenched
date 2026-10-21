@@ -222,8 +222,12 @@ PartitionedConvolver::PartitionedConvolver (const std::vector<std::span<const fl
 
     for (std::size_t block = headLength; block < irLength; block *= growthFactor)
     {
+        // A larger stage only pays for itself when the rest fills at least one
+        // of its blocks; otherwise this stage takes up to 15 partitions to the
+        // end. Rounding a short remainder up to one huge block per output cost
+        // 2 GB for a long 9.1.6 response.
         const auto next = block * growthFactor;
-        const auto last = irLength <= next;
+        const auto last = irLength < 2 * next;
         const auto partitions = last ? (irLength - block + block - 1) / block : growthFactor - 1;
 
         stages.push_back (std::make_unique<Stage> (block, partitions, impulseResponses, block));
