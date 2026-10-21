@@ -43,6 +43,17 @@ subsets from the [Fontsource](https://fontsource.org) packages.
 | JetBrains Mono | JetBrains |
 | Hanken Grotesk | Alfredo Marco Pradil, Hanken Design Co. |
 
+## Recorded spaces
+
+The bundled impulse responses in `library/ir/` are recordings published by
+others under licences that allow use in a commercial product. Each is credited
+in the plugin (space menu, Recording credits) and in
+[library/README.md](library/README.md).
+
+| Recordings | Spaces | Licence |
+| --- | --- | --- |
+| [MAIR library](https://github.com/APL-Huddersfield/MAIR-Library-and-Renderer): Hyunkook Lee and Connor Millns, Applied Psychoacoustics Lab, University of Huddersfield (2017) | St Paul's Hall, Huddersfield (five microphone setups) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+
 ## Images
 
 The space photographs in `source/ui/spaces/` are placeholder renders made for
