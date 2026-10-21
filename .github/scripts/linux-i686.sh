@@ -17,7 +17,7 @@ apt-get update
 apt-get install -y --no-install-recommends build-essential cmake ninja-build git ca-certificates curl \
     pkg-config file libasound2-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev \
     libxcomposite-dev libxext-dev libfreetype-dev libfontconfig1-dev libcurl4-openssl-dev \
-    libgtk-3-dev libwebkit2gtk-4.1-dev xvfb xauth
+    libgtk-3-dev libwebkit2gtk-4.1-dev ladspa-sdk xvfb xauth
 
 git config --global --add safe.directory '*'
 
