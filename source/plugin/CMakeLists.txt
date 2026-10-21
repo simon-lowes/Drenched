@@ -20,6 +20,18 @@ juce_add_binary_data(DrenchedUI
 
 set_target_properties(DrenchedUI PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# The recorded spaces: library/library.json and one FLAC file per space (see library/README.md).
+file(GLOB DRENCHED_LIBRARY_FILES CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/library/library.json"
+    "${CMAKE_SOURCE_DIR}/library/ir/*.flac")
+
+juce_add_binary_data(DrenchedLibrary
+    NAMESPACE DrenchedLibrary
+    HEADER_NAME DrenchedLibrary.h
+    SOURCES ${DRENCHED_LIBRARY_FILES})
+
+set_target_properties(DrenchedLibrary PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 juce_add_plugin(Drenched
     PRODUCT_NAME "Drenched"
     COMPANY_NAME "Drenched"
@@ -40,6 +52,7 @@ juce_add_plugin(Drenched
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
 target_sources(Drenched PRIVATE
+    Library.cpp
     LicenceManager.cpp
     PluginProcessor.cpp
     PluginEditor.cpp)
@@ -69,6 +82,7 @@ target_link_libraries(Drenched
     PRIVATE
         drenched_engine
         drenched_licence
+        DrenchedLibrary
         DrenchedUI
         juce::juce_audio_utils
         juce::juce_dsp

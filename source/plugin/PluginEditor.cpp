@@ -122,6 +122,7 @@ juce::WebBrowserComponent::Options DrenchedEditor::makeOptions()
     initial->setProperty ("ui", uiValues());
     initial->setProperty ("licence", processor.getLicence().status());
     initial->setProperty ("bits", static_cast<int> (sizeof (void*) * 8));
+    initial->setProperty ("library", library::forInterface());
     options = options.withInitialisationData ("drenched", juce::var (initial.release()));
 
    #if JUCE_WINDOWS
@@ -189,7 +190,7 @@ juce::var DrenchedEditor::uiValues()
     auto ui = processor.getUiState();
     auto object = std::make_unique<juce::DynamicObject>();
 
-    object->setProperty ("space", static_cast<int> (ui.getProperty (UiIDs::space, 0)));
+    object->setProperty ("spaceId", processor.chosenSpaceId());
     object->setProperty ("lx", static_cast<double> (ui.getProperty (UiIDs::listenerX, 0.5)));
     object->setProperty ("locks", ui.getProperty (UiIDs::locks, "").toString());
     object->setProperty ("mode", ui.getProperty (UiIDs::mode, "studio").toString());
@@ -284,7 +285,7 @@ void DrenchedEditor::onUi (const juce::var& payload)
 
     forEachProperty (payload, [&ui] (const juce::String& key, const juce::var& value)
     {
-        if (key == "space")      ui.setProperty (UiIDs::space, static_cast<int> (value), nullptr);
+        if (key == "spaceId")    ui.setProperty (UiIDs::spaceId, value.toString(), nullptr);
         else if (key == "lx")    ui.setProperty (UiIDs::listenerX, static_cast<double> (value), nullptr);
         else if (key == "locks") ui.setProperty (UiIDs::locks, value.toString(), nullptr);
         else if (key == "mode")  ui.setProperty (UiIDs::mode, value.toString(), nullptr);
