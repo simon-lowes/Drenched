@@ -8,3 +8,4 @@ dist/
 *.user
 compile_commands.json
 packages/
+__pycache__/

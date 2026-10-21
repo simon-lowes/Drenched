@@ -40,6 +40,17 @@ DrenchedProcessor::DrenchedProcessor()
     params.movement = raw (ParamIDs::movement);
     params.movementRate = raw (ParamIDs::movementRate);
 
+    // A new instance opens on the first recorded space, with the graph on its measured decay.
+    if (const auto& recordings = library::spaces(); ! recordings.empty())
+    {
+        getUiState().setProperty (UiIDs::spaceId, recordings.front().id, nullptr);
+
+        if (const auto* bands = recordings.front().info["bands"].getArray())
+            for (size_t band = 0; band < params.decay.size() && static_cast<int> (band) < bands->size(); ++band)
+                if (auto* parameter = state.getParameter (ParamIDs::decay[band]))
+                    parameter->setValueNotifyingHost (parameter->convertTo0to1 (static_cast<float> (static_cast<double> ((*bands)[static_cast<int> (band)]))));
+    }
+
     for (size_t band = 0; band < params.decay.size(); ++band)
         params.decay[band] = raw (ParamIDs::decay[band]);
 
@@ -56,14 +67,43 @@ DrenchedProcessor::~DrenchedProcessor()
     builder.reset();
 }
 
+juce::String DrenchedProcessor::chosenSpaceId()
+{
+    auto ui = getUiState();
+    const auto id = ui.getProperty (UiIDs::spaceId, "").toString();
+
+    if (id.isNotEmpty())
+        return id;
+
+    // Sessions from before space ids saved the index into the modelled spaces, or the
+    // slot after them for a loaded file.
+    const auto index = juce::jlimit (0, userSpace, static_cast<int> (ui.getProperty (UiIDs::space, 0)));
+    return index == userSpace ? juce::String ("user") : juce::String (bundledSpaces[static_cast<size_t> (index)].id);
+}
+
 void DrenchedProcessor::cacheUiState()
 {
     auto ui = getUiState();
-    spaceIndex.store (juce::jlimit (0, userSpace, static_cast<int> (ui.getProperty (UiIDs::space, 0))));
+    const auto id = chosenSpaceId();
+    auto index = 0;
+
+    if (id == "user")
+        index = userSpace;
+    else if (library::find (id) != nullptr)
+        index = librarySpace;
+    else
+        for (size_t i = 0; i < bundledSpaces.size(); ++i)
+            if (id == bundledSpaces[i].id)
+                index = static_cast<int> (i);
+
+    if (index == librarySpace)
+        loadLibrarySpace (id, false);
+
+    spaceIndex.store (index);
     listenerX.store (juce::jlimit (0.0f, 1.0f, static_cast<float> (static_cast<double> (ui.getProperty (UiIDs::listenerX, 0.5)))));
 }
 
-ImpulseResponseRequest DrenchedProcessor::currentRequest (double sampleRate) const
+std::optional<ImpulseResponseRequest> DrenchedProcessor::currentRequest (double sampleRate) const
 {
     ImpulseResponseRequest request;
     request.sampleRate = sampleRate;
@@ -75,6 +115,16 @@ ImpulseResponseRequest DrenchedProcessor::currentRequest (double sampleRate) con
         request.space = 0;
         const std::lock_guard lock (recordedLock);
         request.recorded = recorded;
+    }
+    else if (request.space == librarySpace)
+    {
+        // The chosen recording; until it has loaded, the previous sound carries on.
+        request.space = 0;
+        const std::lock_guard lock (recordedLock);
+        request.recorded = libraryResponse;
+
+        if (libraryResponse == nullptr)
+            return std::nullopt;
     }
     {
         const std::lock_guard lock (layoutLock);
@@ -99,7 +149,8 @@ void DrenchedProcessor::timerCallback()
     pollCapture();
 
     if (const auto rate = preparedRate.load(); rate > 0.0)
-        builder->request (currentRequest (rate));
+        if (auto request = currentRequest (rate))
+            builder->request (*request);
 }
 
 float DrenchedProcessor::predelayMs (float requested)
@@ -126,8 +177,6 @@ float DrenchedProcessor::predelayMs (float requested)
 //==============================================================================
 std::shared_ptr<const RecordedResponse> DrenchedProcessor::readImpulseResponse (const juce::File& file, juce::String& error)
 {
-    constexpr double maxSeconds = 31.0; // the engine keeps 30 s once the silence is trimmed
-
     if (! file.existsAsFile())
     {
         error = "Drenched can't find " + file.getFileName() + ".";
@@ -144,43 +193,62 @@ std::shared_ptr<const RecordedResponse> DrenchedProcessor::readImpulseResponse (
         return nullptr;
     }
 
-    const auto channels = static_cast<int> (reader->numChannels);
-    const auto length = static_cast<int> (std::min<juce::int64> (reader->lengthInSamples,
-                                                                   static_cast<juce::int64> (maxSeconds * reader->sampleRate)));
+    return prepareFromReader (*reader, file.getFileNameWithoutExtension(), file.getFileName(), error);
+}
 
-    if (channels < 1 || channels > 16 || length <= 0)
+void DrenchedProcessor::loadLibrarySpace (const juce::String& id, bool now)
+{
+    const auto* space = library::find (id);
+
+    if (space == nullptr)
+        return;
+
     {
-        error = file.getFileName() + " has no audio in it.";
-        return nullptr;
+        const std::lock_guard lock (recordedLock);
+
+        if ((libraryLoadedId == id && libraryResponse != nullptr) || (! now && libraryWanted == id))
+            return;
+
+        libraryWanted = id;
     }
 
-    juce::AudioBuffer<float> buffer (channels, length);
-
-    if (! reader->read (&buffer, 0, length, 0, true, true))
+    if (now)
     {
-        error = "Drenched couldn't read " + file.getFileName() + ".";
-        return nullptr;
+        juce::String error;
+        auto loaded = library::load (*space, error);
+        const std::lock_guard lock (recordedLock);
+        libraryResponse = std::move (loaded);
+        libraryLoadedId = id;
+        return;
     }
 
-    std::vector<std::vector<float>> audio (static_cast<size_t> (channels));
+    std::weak_ptr<int> alive = lifetime;
 
-    for (int c = 0; c < channels; ++c)
-        audio[static_cast<size_t> (c)].assign (buffer.getReadPointer (c), buffer.getReadPointer (c) + length);
+    loader.addJob ([this, space, id, alive]
+    {
+        juce::String error;
+        auto loaded = library::load (*space, error);
 
-    try
-    {
-        return prepareRecordedResponse (audio, reader->sampleRate, file.getFileNameWithoutExtension().toStdString());
-    }
-    catch (const std::invalid_argument& e)
-    {
-        error = juce::String (e.what());
-    }
-    catch (const std::exception&)
-    {
-        error = file.getFileName() + " is too large to load.";
-    }
+        juce::MessageManager::callAsync ([this, id, alive, loaded = std::move (loaded)]() mutable
+        {
+            if (alive.expired())
+                return;
 
-    return nullptr;
+            {
+                const std::lock_guard lock (recordedLock);
+
+                if (libraryWanted != id)
+                    return;
+
+                libraryResponse = std::move (loaded);
+                libraryLoadedId = id;
+            }
+
+            if (const auto rate = preparedRate.load(); rate > 0.0)
+                if (auto request = currentRequest (rate))
+                    builder->request (*request);
+        });
+    });
 }
 
 void DrenchedProcessor::loadImpulseResponseAsync (const juce::File& file)
@@ -236,7 +304,7 @@ void DrenchedProcessor::applyLoadedImpulseResponse (const juce::File& file, std:
         }
     }
 
-    ui.setProperty (UiIDs::space, userSpace, nullptr);
+    ui.setProperty (UiIDs::spaceId, "user", nullptr);
     cacheUiState();
 }
 
@@ -537,12 +605,14 @@ void DrenchedProcessor::prepareToPlay (double sampleRate, int)
 
     reverb.prepare (sampleRate, inputs, outputs);
     preparedRate.store (sampleRate);
+    loadLibrarySpace (chosenSpaceId(), true);
     cacheUiState();
 
     // Build the first response now, so playback (and offline bounces) start with the right sound.
     try
     {
-        builder->buildNow (currentRequest (sampleRate));
+        if (auto request = currentRequest (sampleRate))
+            builder->buildNow (*request);
     }
     catch (const std::exception&)
     {
@@ -635,10 +705,12 @@ void DrenchedProcessor::setStateInformation (const void* data, int sizeInBytes)
             state.replaceState (juce::ValueTree::fromXml (*xml));
 
     restoreImpulseResponse();
+    loadLibrarySpace (chosenSpaceId(), true);
     cacheUiState();
 
     if (const auto rate = preparedRate.load(); rate > 0.0)
-        builder->request (currentRequest (rate));
+        if (auto request = currentRequest (rate))
+            builder->request (*request);
 }
 
 } // namespace drenched

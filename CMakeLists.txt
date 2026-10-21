@@ -19,6 +19,7 @@ include(cmake/Dependencies.cmake)
 add_subdirectory(source/engine)
 add_subdirectory(source/licence)
 add_subdirectory(source/plugin)
+add_subdirectory(tools/library)
 
 if(DRENCHED_BUILD_TESTS)
     enable_testing()

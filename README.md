@@ -19,8 +19,10 @@ reshapes it. Or capture a space yourself: Capture a space plays a sine
 sweep from the left speaker (or left, then right, for true stereo) while
 recording the track's input, deconvolves it with the speaker's distortion
 removed, saves the result in Documents/Drenched/Captures and loads it.
-Until the space library is captured, the bundled spaces'
-impulse responses are synthesised from their dimensions and the decay graph.
+The space list starts with recorded spaces bundled in the plugin
+(`library/`, licence-checked recordings published by others), followed by
+modelled spaces whose responses are synthesised from their dimensions and
+the decay graph.
 
 Licensing: a 14-day trial, then a licence number (sold through Paddle)
 activates up to three computers. Activation is online once; the signed code
@@ -63,6 +65,7 @@ cmake -S . -B build -DJUCE_WEBVIEW2_PACKAGE_LOCATION=%cd%/packages
 | `source/engine/` | The DSP engine: plain C++20, no JUCE, unit tested |
 | `source/plugin/` | The JUCE plugin: processor, parameters, editor |
 | `source/ui/` | The interface: one web page, twelve skins, embedded in the plugin |
+| `library/` | The recorded spaces bundled in the plugin, their credits and how they are built |
 | `source/licence/` | Licence numbers and activation codes: plain C++20, no JUCE |
 | `server/` | The activation server (Cloudflare Worker) and its tests |
 | `tests/` | Catch2 unit tests for the engine and licences |

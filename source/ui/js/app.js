@@ -14,7 +14,7 @@ var PID={mix:'mix',pre:'predelay',size:'size',bright:'brightness',el:'earlyLate'
 var BAND_ID=['decay63','decay125','decay250','decay500','decay1k','decay2k','decay4k','decay8k'];
 function keyOf(id){for(var k in PID)if(PID[k]===id)return k;return null;}
 function paramValues(s){var o={};for(var k in PID)o[PID[k]]=k==='freeze'?(s.freeze?1:0):s[k];s.bands.forEach(function(b,i){o[BAND_ID[i]]=b;});return o;}
-function uiState(s){return {space:s.sp,lx:s.lx,locks:Object.keys(s.locks).filter(function(k){return s.locks[k];}).join(','),mode:s.mode,view:s.view,skin:s.skin};}
+function uiState(s){return {spaceId:SPACES[s.sp]?SPACES[s.sp].id:'',lx:s.lx,locks:Object.keys(s.locks).filter(function(k){return s.locks[k];}).join(','),mode:s.mode,view:s.view,skin:s.skin};}
 
 var lastSent={},lastUi={};
 function sync(){var cur=paramValues(st),out={},n=0;for(var id in cur){if(lastSent[id]!==cur[id]){out[id]=cur[id];lastSent[id]=cur[id];n++;}}if(n&&JUCE)JUCE.emitEvent('params',out);}
@@ -31,7 +31,7 @@ function applyFromHost(msg){if(!msg)return;var p=msg.params||{},u=msg.ui||{};
   irEvent=ev;}
  for(var id in p){var v=+p[id];if(!isFinite(v))continue;lastSent[id]=v;var bi=BAND_ID.indexOf(id);if(bi>=0){st.bands[bi]=v;continue;}
   var k=keyOf(id);if(!k)continue;if(k==='freeze')st.freeze=v>=0.5;else st[k]=v;}
- if(u.space!=null){st.sp=clamp(Math.round(+u.space)||0,0,SPACES.length-1);lastUi.space=st.sp;}
+ if(u.spaceId!=null){var si=spaceIndex(String(u.spaceId));if(si>=0){st.sp=si;lastUi.spaceId=String(u.spaceId);}}
  if(u.lx!=null){st.lx=clamp(+u.lx||0.5,0.06,0.94);lastUi.lx=st.lx;}
  if(u.locks!=null){st.locks={};String(u.locks).split(',').forEach(function(k){if(k&&P[k])st.locks[k]=true;});lastUi.locks=uiState(st).locks;}
  if(u.mode==='studio'||u.mode==='stage'){st.mode=u.mode;lastUi.mode=u.mode;}
@@ -77,6 +77,15 @@ function onCapture(m){if(!m)return;var was=st.capStatus.stage,msgWas=st.capStatu
  if(was==='working'&&st.capStatus.stage==='idle')st.capture=false;
  renderLive();}
 
+/* ---- credits for the recorded spaces: who made each recording, and its licence ---- */
+st.credits=false;
+function creditsHTML(){var seen={},rows=[];LIBRARY.forEach(function(x){var k=x.credit+'|'+x.licence;if(!x.credit||seen[k])return;seen[k]=[];rows.push({credit:x.credit,licence:x.licence,source:x.source,changes:x.changes,spaces:seen[k]});});
+ LIBRARY.forEach(function(x){var k=x.credit+'|'+x.licence;if(seen[k])seen[k].push(x.name);});
+ var body=rows.length?'<ul class="crl">'+rows.map(function(r){return '<li><b>'+esc(r.credit)+'</b><span>'+esc(r.licence)+(r.source?', '+esc(r.source):'')+'</span><small>'+esc(r.spaces.join('; '))+'</small>'+(r.changes?'<small>Changes: '+esc(r.changes)+'</small>':'')+'</li>';}).join('')+'</ul>'
+   :'<p>This build has no recorded spaces.</p>';
+ return '<div class="cap crd" role="dialog" aria-modal="true" aria-labelledby="crd-h"><div class="cbox"><div class="chd"><h2 id="crd-h">Recording credits</h2><button class="cx" data-act="credits" aria-label="Close">Close</button></div>'+
+  '<p>The recorded spaces are used under the licences below. Thank you to everyone who made and shared them.</p>'+body+'</div></div>';}
+
 /* ---- the licence: a trial, then activation online or with a code made on another device ---- */
 st.lic=false;st.licOff=false;st.licKey='';st.licCode='';
 st.licence={state:'trial',daysLeft:14,name:'',licence:'',machine:'',page:'',busy:false,message:'',error:false,testKey:false};
@@ -109,11 +118,11 @@ function fit(){var w=live.clientWidth,h=live.clientHeight,sc=Math.min(w/W,h/H),e
  el.style.transform='translate('+((w-W*sc)/2).toFixed(2)+'px,'+((h-H*sc)/2).toFixed(2)+'px) scale('+sc.toFixed(5)+')';
  var frs=live.querySelectorAll('.skins .fr');for(var i=0;i<frs.length;i++){var s2=frs[i].firstElementChild;if(s2)s2.style.transform='scale('+(frs[i].clientWidth/W).toFixed(5)+')';}}
 function renderLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAttribute('data-fid'):null;
- var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';
+ var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';
  live.innerHTML=html;fit();
  if(fid){var n=live.querySelector('[data-fid="'+fid+'"]');if(n){n.focus({preventScroll:true});if(n.matches('input,textarea'))n.selectionStart=n.selectionEnd=n.value.length;}}
  // A dialog keeps the keyboard even when the control that had it is redrawn away.
- if((st.lic||st.capture)&&!live.contains(document.activeElement)){var d=live.querySelector('.cap .cgo:not([disabled])')||live.querySelector('.cap .cx');if(d)d.focus({preventScroll:true});}}
+ if((st.lic||st.capture||st.credits)&&!live.contains(document.activeElement)){var d=live.querySelector('.cap .cgo:not([disabled])')||live.querySelector('.cap .cx');if(d)d.focus({preventScroll:true});}}
 var raf=0;function schedule(){if(!raf)raf=requestAnimationFrame(function(){raf=0;renderLive();sync();syncUi();});}
 window.schedule=schedule;
 window.addEventListener('resize',fit);
@@ -124,7 +133,7 @@ function snap(s){var o={sp:s.sp,bands:s.bands.slice(),lx:s.lx};for(var k in PID)
 function changeSpace(i){var old=snap(st),sp=SPACES[i],held=[];st.sp=i;st.bands=sp.bands.slice();st.pre=sp.pre;st.size=100;
  if(st.locks.decay){var f=decayOf(old.bands)/decayOf(sp.bands);st.bands=st.bands.map(function(b){return clamp(b*f,0.1,20);});held.push('Decay');}
  if(st.locks.pre){st.pre=old.pre;held.push('Pre-delay');}if(st.locks.mix)held.push('Mix');
- st.hint=null;st.note='<b>'+esc(sp.name)+'</b> loaded.'+(held.length?' Locked and held: '+held.join(', ')+'.':' Lock a value to hold it when you change space.');}
+ st.hint=null;st.note='<b>'+esc(sp.name)+'</b> loaded.'+(held.length?' Locked and held: '+held.join(', ')+'.':' Lock a value to hold it when you change space.')+(sp.credit?' Recording: '+esc(sp.credit)+', '+esc(sp.licence)+'.':'');}
 var drag=null;
 live.addEventListener('pointerdown',function(e){var t=e.target;if(t.closest('input,button'))return;
  var kn=t.closest('[data-knob]'),lis=t.closest('[data-drag]'),dg=t.closest('svg[data-decay]');
@@ -150,7 +159,7 @@ live.addEventListener('pointermove',function(e){if(!drag)return;
 function endDrag(){if(drag){var ids=drag.ids;drag=null;schedule();gesture(ids,false);}}
 live.addEventListener('pointerup',endDrag);live.addEventListener('pointercancel',endDrag);
 live.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1,PageUp:10,PageDown:-10};
- if(e.key==='Escape'&&(st.skins||st.browse||st.capture||st.lic)){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
+ if(e.key==='Escape'&&(st.skins||st.browse||st.capture||st.lic||st.credits)){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.credits)st.credits=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
  if(e.key==='Enter'&&t.id==='lic-key'){e.preventDefault();licActivate();renderLive();return;}
  if(t.matches('.sk')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.click();return;}
  if(t.matches('[data-knob]')){var k=t.getAttribute('data-knob'),p=P[k];if(e.key==='Home')setParam(st,k,p.min);else if(e.key==='End')setParam(st,k,p.max);else if(keys[e.key])setParam(st,k,from01(k,to01(k,getV(st,k))+keys[e.key]*(e.shiftKey?0.002:0.02)));else return;e.preventDefault();schedule();}
@@ -180,6 +189,7 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'view':st.view=v;break;
   case 'browse':st.browse=!st.browse;break;
   case 'loadir':st.browse=false;st.hint=null;if(JUCE){JUCE.emitEvent('loadIr',{});st.note='Choose a WAV, AIFF or FLAC impulse response: mono, stereo or four-channel true stereo.';}else st.note='<b>Load your own IR</b> opens a file chooser in the plugin.';break;
+  case 'credits':st.credits=!st.credits;st.browse=false;st.hint=null;break;
   case 'capture':st.capture=!st.capture;st.hint=null;if(st.capture&&!capBusy()&&st.capStatus.stage!=='failed')st.capStatus.message='';break;
   case 'capopt':var ck=b.getAttribute('data-k');if(CAP_OPTS[ck]&&!capBusy())st.cap[ck]=+v;break;
   case 'capstart':if(JUCE){st.capStatus={stage:'playing',progress:0,peakDb:-100,message:''};JUCE.emitEvent('startCapture',{speakers:st.cap.speakers,sweepSeconds:st.cap.sweep,tailSeconds:st.cap.tail,levelDb:st.cap.level});}
@@ -212,7 +222,7 @@ live.addEventListener('contextmenu',function(e){e.preventDefault();});
 /* ---- start ---- */
 var init=null;
 try{var d=window.__JUCE__&&window.__JUCE__.initialisationData&&window.__JUCE__.initialisationData.drenched;if(d&&d.length)init=d[0];}catch(_){}
-if(init){applyFromHost(init);if(init.licence)Object.assign(st.licence,init.licence);}
+if(init){setLibrary(init.library);Object.assign(st,{sp:0,bands:SPACES[0].bands.slice(),pre:SPACES[0].pre});applyFromHost(init);if(init.licence)Object.assign(st.licence,init.licence);}
 try{var hs=(location.hash||'').slice(1);if(SKINS.some(function(x){return x.id===hs;}))st.skin=hs;}catch(_){}
 Object.assign(lastSent,paramValues(st));Object.assign(lastUi,uiState(st));
 renderLive();

@@ -4,18 +4,31 @@
    every web view JUCE supports. */
 'use strict';
 var FREQ=['63','125','250','500','1k','2k','4k','8k'];
-var SPACES=[
- {name:'Grand Hall',no:'Hall 03',kind:'hall',place:'Concert hall, from the balcony',W:28,D:42,H:16,mat:'Oak and plaster',bands:[2.9,2.8,2.6,2.4,2.3,2.0,1.6,1.1],pre:18,rec:'Spaced omni pair, row 12',date:'March 2024'},
- {name:'Stone Chapel',no:'Chapel 07',kind:'chapel',place:'Nave, mid aisle',W:13,D:36,H:17,mat:'Limestone',bands:[3.9,4.1,3.9,3.6,3.4,3.0,2.3,1.5],pre:24,rec:'Ambisonic, pew 9',date:'November 2023'},
- {name:'Car Park Level 2',no:'Concrete 02',kind:'garage',place:'Underground deck',W:44,D:58,H:3.2,mat:'Bare concrete',bands:[1.5,1.8,2.0,1.9,1.8,1.6,1.3,0.9],pre:9,rec:'Cardioid pair, bay 14',date:'June 2024'},
- {name:'Live Room B',no:'Room 11',kind:'room',place:'Studio live room',W:9,D:12,H:4.2,mat:'Timber and diffusers',bands:[0.72,0.66,0.6,0.55,0.52,0.5,0.45,0.38],pre:4,rec:'Room pair, 3 m',date:'January 2025'}
+/* The spaces. Recorded ones come from the plugin's bundled library (library/library.json),
+   listed first; the modelled ones are synthesised from their size and decay, and keep the
+   ids the engine knows them by (source/engine/include/drenched/Spaces.h). Sessions save the
+   id, so the list can grow without breaking them. */
+var MODELLED=[
+ {id:'modelled-hall',name:'Grand Hall',no:'Modelled',kind:'hall',img:'hall',place:'Concert hall, from the balcony',W:28,D:42,H:16,mat:'Oak and plaster',bands:[2.9,2.8,2.6,2.4,2.3,2.0,1.6,1.1],pre:18,rec:'Modelled from the room\u2019s size and decay',date:'synthesised'},
+ {id:'modelled-chapel',name:'Stone Chapel',no:'Modelled',kind:'chapel',img:'chapel',place:'Nave, mid aisle',W:13,D:36,H:17,mat:'Limestone',bands:[3.9,4.1,3.9,3.6,3.4,3.0,2.3,1.5],pre:24,rec:'Modelled from the room\u2019s size and decay',date:'synthesised'},
+ {id:'modelled-garage',name:'Car Park Level 2',no:'Modelled',kind:'garage',img:'garage',place:'Underground deck',W:44,D:58,H:3.2,mat:'Bare concrete',bands:[1.5,1.8,2.0,1.9,1.8,1.6,1.3,0.9],pre:9,rec:'Modelled from the room\u2019s size and decay',date:'synthesised'},
+ {id:'modelled-room',name:'Live Room B',no:'Modelled',kind:'room',img:'room',place:'Studio live room',W:9,D:12,H:4.2,mat:'Timber and diffusers',bands:[0.72,0.66,0.6,0.55,0.52,0.5,0.45,0.38],pre:4,rec:'Modelled from the room\u2019s size and decay',date:'synthesised'}
 ];
-/* A loaded impulse response joins the list as a fifth space, described by the plugin: its
+var LIBRARY=[],SPACES=MODELLED.slice(),USER=SPACES.length;
+var KINDS={hall:1,chapel:1,garage:1,room:1};
+function setLibrary(list){LIBRARY=(list||[]).filter(function(x){return x&&x.id&&x.name;}).map(function(x){var k=KINDS[x.kind]?x.kind:'hall';
+  return {id:String(x.id),name:String(x.name),no:String(x.no||'Recorded'),kind:k,img:KINDS[x.img]?x.img:k,place:String(x.place||''),W:+x.W||14,D:+x.D||20,H:+x.H||8,
+   mat:String(x.mat||''),bands:(x.bands||[2,2,2,2,2,2,2,2]).map(function(b){return clamp(+b||1,0.1,20);}),pre:+x.pre||0,rec:String(x.rec||''),date:String(x.date||''),
+   credit:String(x.credit||''),licence:String(x.licence||''),source:String(x.source||''),changes:String(x.changes||''),recorded:true};});
+ var user=SPACES.length>USER?SPACES[USER]:null;SPACES.length=0;LIBRARY.concat(MODELLED).forEach(function(x){SPACES.push(x);});USER=SPACES.length;if(user)SPACES.push(user);}
+/* Up to four spaces for a row of swatches: the chosen one and those after it, wrapping. */
+function swatchWindow(s){var n=Math.min(4,SPACES.length),out=[];for(var j=0;j<n;j++)out.push((s.sp+j)%SPACES.length);return out;}
+function spaceIndex(id){for(var i=0;i<SPACES.length;i++)if(SPACES[i].id===id)return i;return -1;}
+/* A loaded impulse response joins the end of the list, described by the plugin: its
    measured decay and the room size its echo density implies. A missing file keeps its slot
    so the session still says what it used. */
-var USER=4;
 function setUserSpace(ir){SPACES.length=USER;if(!ir)return;var miss=!!ir.missing;
- SPACES.push({name:String(ir.name||'Your impulse response'),no:'Your IR',kind:'user',place:miss?'File not found':'Your own impulse response',
+ SPACES.push({id:'user',name:String(ir.name||'Your impulse response'),no:'Your IR',kind:'user',img:'user',place:miss?'File not found':'Your own impulse response',
   W:+ir.W||10,D:+ir.D||14,H:+ir.H||5.5,mat:'Measured from the file',bands:(ir.bands||[1,1,1,1,1,1,1,1]).map(function(b){return clamp(+b||1,0.1,20);}),pre:0,
   rec:miss?'Load it again to hear it':(+ir.ch===4?'True-stereo':+ir.ch===2?'Stereo':'Mono')+' file, '+Math.round(+ir.rate||48000)+' Hz',date:miss?'file missing':'by you',missing:miss});}
 /* The twelve skins. Each is a token set plus a composition in COMPOSE; the ids match the
@@ -139,7 +152,7 @@ function decaySVG(sysId,s,w,h,o){o=o||{};var sp=spOf(s),b=s.bands,nat=sp.bands,b
  return out+'</svg>';}
 
 /* photographs */
-function photoEl(s,w,h,extra){var z=1+(1-s.dist/100)*0.22,st2=w?'width:'+w+'px;height:'+h+'px;':'';return '<div class="phw" style="'+st2+(extra||'')+'" role="img" aria-label="'+esc(spOf(s).name)+'"><div class="phi sp'+s.sp+'" style="transform:scale('+z.toFixed(3)+')'+''+'"></div></div>';}
+function photoEl(s,w,h,extra){var z=1+(1-s.dist/100)*0.22,st2=w?'width:'+w+'px;height:'+h+'px;':'';return '<div class="phw" style="'+st2+(extra||'')+'" role="img" aria-label="'+esc(spOf(s).name)+'"><div class="phi ph-'+spOf(s).img+'" style="transform:scale('+z.toFixed(3)+')'+''+'"></div></div>';}
 
 /* plan drawing (Section) */
 function planView(s,w,h){var sp=spOf(s),ss=s.size/100,W=sp.W*ss,D=sp.D*ss,H=sp.H*ss,cp=w<400,m=cp?16:64;
@@ -248,7 +261,7 @@ function licChip(s){var L=s.licence;if(!L||L.state==='licensed')return '';
 function dbText(v){return v<=-60?'\u2212\u221e':v.toFixed(1).replace('-','\u2212');}
 function meterPct(v){return clamp(1+v/60,0,1)*100;}
 function meters(){var i=Math.max(st.inL,st.inR),o=Math.max(st.outL,st.outR);return '<div class="mm">In<span class="bar"><i data-m="in" style="width:'+meterPct(i).toFixed(0)+'%"></i></span><em data-mt="in">'+dbText(i)+'</em></div><div class="mm">Out<span class="bar"><i data-m="out" style="width:'+meterPct(o).toFixed(0)+'%"></i></span><em data-mt="out">'+dbText(o)+'</em></div>';}
-function menuHTML(s){return '<div class="menu" role="menu"><div class="mh"><span>Example spaces</span><span>RT60, volume</span></div>'+SPACES.map(function(sp,i){return '<button role="menuitem" data-act="pick" data-v="'+i+'" aria-current="'+(i===s.sp)+'"><span>'+esc(sp.name)+'</span><small>'+f1(decayOf(sp.bands))+' s, '+vol(sp)+'</small></button>';}).join('')+'<button role="menuitem" class="mload" data-act="loadir"><span>Load your own IR\u2026</span><small>WAV, AIFF, FLAC</small></button><button role="menuitem" class="mcap" data-act="capture"><span>Capture a space\u2026</span><small>Sweep and record</small></button>'+(s.licence&&s.licence.state==='beta'?'':'<button role="menuitem" class="mlic" data-act="licence"><span>Licence\u2026</span><small>'+(s.licence&&s.licence.state==='licensed'?'Activated':s.licence&&s.licence.state==='ended'?'Trial ended':'Trial')+'</small></button>')+'</div>';}
+function menuHTML(s){return '<div class="menu" role="menu"><div class="mh"><span>'+(LIBRARY.length?'Recorded':'Spaces')+'</span><span>RT60, volume</span></div>'+SPACES.map(function(sp,i){return (LIBRARY.length&&i===LIBRARY.length?'<div class="mh"><span>Modelled</span></div>':'')+'<button role="menuitem" data-act="pick" data-v="'+i+'" aria-current="'+(i===s.sp)+'"><span>'+esc(sp.name)+'</span><small>'+f1(decayOf(sp.bands))+' s, '+vol(sp)+'</small></button>';}).join('')+'<button role="menuitem" class="mload" data-act="loadir"><span>Load your own IR\u2026</span><small>WAV, AIFF, FLAC</small></button><button role="menuitem" class="mcap" data-act="capture"><span>Capture a space\u2026</span><small>Sweep and record</small></button>'+(LIBRARY.length?'<button role="menuitem" class="mcred" data-act="credits"><span>Recording credits\u2026</span><small>'+LIBRARY.length+' recorded</small></button>':'')+(s.licence&&s.licence.state==='beta'?'':'<button role="menuitem" class="mlic" data-act="licence"><span>Licence\u2026</span><small>'+(s.licence&&s.licence.state==='licensed'?'Activated':s.licence&&s.licence.state==='ended'?'Trial ended':'Trial')+'</small></button>')+'</div>';}
 function advRows(s){
  var deepRow=function(k){if(k==='preSync')return '<div class="row"><span>'+P[k].l+'</span><button class="tg" data-act="toggle" data-k="preSync" aria-pressed="'+(s.preSync>=0.5)+'">'+fmt(s,k)+'</button></div>';return '<div class="row"><span>'+P[k].l+'</span>'+roEl(s,k)+'</div>';};
  return '<div class="ph"><span class="lbl">All parameters</span><span class="ph-r"><button data-act="skins" aria-expanded="'+s.skins+'">Look: '+esc(skinOf(s.skin).name)+'</button><button data-act="adv" aria-label="Close all parameters">Close</button></span></div>'+MAIN.map(function(k){return '<div class="row"><span>'+P[k].l+'</span>'+roEl(s,k)+'</div>';}).join('')+DEEP.map(deepRow).join('')+'<div class="row"><span>Early pattern</span><em>As captured</em></div>';}
@@ -371,7 +384,7 @@ var COMPOSE={
    '<div class="ma-head"><h3>'+esc(sp.name)+'</h3><span class="sub"><i></i>'+esc(sp.mat)+', '+vol(sp)+', '+f1(sp.W*ss)+' \u00d7 '+f1(sp.D*ss)+' \u00d7 '+f1(sp.H*ss)+' m</span><div class="nav">'+prevNext(s)+'<button class="ma-link" data-act="browse" aria-expanded="'+s.browse+'">All spaces</button></div></div>'+
    '<div class="ma-graph"><span class="lbl">Decay by frequency<span style="margin-left:auto">RT60 '+esc(fmt(s,'decay'))+', pre-delay '+esc(fmt(s,'pre'))+'</span></span>'+decaySVG('material',s,538,296,{m:[44,18,10,26]})+'</div>'+
    '<div class="ma-photo">'+photoEl(s,0,0,'position:absolute;inset:0')+'<span class="tag">'+esc(sp.place.toUpperCase())+', '+esc(sp.date.toUpperCase())+'</span></div>'+
-   '<div class="ma-sw">'+SPACES.map(function(x,i){var m=MAT[x.kind];return '<button data-act="pick" data-v="'+i+'" aria-current="'+(i===s.sp)+'"><i style="background:linear-gradient(135deg,'+m.g+' 50%,'+m.ac+' 50%)"></i><span>'+esc(x.name)+'<small>'+f1(decayOf(x.bands))+' s</small></span></button>';}).join('')+'</div>'+ctl+
+   '<div class="ma-sw">'+swatchWindow(s).map(function(i){var x=SPACES[i],m=MAT[x.kind];return '<button data-act="pick" data-v="'+i+'" aria-current="'+(i===s.sp)+'"><i style="background:linear-gradient(135deg,'+m.g+' 50%,'+m.ac+' 50%)"></i><span>'+esc(x.name)+'<small>'+f1(decayOf(x.bands))+' s</small></span></button>';}).join('')+'</div>'+ctl+
    '<div class="ma-strip">'+hintText(s)+meters()+'</div>';},
 
  folio:function(s){var sp=spOf(s),e=eqp(s.el),parts=sp.name.split(' '),last=parts.pop();

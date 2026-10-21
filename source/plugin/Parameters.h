@@ -62,7 +62,8 @@ namespace ParamIDs
 namespace UiIDs
 {
     inline const juce::Identifier tree { "ui" };
-    inline const juce::Identifier space { "space" };
+    inline const juce::Identifier space { "space" };     // sessions before space ids: an index
+    inline const juce::Identifier spaceId { "spaceId" }; // a library id, a modelled id, or "user"
     inline const juce::Identifier listenerX { "lx" };
     inline const juce::Identifier locks { "locks" };
     inline const juce::Identifier mode { "mode" };
