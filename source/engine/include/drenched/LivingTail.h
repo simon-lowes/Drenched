@@ -44,22 +44,33 @@ struct LivingTailDesign
     loop lossless above the crossover, so the room sustains for ever, while
     the bass below keeps its natural decay and never builds into mud.
 
+    Movement lets each line's length drift slowly, at its own speed, so the
+    tail breathes the way air moving in a real room does. A frozen tail
+    holds still, so it stays exactly as loud for as long as it is held. A new design
+    glides the line lengths to theirs instead of jumping, so the room can
+    change while the tail is audible.
+
     prepare() allocates. Everything else is real-time safe. */
 class LivingTail
 {
 public:
     static constexpr double maxDelaySeconds = 0.2;
+    static constexpr double maxMovementSeconds = 0.0015; // how far a line's length drifts at full movement
+    static constexpr double glideSeconds = 0.25;         // how long a new design takes to glide in
 
     void prepare (double sampleRate);
     void reset() noexcept;
 
-    /** Takes the room's delays and filters. Changing delay lengths while the
-        tail is audible would click, so the caller does this only while it
-        is silent. */
+    /** Takes the room's delays and filters. The delays glide to their new
+        lengths over glideSeconds, so this never clicks. */
     void setDesign (const LivingTailDesign& design) noexcept;
 
     /** Lossless above crossoverHz when frozen; the room's decay otherwise. */
     void setFrozen (bool frozen, float crossoverHz) noexcept;
+
+    /** depth 0..1 of maxMovementSeconds; rateHz is the average speed of the
+        drift (each line runs a little faster or slower than it). */
+    void setMovement (float depth, float rateHz) noexcept;
 
     bool hasDesign() const noexcept { return current.valid; }
     float releaseSeconds() const noexcept { return current.releaseSeconds; }
@@ -76,7 +87,10 @@ public:
 private:
     static constexpr std::size_t N = LivingTailDesign::numLines;
 
-    void applyLoopFilters() noexcept;
+    void applyLoopFilters (bool glide) noexcept;
+    void glideLoopFilters (std::size_t numSamples) noexcept;
+    void readFixed (std::array<float, LivingTailDesign::numLines>& taps) noexcept;
+    void readMoving (std::array<float, LivingTailDesign::numLines>& taps) noexcept;
 
     double rate = 48000.0;
     LivingTailDesign current;
@@ -87,12 +101,31 @@ private:
     std::size_t capacity = 0, mask = 0, write = 0;
 
     // Loop filters, stored shelf by shelf across the lines so the inner loop
-    // runs all sixteen lines at once in SIMD.
+    // runs all sixteen lines at once in SIMD. A new design's filters and
+    // output level glide in from the old ones block by block, so a new room
+    // never clicks.
     using Lines = std::array<float, N>;
-    std::array<Lines, LivingTailDesign::numShelves> b0 {}, b1 {}, b2 {}, a1 {}, a2 {}, z1 {}, z2 {};
-    Lines loopGain {};
+
+    struct LoopFilters
+    {
+        std::array<Lines, LivingTailDesign::numShelves> b0 {}, b1 {}, b2 {}, a1 {}, a2 {};
+        Lines gain {};
+        float output = 0.0f; // the room-matched output level
+    };
+
+    LoopFilters now, from, to;
+    std::array<Lines, LivingTailDesign::numShelves> z1 {}, z2 {};
+    std::size_t filterGlideLength = 0, filterGlideDone = 0;
 
     void setShelf (std::size_t shelf, std::size_t line, const Biquad::Coefficients& c) noexcept;
+
+    // Line lengths in samples, fractional while gliding or moving.
+    Lines delayNow {}, glideStep {}, allpass {};
+    std::size_t glideRemaining = 0;
+
+    // Movement: a sine per line, run as a rotating phasor.
+    Lines lfoSin {}, lfoCos {}, rotSin {}, rotCos {};
+    float depthNow = 0.0f, depthTarget = 0.0f, depthStep = 0.0f, maxExcursion = 0.0f, movementRate = -1.0f;
 };
 
 /** Fits a living tail to a room: delays from the room's mean free path,
@@ -100,5 +133,13 @@ private:
     late part of `responses`, the impulse response the convolution plays.
     Allocates; run it off the audio thread. */
 LivingTailDesign designLivingTail (const ImpulseResponseRequest& request, const ImpulseResponseSet& responses);
+
+/** Hands part of the late reverberation over to the living tail: the
+    response's late part (from the mixing time, fully by twice it) is turned
+    down by the cosine of the blend, and the returned level, its sine, is how
+    loud the tail plays, so the late energy stays the same. The early
+    reflections are untouched. Call after designLivingTail(), which matches
+    the tail to the unblended response. */
+float applyLivingBlend (ImpulseResponseSet& responses, float livingPercent, double mixingTimeSeconds);
 
 } // namespace drenched

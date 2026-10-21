@@ -85,9 +85,11 @@ void KernelBuilder::build (const ImpulseResponseRequest& wanted)
     }
 
     const auto tail = designLivingTail (wanted, responses);
+    const auto living = applyLivingBlend (responses, wanted.livingPercent, mixingTimeSeconds (wanted));
     auto kernel = wanted.outputs == layouts::stereo()
                     ? std::make_unique<ReverbKernel> (responses, tail)
                     : std::make_unique<ReverbKernel> (spreadResponses (responses, wanted.outputs, mixingTimeSeconds (wanted)), tail);
+    kernel->setLivingLevel (living);
     reverb.submit (std::move (kernel));
 
     const std::lock_guard lock (mutex);

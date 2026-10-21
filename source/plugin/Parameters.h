@@ -27,6 +27,9 @@ namespace ParamIDs
     inline constexpr auto width = "width";
     inline constexpr auto ducking = "ducking";
     inline constexpr auto monoBelow = "monoBelow";
+    inline constexpr auto living = "living";
+    inline constexpr auto movement = "movement";
+    inline constexpr auto movementRate = "movementRate";
 
     inline constexpr std::array<const char*, 8> decay { "decay63",  "decay125", "decay250", "decay500",
                                                         "decay1k",  "decay2k",  "decay4k",  "decay8k" };
@@ -43,6 +46,8 @@ namespace ParamIDs
 
             for (auto* id : decay)
                 list.add (id);
+
+            list.addArray ({ living, movement, movementRate });
 
             return list;
         }();
@@ -132,6 +137,14 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     for (size_t band = 0; band < ParamIDs::decay.size(); ++band)
         layout.add (std::make_unique<Float> (ParameterID { ParamIDs::decay[band], 1 }, ParamIDs::decayNames[band],
                                              logRange (0.1f, 20.0f, 0.01f), defaultDecay[band], seconds));
+
+    // Added after the decays so earlier sessions and automation keep their order.
+    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::living, 1 }, "Living tail",
+                                         NormalisableRange<float> (0.0f, 100.0f, 1.0f), 0.0f, percent));
+    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::movement, 1 }, "Movement",
+                                         NormalisableRange<float> (0.0f, 100.0f, 1.0f), 20.0f, percent));
+    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::movementRate, 1 }, "Movement rate",
+                                         logRange (0.05f, 5.0f, 0.01f), 0.7f, hertz));
 
     return layout;
 }

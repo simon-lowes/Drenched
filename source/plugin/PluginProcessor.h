@@ -135,6 +135,9 @@ private:
         std::atomic<float>* monoBelow = nullptr;
         std::atomic<float>* freeze = nullptr;
         std::atomic<float>* crossover = nullptr;
+        std::atomic<float>* living = nullptr;
+        std::atomic<float>* movement = nullptr;
+        std::atomic<float>* movementRate = nullptr;
         std::array<std::atomic<float>*, 8> decay {};
     } params;
 

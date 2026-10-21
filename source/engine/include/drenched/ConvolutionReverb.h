@@ -35,6 +35,12 @@ public:
     std::size_t numOutputs() const noexcept { return fromLeft.numOutputs(); }
     const LivingTailDesign& livingTail() const noexcept { return tailDesign; }
 
+    /** How loud the living tail plays alongside this kernel, 0..1: the builder
+        took the same share of the late part out of the response, so the
+        late reverberation keeps its level (see applyLivingBlend()). */
+    float livingLevel() const noexcept { return living; }
+    void setLivingLevel (float level) noexcept { living = level; }
+
     void reset() noexcept;
 
     /** Overwrites numOutputs() outputs. scratch holds as many buffers of the
@@ -47,6 +53,7 @@ private:
     std::size_t irLength;
     PartitionedConvolver fromLeft, fromRight;
     LivingTailDesign tailDesign;
+    float living = 0.0f;
 };
 
 /** Block-rate controls for the wet path and the mix. */
@@ -63,6 +70,8 @@ struct ReverbControls
     float outputGain = 1.0f;     // linear
     bool freeze = false;         // the room sustains for ever; new sound stays dry
     float crossoverHz = 320.0f;  // below this a frozen tail keeps decaying
+    float movement = 0.0f;       // 0 .. 1, how far the living tail drifts
+    float movementRateHz = 0.7f; // how fast it drifts
 };
 
 /** The complete reverb: pre-delay, convolution from the two stage sources to
@@ -82,11 +91,12 @@ struct ReverbControls
     Kernels the audio thread is finished with go back through takeRetired()
     to be freed off the audio thread.
 
-    The living tail runs alongside, following the same input. Freezing
-    crossfades from the convolution to the tail, which then holds the room
-    for ever while new input stays out of the wet path. Releasing lets the
-    tail die away at the room's own decay while the convolution takes new
-    input again.
+    The living tail runs alongside, following the same input, and plays at
+    the level the kernel asks for (none unless the living blend is up).
+    Freezing crossfades from the convolution to the tail, which then holds
+    the room for ever while new input stays out of the wet path. Releasing
+    lets the tail die away at the room's own decay while the convolution
+    takes new input again.
 
     process() and reset() are real-time safe. prepare() allocates. */
 class ConvolutionReverb
@@ -192,6 +202,7 @@ private:
     float convInputGain = 1.0f, tailInputGain = 1.0f, inputCoef = 0.0f;
     float convPosition = 1.0f, tailPosition = 0.0f;
     float freezeStep = 0.0f, returnStep = 0.0f, releaseStep = 0.0f;
+    float livingGain = 0.0f, livingStep = 0.0f; // the kernel's living level, gliding
 
     // Workspace: chunkSize each, or maxChannels blocks of chunkSize.
     std::vector<float> wetInL, wetInR, tailInL, tailInR, zeros, monoCopy;

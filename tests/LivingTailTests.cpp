@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <vector>
 
 using namespace drenched;
@@ -206,6 +207,105 @@ TEST_CASE ("Unfreezing returns the tail to the room's decay", "[livingtail]")
     CHECK (start - end > 60.0);
 }
 
+TEST_CASE ("Movement makes the tail drift but keeps its decay", "[livingtail][movement]")
+{
+    const auto space = GENERATE (0, 3);
+    const auto request = requestFor (space);
+    auto still = tailFor (request);
+    auto moving = tailFor (request);
+    moving.setMovement (1.0f, 0.7f);
+
+    const auto slowest = *std::max_element (request.decaySeconds.begin(), request.decaySeconds.end());
+    const auto length = static_cast<std::size_t> ((slowest + 0.5) * request.sampleRate);
+    const auto a = render (still, std::vector<float> (1, 1.0f), length);
+    const auto b = render (moving, std::vector<float> (1, 1.0f), length);
+
+    // Reading between samples softens the very top a little, so 8 kHz has
+    // more room.
+    for (std::size_t band = 1; band < 8; ++band)
+    {
+        const auto measured = measureRt60 (b.left, request.sampleRate, decayBandCentres[band]);
+        const auto wanted = static_cast<double> (request.decaySeconds[band]);
+        INFO (bundledSpaces[static_cast<std::size_t> (space)].name << " band " << decayBandCentres[band] << " Hz: wanted "
+                                                                   << wanted << " s, measured " << measured << " s");
+        CHECK (std::abs (measured - wanted) / wanted < (band == 7 ? 0.2 : 0.12));
+    }
+
+    // It is no longer the same tail: after half a second the two have drifted apart.
+    double ab = 0.0, aa = 0.0, bb = 0.0;
+
+    for (auto n = static_cast<std::size_t> (0.5 * request.sampleRate); n < static_cast<std::size_t> (1.0 * request.sampleRate); ++n)
+    {
+        ab += static_cast<double> (a.left[n]) * b.left[n];
+        aa += static_cast<double> (a.left[n]) * a.left[n];
+        bb += static_cast<double> (b.left[n]) * b.left[n];
+    }
+
+    const auto correlation = ab / std::sqrt (aa * bb);
+    INFO ("correlation with the still tail " << correlation);
+    CHECK (correlation < 0.8);
+}
+
+TEST_CASE ("A frozen tail holds still and steady with movement on", "[livingtail][movement]")
+{
+    const auto request = requestFor (1);
+    const auto sr = request.sampleRate;
+    auto tail = tailFor (request);
+    tail.setMovement (1.0f, 5.0f);
+
+    // Moving while the room fills, then frozen.
+    const auto noise = testing::noise (static_cast<std::size_t> (1.0 * sr), 7);
+    const auto filling = render (tail, noise, noise.size());
+    tail.setFrozen (true, 320.0f);
+    auto out = render (tail, {}, static_cast<std::size_t> (20.0 * sr));
+    out.left.insert (out.left.begin(), filling.left.begin(), filling.left.end());
+    const auto high = octaveBand (out.left, sr, 2000.0);
+
+    const auto early = energyDb (high, 2.0, 3.0, sr), late = energyDb (high, 20.0, 21.0, sr);
+    INFO ("2 kHz: " << early << " dB at 2 s, " << late << " dB at 20 s");
+    CHECK (std::abs (late - early) < 1.0);
+    CHECK (std::all_of (out.left.begin(), out.left.end(), [] (float x) { return std::isfinite (x); }));
+}
+
+TEST_CASE ("A new room glides in without a click", "[livingtail][movement]")
+{
+    const auto small = requestFor (3);
+    auto large = requestFor (0);
+    large.decaySeconds = small.decaySeconds;
+    const auto sr = small.sampleRate;
+
+    const auto smallDesign = designLivingTail (small, synthesiseImpulseResponse (small));
+    const auto largeDesign = designLivingTail (large, synthesiseImpulseResponse (large));
+    REQUIRE (smallDesign.delays != largeDesign.delays);
+
+    LivingTail tail;
+    tail.prepare (sr);
+    tail.setDesign (smallDesign);
+
+    // A steady tone keeps the tail full, so a jump in a line's length would
+    // show as a step in the output.
+    const auto total = static_cast<std::size_t> (3.0 * sr), switchAt = static_cast<std::size_t> (1.5 * sr);
+    std::vector<float> tone (total), out (total), right (total);
+
+    for (std::size_t n = 0; n < total; ++n)
+        tone[n] = 0.1f * static_cast<float> (std::sin (2.0 * std::numbers::pi * 220.0 * static_cast<double> (n) / sr));
+
+    for (std::size_t pos = 0; pos < total; pos += 480)
+    {
+        if (pos == switchAt)
+            tail.setDesign (largeDesign);
+
+        tail.process (tone.data() + pos, tone.data() + pos, out.data() + pos, right.data() + pos, std::min<std::size_t> (480, total - pos));
+    }
+
+    // A step shows up as energy far above the tone. The glide itself leaves
+    // a trace up there, but one far too quiet to hear under the tone.
+    const auto hiss = octaveBand (out, sr, 8000.0);
+    const auto level = energyDb (out, 1.5, 1.75, sr), around = energyDb (hiss, 1.5, 1.75, sr);
+    INFO ("the tail " << level << " dB, its 8 kHz octave as the new room glides in " << around << " dB");
+    CHECK (level - around > 60.0);
+}
+
 TEST_CASE ("Living tail is real-time safe", "[livingtail][realtime]")
 {
     const auto request = requestFor (1);
@@ -218,6 +318,7 @@ TEST_CASE ("Living tail is real-time safe", "[livingtail][realtime]")
     for (int i = 0; i < 50; ++i)
     {
         tail.setFrozen (i % 2 == 0, 100.0f + 10.0f * static_cast<float> (i));
+        tail.setMovement (static_cast<float> (i % 5) / 4.0f, 0.1f + 0.2f * static_cast<float> (i));
         tail.setDesign (design);
         tail.process (in.data(), in.data(), outL.data(), outR.data(), in.size());
     }
