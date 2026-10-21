@@ -7,6 +7,10 @@
  #define DRENCHED_LICENCE_SERVER "http://127.0.0.1:8787"
 #endif
 
+#ifndef DRENCHED_BETA
+ #define DRENCHED_BETA 0
+#endif
+
 namespace drenched
 {
 
@@ -58,6 +62,10 @@ namespace
 LicenceManager::LicenceManager()
     : machineCode (licence::machineCode (deviceIdentifier()))
 {
+    // A beta never touches the licence file, so a tester's trial starts with the first release.
+    if (isBeta())
+        return;
+
     refresh();
     startTimer (60 * 1000); // the trial can end while a session is open
 }
@@ -66,6 +74,11 @@ LicenceManager::~LicenceManager()
 {
     stopTimer();
     network.removeAllJobs (true, 20000);
+}
+
+bool LicenceManager::isBeta() noexcept
+{
+    return DRENCHED_BETA != 0;
 }
 
 juce::String LicenceManager::server()
@@ -85,6 +98,9 @@ std::optional<licence::Activation> LicenceManager::readCode (const juce::String&
 
 void LicenceManager::refresh()
 {
+    if (isBeta())
+        return;
+
     juce::PropertiesFile file (fileOptions());
 
     activation = readCode (file.getValue ("code"));
@@ -161,7 +177,7 @@ LicenceManager::Reply LicenceManager::post (const juce::String& path, const juce
 
 void LicenceManager::activate (const juce::String& typedLicence)
 {
-    if (busy)
+    if (busy || isBeta())
         return;
 
     const auto key = licence::parseKey (typedLicence.toStdString());
@@ -215,7 +231,7 @@ void LicenceManager::activate (const juce::String& typedLicence)
 
 void LicenceManager::useCode (const juce::String& code)
 {
-    if (busy)
+    if (busy || isBeta())
         return;
 
     const auto a = licence::verifyActivationCode (code.toStdString(), licence::serverKey());
@@ -277,7 +293,7 @@ juce::var LicenceManager::status() const
     const auto daysLeft = licence::trialDaysLeft (trialFirstDay, today());
     auto* object = new juce::DynamicObject();
 
-    object->setProperty ("state", activation.has_value() ? "licensed" : daysLeft > 0 ? "trial" : "ended");
+    object->setProperty ("state", isBeta() ? "beta" : activation.has_value() ? "licensed" : daysLeft > 0 ? "trial" : "ended");
     object->setProperty ("name", activation.has_value() ? juce::String::fromUTF8 (activation->name.c_str()) : juce::String());
     object->setProperty ("licence", activation.has_value() ? juce::String (activation->key) : juce::String());
     object->setProperty ("daysLeft", daysLeft);
