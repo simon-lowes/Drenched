@@ -34,17 +34,18 @@ juce_add_plugin(Drenched
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     NEEDS_WEB_BROWSER TRUE
     NEEDS_WEBVIEW2 TRUE
+    NEEDS_CURL TRUE
     VST3_CATEGORIES Fx Reverb
     AU_MAIN_TYPE kAudioUnitType_Effect
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
 target_sources(Drenched PRIVATE
+    LicenceManager.cpp
     PluginProcessor.cpp
     PluginEditor.cpp)
 
 target_compile_definitions(Drenched PUBLIC
     JUCE_WEB_BROWSER=1
-    JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0)
 
@@ -54,9 +55,15 @@ if(WIN32)
     target_compile_definitions(Drenched PUBLIC JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1)
 endif()
 
+# The activation server the plugin talks to. The local default suits development
+# (npx wrangler dev in server/); release builds set the deployed address.
+set(DRENCHED_LICENCE_SERVER "http://127.0.0.1:8787" CACHE STRING "Activation server address")
+target_compile_definitions(Drenched PRIVATE DRENCHED_LICENCE_SERVER="${DRENCHED_LICENCE_SERVER}")
+
 target_link_libraries(Drenched
     PRIVATE
         drenched_engine
+        drenched_licence
         DrenchedUI
         juce::juce_audio_utils
         juce::juce_dsp

@@ -63,7 +63,7 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .menu button:hover,.menu button[aria-current="true"]{background:var(--r)}
 .menu small{color:var(--tx2);font:11px var(--fnum)}
 .menu .mload{margin-top:4px;border-top:1px solid var(--ln);border-radius:0 0 var(--rad) var(--rad);color:var(--ac)}
-.menu .mcap{color:var(--ac)}
+.menu .mcap,.menu .mlic{color:var(--ac)}
 /* Capturing a space: a dialog over the screen, in the look's own tokens. */
 .cap{position:absolute;inset:0;z-index:30;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center}
 .cap .cbox{width:620px;background:var(--p);color:var(--tx);border:1px solid var(--ln);border-radius:var(--rad2,10px);box-shadow:0 24px 60px rgba(0,0,0,.45);padding:22px 26px 20px;font:13px/1.5 var(--fui)}
@@ -91,6 +91,34 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .cap .cgo.stop{background:transparent;color:var(--tx);border:1px solid var(--ln)}
 .cap .cgo:disabled{opacity:.6;cursor:default}
 .cap .ct{color:var(--tx2);font-size:11.5px}
+/* The licence: the trial notice and the activation dialog, which reuses the capture dialog's frame. */
+.licchip{flex:none;margin:0 6px 0 12px;border:1px solid var(--ln);border-radius:999px;background:var(--p);color:var(--tx2);padding:3px 11px;font:11.5px/1.4 var(--fui);white-space:nowrap}
+.licchip u{text-decoration:none;color:var(--ac);font-weight:600;margin-left:2px}
+.licchip.end{border-color:var(--warn,#E5654F);color:var(--tx)}
+.licchip.end u{color:var(--warn,#E5654F)}
+.lic .cbox{width:640px}
+.lic .ll{display:block;margin-top:16px;font-size:13px}
+.lic .lrow{display:flex;gap:8px;align-items:stretch;margin-top:6px}
+.lic input,.lic textarea{flex:1;min-width:0;border:1px solid var(--ln);border-radius:var(--rad,6px);background:var(--g);color:var(--tx);padding:8px 10px;font:14px/1.4 var(--fnum,var(--fui));letter-spacing:.04em;-webkit-user-select:text;user-select:text}
+.lic textarea{height:64px;resize:none;font-size:12px;letter-spacing:0;word-break:break-all}
+.lic input::placeholder,.lic textarea::placeholder{color:var(--tx2);opacity:.6}
+.lic .lrow.top{align-items:flex-start}
+.lic .lrow.top .cgo,.lic .lrow.top .lsm{padding-top:8px;padding-bottom:8px}
+.lic .cgo{white-space:nowrap}
+.lic .lsm{border:1px solid var(--ln);background:transparent;border-radius:var(--rad,6px);padding:4px 12px;font-size:12px;white-space:nowrap}
+.lic .lcode{display:flex;align-items:center;gap:10px;margin-top:4px}
+.lic .lmsg{min-height:20px;margin:8px 0 0;font-size:12.5px;color:var(--tx2)}
+.lic .lmsg.err{color:var(--warn,#E5654F)}
+.lic .ldisc{margin-top:10px;border:0;background:transparent;padding:4px 0;font-size:12.5px;color:var(--ac)}
+.lic .ldisc::before{content:"\25B8";display:inline-block;width:14px;transition:transform .15s}
+.lic .ldisc[aria-expanded="true"]::before{transform:rotate(90deg)}
+.lic .lsteps{margin:6px 0 0;padding-left:20px;color:var(--tx2);display:flex;flex-direction:column;gap:8px}
+.lic .lsteps b{color:var(--tx);font-weight:500;word-break:break-all}
+.lic .lmono{font-family:var(--fnum,var(--fui));letter-spacing:.04em}
+.lic .lkv{display:grid;grid-template-columns:130px 1fr;row-gap:6px;margin:14px 0 0}
+.lic .lkv dt{color:var(--tx2)}.lic .lkv dd{margin:0;font-family:var(--fnum,var(--fui));letter-spacing:.04em}
+.lic .ldev{margin-top:14px;padding-top:10px;border-top:1px solid var(--ln);font-size:11.5px}
+@media (prefers-reduced-motion:reduce){.lic .ldisc::before{transition:none}}
 .menu .mh{font-size:11px;color:var(--tx2);padding:6px 12px 4px;display:flex;justify-content:space-between}
 .ib{width:30px;height:30px;display:inline-grid;place-items:center;border:0;background:transparent;color:var(--tx2);border-radius:var(--rad);padding:0}
 .ib:hover{color:var(--tx)}

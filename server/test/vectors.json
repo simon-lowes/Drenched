@@ -1,0 +1,38 @@
+{
+  "seed": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+  "keys": [
+    {
+      "random": "031425364758697a8b9cadbecfe0f1",
+      "key": "0CA2A-DJ7B1-MQN2W-WNPZC-ZR7CS"
+    },
+    {
+      "random": "ffffffffffffffffffffffffffffff",
+      "key": "ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ-ZZZV2"
+    },
+    {
+      "random": "000000000000000000000000000000",
+      "key": "00000-00000-00000-00000-0004C"
+    }
+  ],
+  "machines": [
+    {
+      "device": "",
+      "code": "RQYDP-JPBM7-F21TS-70VN5"
+    },
+    {
+      "device": "test-device",
+      "code": "2CY9A-GKPDZ-6VH9N-Z3SBP"
+    },
+    {
+      "device": "C02XK0ABJGH5:ünïcode",
+      "code": "Y93Z1-YGCYZ-5N6QR-V48RW"
+    }
+  ],
+  "activation": {
+    "key": "0CA2A-DJ7B1-MQN2W-WNPZC-ZR7CS",
+    "machine": "2CY9A-GKPDZ-6VH9N-Z3SBP",
+    "name": "José Müller",
+    "issued": "2026-10-20"
+  },
+  "code": "DRN1.RHJlbmNoZWQgYWN0aXZhdGlvbiAxCmxpY2VuY2U6IDBDQTJBLURKN0IxLU1RTjJXLVdOUFpDLVpSN0NTCm1hY2hpbmU6IDJDWTlBLUdLUERaLTZWSDlOLVozU0JQCm5hbWU6IEpvc8OpIE3DvGxsZXIKaXNzdWVkOiAyMDI2LTEwLTIwCg.MoBFqTmIt_1Hn6JwYM6Yd7Q1gngWgLdXpRNtb3BfIO26XB_uFt7Jf2iT4o66SxCXbu2glWs6CpkM7uE17cGkDA"
+}

@@ -601,6 +601,10 @@ void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     controls.freeze = params.freeze->load() >= 0.5f;
     controls.crossoverHz = params.crossover->load();
 
+    // After the trial, without a licence, only the dry signal plays.
+    if (! licence->isAudioAllowed())
+        controls.mix = 0.0f;
+
     reverb.process (buffer.getArrayOfWritePointers(), static_cast<size_t> (buffer.getNumChannels()),
                     static_cast<size_t> (numSamples), controls);
 

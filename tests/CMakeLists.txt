@@ -8,9 +8,10 @@ add_executable(drenched_tests
     LivingTailTests.cpp
     RecordedResponseTests.cpp
     SweepCaptureTests.cpp
-    SurroundTests.cpp)
+    SurroundTests.cpp
+    LicenceTests.cpp)
 
-target_link_libraries(drenched_tests PRIVATE drenched_engine Catch2::Catch2WithMain)
+target_link_libraries(drenched_tests PRIVATE drenched_engine drenched_licence drenched_monocypher Catch2::Catch2WithMain)
 
 include(CTest)
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)

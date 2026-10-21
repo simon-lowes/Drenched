@@ -45,7 +45,7 @@ function onMeters(m){if(!m)return;st.inL=+m.inL;st.inR=+m.inR;st.outL=+m.outL;st
  var txt=live.querySelectorAll('[data-mt]');for(var b=0;b<txt.length;b++){var v2=map[txt[b].getAttribute('data-mt')];if(v2!=null)txt[b].textContent=dbText(v2);}}
 
 /* ---- the skin picker ---- */
-function pickerHTML(){var ts=Object.assign({},st,{browse:false,adv:false,skins:false,hint:null,note:null});
+function pickerHTML(){var ts=Object.assign({},st,{browse:false,adv:false,skins:false,hint:null,note:null,licence:{state:'licensed'}});
  var thumb=function(x){return screenHTML(x.id,ts).replace(/ data-fid="[^"]*"/g,'').replace(/tabindex="0"/g,'tabindex="-1"');};
  return '<div class="skins" role="dialog" aria-modal="true" aria-label="Choose a look"><div class="hd"><h2>Choose a look</h2><span>Twelve looks over the same controls. Every value stays where it is.</span><button data-act="skins" aria-label="Close">Close</button></div>'+
   '<div class="grid">'+SKINS.map(function(x){return '<div class="sk" role="button" tabindex="0" data-act="skin" data-v="'+x.id+'" aria-current="'+(x.id===st.skin)+'" aria-label="'+x.name+', '+x.tag.toLowerCase()+'"><div class="fr" inert>'+thumb(x)+'</div><div class="t"><b>'+x.name+'</b><span>'+x.tag+'</span></div></div>';}).join('')+'</div>'+
@@ -76,14 +76,43 @@ function onCapture(m){if(!m)return;var was=st.capStatus.stage,msgWas=st.capStatu
  if(was==='working'&&st.capStatus.stage==='idle')st.capture=false;
  renderLive();}
 
+/* ---- the licence: a trial, then activation online or with a code made on another device ---- */
+st.lic=false;st.licOff=false;st.licKey='';st.licCode='';
+st.licence={state:'trial',daysLeft:14,name:'',licence:'',machine:'',page:'',busy:false,message:'',error:false,testKey:false};
+function onLicence(m){if(!m)return;var was=st.licence.state;st.licence=Object.assign({},st.licence,m);
+ if(st.licence.state==='licensed'&&was!=='licensed'){st.licKey='';st.licCode='';st.licOff=false;}schedule();}
+function onPasted(m){if(!m||(m.target!=='licKey'&&m.target!=='licCode'))return;st[m.target]=String(m.text||'').trim();renderLive();
+ var f=live.querySelector(m.target==='licKey'?'#lic-key':'#lic-code');if(f){f.focus({preventScroll:true});f.selectionStart=f.selectionEnd=f.value.length;}}
+function licenceHTML(){var L=st.licence,busy=!!L.busy,dis=busy?' disabled':'',body;
+ var msg='<p class="lmsg'+(L.error?' err':'')+'" role="'+(L.error?'alert':'status')+'">'+esc(L.message||'')+'</p>';
+ if(L.state==='licensed'){
+  body='<p>'+(L.name?'Licensed to '+esc(L.name)+' on this computer.':'Licensed on this computer.')+' It works offline from now on.</p>'+
+   '<dl class="lkv"><dt>Licence number</dt><dd>'+esc(L.licence)+'</dd><dt>This computer</dt><dd>'+esc(L.machine)+'</dd></dl>'+msg+
+   '<div class="cft"><button class="cgo stop" data-act="licoff"'+dis+'>Deactivate this computer</button><span class="ct">Frees one of the licence\u2019s three places, so you can move Drenched to another computer.</span></div>';}
+ else{
+  body='<p>'+(L.state==='ended'?'The trial has ended, so the reverb is muted and only the dry sound plays. Enter the licence number from your purchase email to bring it back.'
+    :days(L.daysLeft)+' of the trial left. Enter the licence number from your purchase email to keep Drenched after that. Each licence works on three computers.')+'</p>'+
+   '<label class="ll" for="lic-key">Licence number</label><div class="lrow"><input id="lic-key" data-fid="lic-key" data-in="licKey" autocomplete="off" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" value="'+esc(st.licKey)+'"'+dis+'>'+
+   '<button class="lsm" data-act="licpaste" data-v="licKey"'+dis+'>Paste</button><button class="cgo" data-act="licgo"'+dis+'>Activate</button></div>'+msg+
+   '<button class="ldisc" data-act="licoffline" aria-expanded="'+st.licOff+'">Activate without internet</button>'+
+   (st.licOff?'<ol class="lsteps"><li>On any device with internet, open <b>'+esc(L.page)+'</b>'+(JUCE?' <button class="lsm" data-act="licpage">Open</button>':'')+'</li>'+
+    '<li>Enter your licence number and this computer\u2019s code:<span class="lcode"><b class="lmono">'+esc(L.machine)+'</b><button class="lsm" data-act="liccopy">Copy</button></span></li>'+
+    '<li>Paste the activation code it gives you:<div class="lrow top"><textarea id="lic-code" data-fid="lic-code" data-in="licCode" spellcheck="false" aria-label="Activation code" placeholder="DRN1.…"'+dis+'>'+esc(st.licCode)+'</textarea>'+
+    '<button class="lsm" data-act="licpaste" data-v="licCode"'+dis+'>Paste</button><button class="cgo" data-act="liccode"'+dis+'>Use code</button></div></li></ol>':'');}
+ var dev=L.testKey?'<p class="ldev">Development build: its activation codes use the published test key, so this copy is not for sale.</p>':'';
+ return '<div class="cap lic" role="dialog" aria-modal="true" aria-labelledby="lic-h"><div class="cbox"><div class="chd"><h2 id="lic-h">'+(L.state==='licensed'?'Licence':'Activate Drenched')+'</h2><button class="cx" data-act="licence" aria-label="Close">Close</button></div>'+body+dev+'</div></div>';}
+function licActivate(){if(JUCE)JUCE.emitEvent('licenceActivate',{licence:st.licKey});else st.licence=Object.assign({},st.licence,{message:'Activation works inside the plugin.',error:true});}
+
 /* ---- rendering ---- */
 function fit(){var w=live.clientWidth,h=live.clientHeight,sc=Math.min(w/W,h/H),el=live.firstElementChild;if(!el)return;
  el.style.transform='translate('+((w-W*sc)/2).toFixed(2)+'px,'+((h-H*sc)/2).toFixed(2)+'px) scale('+sc.toFixed(5)+')';
  var frs=live.querySelectorAll('.skins .fr');for(var i=0;i<frs.length;i++){var s2=frs[i].firstElementChild;if(s2)s2.style.transform='scale('+(frs[i].clientWidth/W).toFixed(5)+')';}}
 function renderLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAttribute('data-fid'):null;
- var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';
+ var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';
  live.innerHTML=html;fit();
- if(fid){var n=live.querySelector('[data-fid="'+fid+'"]');if(n)n.focus({preventScroll:true});}}
+ if(fid){var n=live.querySelector('[data-fid="'+fid+'"]');if(n){n.focus({preventScroll:true});if(n.matches('input,textarea'))n.selectionStart=n.selectionEnd=n.value.length;}}
+ // A dialog keeps the keyboard even when the control that had it is redrawn away.
+ if((st.lic||st.capture)&&!live.contains(document.activeElement)){var d=live.querySelector('.cap .cgo:not([disabled])')||live.querySelector('.cap .cx');if(d)d.focus({preventScroll:true});}}
 var raf=0;function schedule(){if(!raf)raf=requestAnimationFrame(function(){raf=0;renderLive();sync();syncUi();});}
 window.schedule=schedule;
 window.addEventListener('resize',fit);
@@ -120,7 +149,8 @@ live.addEventListener('pointermove',function(e){if(!drag)return;
 function endDrag(){if(drag){var ids=drag.ids;drag=null;schedule();gesture(ids,false);}}
 live.addEventListener('pointerup',endDrag);live.addEventListener('pointercancel',endDrag);
 live.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1,PageUp:10,PageDown:-10};
- if(e.key==='Escape'&&(st.skins||st.browse||st.capture)){if(st.skins||st.browse){st.skins=false;st.browse=false;}else st.capture=false;e.preventDefault();renderLive();return;}
+ if(e.key==='Escape'&&(st.skins||st.browse||st.capture||st.lic)){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
+ if(e.key==='Enter'&&t.id==='lic-key'){e.preventDefault();licActivate();renderLive();return;}
  if(t.matches('.sk')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.click();return;}
  if(t.matches('[data-knob]')){var k=t.getAttribute('data-knob'),p=P[k];if(e.key==='Home')setParam(st,k,p.min);else if(e.key==='End')setParam(st,k,p.max);else if(keys[e.key])setParam(st,k,from01(k,to01(k,getV(st,k))+keys[e.key]*(e.shiftKey?0.002:0.02)));else return;e.preventDefault();schedule();}
  else if(t.matches('[data-node]')){var i=+t.getAttribute('data-node');if(e.key==='ArrowLeft'||e.key==='ArrowRight'){var ni=clamp(i+(e.key==='ArrowRight'?1:-1),0,7);st.lastBand=ni;e.preventDefault();renderLive();var n2=live.querySelector('[data-fid="nd-'+ni+'"]');if(n2)n2.focus({preventScroll:true});return;}
@@ -133,6 +163,7 @@ live.addEventListener('change',function(e){var t=e.target;if(!t.matches('input[d
  else if(ty==='hicut'&&/k/i.test(raw)){setParam(st,ty,v*1000);}
  else setParam(st,ty,v);
  st.note=null;renderLive();sync();});
+live.addEventListener('input',function(e){var k=e.target.getAttribute&&e.target.getAttribute('data-in');if(k==='licKey'||k==='licCode')st[k]=e.target.value;});
 live.addEventListener('focusin',function(e){if(e.target.matches('input.ro'))e.target.select();});
 live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
  if(!b){if(st.browse&&!e.target.closest('.menu')){st.browse=false;renderLive();}return;}
@@ -153,6 +184,14 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'capstart':if(JUCE){st.capStatus={stage:'playing',progress:0,peakDb:-100,message:''};JUCE.emitEvent('startCapture',{speakers:st.cap.speakers,sweepSeconds:st.cap.sweep,tailSeconds:st.cap.tail,levelDb:st.cap.level});}
    else st.capStatus={stage:'failed',progress:0,peakDb:-100,message:'Capturing works inside the plugin, where Drenched can reach your speakers and microphone.'};break;
   case 'capstop':if(JUCE)JUCE.emitEvent('cancelCapture',{});break;
+  case 'licence':st.lic=!st.lic;st.hint=null;if(st.lic){st.licence.message='';if(JUCE)JUCE.emitEvent('licenceOpen',{});}break;
+  case 'licgo':licActivate();break;
+  case 'liccode':if(JUCE)JUCE.emitEvent('licenceCode',{code:st.licCode});break;
+  case 'licoff':if(JUCE)JUCE.emitEvent('licenceDeactivate',{});break;
+  case 'licoffline':st.licOff=!st.licOff;break;
+  case 'licpage':if(JUCE)JUCE.emitEvent('licencePage',{});break;
+  case 'liccopy':if(JUCE)JUCE.emitEvent('copyText',{text:st.licence.machine});st.licence.message='Computer code copied.';st.licence.error=false;break;
+  case 'licpaste':if(JUCE)JUCE.emitEvent('pasteText',{target:v});break;
   case 'pick':st.browse=false;changeSpace(+v);break;
   case 'prev':changeSpace((st.sp+SPACES.length-1)%SPACES.length);break;
   case 'next':changeSpace((st.sp+1)%SPACES.length);break;
@@ -163,6 +202,7 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
  if(a==='browse'&&st.browse){var mi=live.querySelector('.menu button[aria-current="true"]');if(mi)mi.focus({preventScroll:true});}
  else if(a==='skins'&&st.skins){var sk=live.querySelector('.skins .sk[aria-current="true"]');if(sk)sk.focus({preventScroll:true});}
  else if(a==='capture'&&st.capture){var cf=live.querySelector('.cap .cgo');if(cf)cf.focus({preventScroll:true});}
+ else if(a==='licence'&&st.lic){var lf=live.querySelector('#lic-key')||live.querySelector('.lic .cgo');if(lf)lf.focus({preventScroll:true});}
  else if(a==='capstart'||a==='capstop'){var cg=live.querySelector('.cap .cgo:not([disabled])')||live.querySelector('.cap .cx');if(cg)cg.focus({preventScroll:true});}
  else{var same=live.querySelector('[data-act="'+a+'"]'+(v!=null?'[data-v="'+v+'"]':'')+(a==='lock'||a==='toggle'||a==='capopt'?'[data-k="'+b.getAttribute('data-k')+'"]':''));if(same)same.focus({preventScroll:true});}});
 /* the host may hand us a context menu on right click; the interface has none */
@@ -171,10 +211,10 @@ live.addEventListener('contextmenu',function(e){e.preventDefault();});
 /* ---- start ---- */
 var init=null;
 try{var d=window.__JUCE__&&window.__JUCE__.initialisationData&&window.__JUCE__.initialisationData.drenched;if(d&&d.length)init=d[0];}catch(_){}
-if(init)applyFromHost(init);
+if(init){applyFromHost(init);if(init.licence)Object.assign(st.licence,init.licence);}
 try{var hs=(location.hash||'').slice(1);if(SKINS.some(function(x){return x.id===hs;}))st.skin=hs;}catch(_){}
 Object.assign(lastSent,paramValues(st));Object.assign(lastUi,uiState(st));
 renderLive();
-if(JUCE){JUCE.addEventListener('state',applyFromHost);JUCE.addEventListener('meters',onMeters);JUCE.addEventListener('capture',onCapture);JUCE.emitEvent('ready',{});}
+if(JUCE){JUCE.addEventListener('state',applyFromHost);JUCE.addEventListener('meters',onMeters);JUCE.addEventListener('capture',onCapture);JUCE.addEventListener('licence',onLicence);JUCE.addEventListener('pasted',onPasted);JUCE.emitEvent('ready',{});}
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);
 })();
