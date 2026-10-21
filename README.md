@@ -27,6 +27,11 @@ internet can be activated from another device. After the trial without a
 licence the reverb is muted and the dry signal still plays. The activation
 server is in `server/` (see its README).
 
+Builds are beta builds for now (`DRENCHED_BETA`, on by default): no trial
+and no licence check, and a Beta label in the footer. They never touch the
+licence file, so a tester's trial starts with the first release. Release
+builds configure with `-DDRENCHED_BETA=OFF`.
+
 ## Building
 
 Requirements: CMake 3.25+, a C++20 compiler (Xcode 15+, Visual Studio 2022,

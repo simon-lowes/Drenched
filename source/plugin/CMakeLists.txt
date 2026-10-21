@@ -60,6 +60,11 @@ endif()
 set(DRENCHED_LICENCE_SERVER "http://127.0.0.1:8787" CACHE STRING "Activation server address")
 target_compile_definitions(Drenched PRIVATE DRENCHED_LICENCE_SERVER="${DRENCHED_LICENCE_SERVER}")
 
+# Beta builds, for testers before sales start, have no trial or licence check.
+# Release builds turn this off.
+option(DRENCHED_BETA "Beta build: no trial or licence check" ON)
+target_compile_definitions(Drenched PRIVATE DRENCHED_BETA=$<BOOL:${DRENCHED_BETA}>)
+
 target_link_libraries(Drenched
     PRIVATE
         drenched_engine

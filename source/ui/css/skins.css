@@ -270,6 +270,7 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .ca-photo{position:absolute;left:0;top:0;width:620px;height:760px}
 .ca-photo .phi{filter:url(#duo-cat) contrast(1.02)}
 .s-catalogue.stage .ca-photo .phi{filter:url(#duo-cat-n)}
+.ca-lic{position:absolute;left:24px;bottom:22px;z-index:2}.ca-lic .licchip{margin:0}
 .ca-photo::after{content:"";position:absolute;top:0;bottom:0;right:0;width:1px;background:var(--ln)}
 .ca-wall{position:absolute;left:620px;top:0;width:580px;height:760px;padding:30px 44px 26px 48px;display:flex;flex-direction:column}
 .ca-top{display:flex;align-items:center;gap:14px;height:28px}

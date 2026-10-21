@@ -20,6 +20,9 @@ namespace drenched
     has ended without a licence, the reverb is muted (the dry signal still passes), so a
     session never goes silent or makes a noise.
 
+    A beta build (DRENCHED_BETA) skips all of this: the reverb always plays and nothing
+    is read, written or sent.
+
     Everything runs on the message thread except isAudioAllowed(), which the audio
     thread reads, and the network calls, which run on the manager's own thread. */
 class LicenceManager final : public juce::ChangeBroadcaster,
@@ -47,12 +50,15 @@ public:
     /** Gives this computer's place back, so the licence can move to another one. */
     void deactivate();
 
-    /** Where things stand, for the interface: state (licensed, trial or ended), name,
+    /** Where things stand, for the interface: state (licensed, trial, ended or beta), name,
         licence, daysLeft, machine, page (the offline activation page), busy, message,
         error and testKey. */
     juce::var status() const;
 
     const std::string& machine() const noexcept { return machineCode; }
+
+    /** True in a beta build, set at build time (DRENCHED_BETA). */
+    static bool isBeta() noexcept;
 
     /** The activation server, set at build time (DRENCHED_LICENCE_SERVER). */
     static juce::String server();
