@@ -61,6 +61,9 @@ var P={
  rev:{l:'Reverse',min:0,max:1,st:1,help:'plays the room backwards, so it swells up into each sound.'},
  gate:{l:'Gate',min:0,max:2000,st:1,help:'cuts the room off after this long, like a gated drum room. The living tail rests while it is on.'},
  attack:{l:'Attack',min:0,max:500,st:1,help:'fades the room in over this long, so it blooms behind the sound instead of starting with it.'},
+ dLvl:{l:'Direct level',min:-60,max:6,st:0.1,help:'sets the level of the first sound to reach the listener in the room, before any reflection. Off leaves only the room.'},
+ dDel:{l:'Direct delay',min:0,max:50,st:0.1,help:'moves the direct sound later than the room, for timing or a sense of distance.'},
+ dCol:{l:'Direct colour',min:-12,max:12,st:0.5,help:'tilts the direct sound darker or brighter, leaving the room as it is.'},
  xover:{l:'Crossover',min:100,max:1000,st:1,log:1,help:'sets where Freeze stops holding. Below it, a frozen room keeps fading so the bass never builds up.'},
  locut:{l:'Wet low cut',min:20,max:1000,st:1,log:1,help:'removes low end from the wet signal.'},
  hicut:{l:'Wet high cut',min:1000,max:20000,st:10,log:1,help:'removes top end from the wet signal.'},
@@ -71,7 +74,7 @@ var P={
  move:{l:'Movement',min:0,max:100,st:1,help:'lets the living tail drift slowly, like air moving in the room. Turn up Living tail to hear it.'},
  moveRate:{l:'Movement rate',min:0.05,max:5,st:0.01,log:1,help:'sets how fast the living tail drifts.'}
 };
-var DEEP=['output','preSync','rev','gate','attack','xover','living','move','moveRate','locut','hicut','width','duck','mono'];
+var DEEP=['output','preSync','rev','gate','attack','dLvl','dDel','dCol','xover','living','move','moveRate','locut','hicut','width','duck','mono'];
 var TOGGLES=['preSync','rev'];
 var MAIN=['decay','pre','size','bright','el','dist'];
 function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
@@ -81,7 +84,7 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 var UID=0;function uid(){return 'u'+(++UID);}
 function vol(sp){var v=sp.W*sp.D*sp.H;v=v>2000?Math.round(v/100)*100:Math.round(v/10)*10;return v.toLocaleString('en-GB')+' m\u00b3';}
 function decayOf(b){return (b[3]+b[4])/2;}
-function newState(){var sp=SPACES[0];return {sp:0,bands:sp.bands.slice(),mix:30,pre:sp.pre,size:100,bright:0,el:55,dist:40,output:0,preSync:0,xover:320,locut:80,hicut:14000,width:100,duck:0,mono:0,living:0,move:20,moveRate:0.7,rev:0,gate:0,attack:0,lx:0.5,mode:'studio',slot:'A',slots:{A:null,B:null},freeze:false,adv:false,browse:false,view:'plan',locks:{},hint:null,note:null,lastBand:4,skin:'aperture',skins:false,inL:-60,inR:-60,outL:-60,outR:-60};}
+function newState(){var sp=SPACES[0];return {sp:0,bands:sp.bands.slice(),mix:30,pre:sp.pre,size:100,bright:0,el:55,dist:40,output:0,preSync:0,xover:320,locut:80,hicut:14000,width:100,duck:0,mono:0,living:0,move:20,moveRate:0.7,rev:0,gate:0,attack:0,dLvl:0,dDel:0,dCol:0,lx:0.5,mode:'studio',slot:'A',slots:{A:null,B:null},freeze:false,adv:false,browse:false,view:'plan',locks:{},hint:null,note:null,lastBand:4,skin:'aperture',skins:false,inL:-60,inR:-60,outL:-60,outR:-60};}
 var st=newState();
 function spOf(s){return SPACES[s.sp];}
 function getV(s,k){return k==='decay'?decayOf(s.bands):s[k];}
@@ -98,7 +101,9 @@ function fmt(s,k,v){if(v==null)v=getV(s,k);switch(k){
  case 'xover':case 'locut':return Math.round(v)+' Hz';case 'hicut':return (v/1000).toFixed(1)+' kHz';
  case 'width':return Math.round(v)+'%';case 'duck':return v>0?Math.round(v)+'%':'Off';case 'mono':return v>0?Math.round(v)+' Hz':'Off';
  case 'living':return v>0?Math.round(v)+'%':'Off';case 'move':return v>0?Math.round(v)+'%':'Still';
- case 'moveRate':return (v<1?v.toFixed(2):v.toFixed(1))+' Hz';case 'gate':case 'attack':return v>0?Math.round(v)+' ms':'Off';}}
+ case 'moveRate':return (v<1?v.toFixed(2):v.toFixed(1))+' Hz';case 'gate':case 'attack':return v>0?Math.round(v)+' ms':'Off';
+ case 'dLvl':return v<=-60?'Off':(v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+' dB';case 'dDel':return f1(v)+' ms';
+ case 'dCol':return (v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+' dB';}}
 function to01(k,v){var p=P[k];return p.log?Math.log(v/p.min)/Math.log(p.max/p.min):(v-p.min)/(p.max-p.min);}
 function from01(k,n){var p=P[k];n=clamp(n,0,1);var v=p.log?p.min*Math.pow(p.max/p.min,n):p.min+n*(p.max-p.min);return Math.round(v/p.st)*p.st;}
 function setParam(s,k,v){var p=P[k];v=clamp(Math.round(v/p.st)*p.st,p.min,p.max);
