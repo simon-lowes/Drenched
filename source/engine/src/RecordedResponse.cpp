@@ -42,18 +42,21 @@ double totalEnergy (const ImpulseResponseSet& set) noexcept
     return sum;
 }
 
-void normalise (ImpulseResponseSet& set) noexcept
+/** Scales the set to unit energy, and returns the gain it used. */
+float normalise (ImpulseResponseSet& set) noexcept
 {
     const auto total = totalEnergy (set);
 
     if (total <= 0.0)
-        return;
+        return 1.0f;
 
     const auto gain = static_cast<float> (std::sqrt (1.0 / total));
 
     for (auto& p : set.paths)
         for (auto& v : p)
             v *= gain;
+
+    return gain;
 }
 
 void resize (ImpulseResponseSet& set, std::size_t length)
@@ -467,15 +470,35 @@ std::array<float, 8> measureDecay (const std::array<std::vector<float>, 4>& path
     return out;
 }
 
+std::array<float, 2> foldDownGains (const Speaker& speaker) noexcept
+{
+    if (speaker.lfe)
+        return { 0.0f, 0.0f };
+
+    // Constant-power pan by how far to the side the speaker is: the stereo
+    // pair's own positions go fully to their side, the centre to both.
+    constexpr auto radians = static_cast<float> (std::numbers::pi / 180.0);
+    const auto side = std::clamp (std::sin (speaker.azimuth * radians) / 0.5f, -1.0f, 1.0f);
+    const auto angle = (side + 1.0f) * static_cast<float> (std::numbers::pi / 4.0);
+    const auto level = speaker.isFront() ? 1.0f : std::numbers::sqrt2_v<float> / 2.0f;
+    return { level * std::cos (angle), level * std::sin (angle) };
+}
+
 std::shared_ptr<const RecordedResponse> prepareRecordedResponse (const std::vector<std::vector<float>>& channels,
                                                                  double sampleRate,
-                                                                 std::string name)
+                                                                 std::string name,
+                                                                 const SpeakerLayout& layout)
 {
     const auto count = channels.size();
+    const auto surround = count != 1 && count != 2 && count != 4;
 
-    if (count != 1 && count != 2 && count != 4)
-        throw std::invalid_argument ("Drenched loads mono, stereo or four-channel (true stereo) impulse responses. "
-                                     "This file has " + std::to_string (count) + " channels.");
+    if (count == 0 || count > maxChannels || (surround && layout.size() != count))
+        throw std::invalid_argument ("Drenched loads mono, stereo, four-channel (true stereo) and surround impulse responses "
+                                     "up to 9.1.6. It can't tell which speaker each of this file's "
+                                     + std::to_string (count) + " channels is for.");
+
+    if (surround && layouts::countDirectional (layout) == 0)
+        throw std::invalid_argument ("The file has only an LFE channel.");
 
     if (! (sampleRate >= 8000.0 && sampleRate <= 384000.0))
         throw std::invalid_argument ("The file's sample rate isn't one Drenched can use.");
@@ -514,7 +537,30 @@ std::shared_ptr<const RecordedResponse> prepareRecordedResponse (const std::vect
     using P = ImpulseResponseSet::Path;
     const auto source = [&] (std::size_t c) { return std::vector<float> (channels[c].begin(), channels[c].begin() + static_cast<std::ptrdiff_t> (length)); };
 
-    if (count == 1)
+    if (surround)
+    {
+        std::vector<float> left (length, 0.0f), right (length, 0.0f);
+
+        for (std::size_t c = 0; c < count; ++c)
+        {
+            const auto [toLeft, toRight] = foldDownGains (layout[c]);
+
+            for (std::size_t n = 0; n < length; ++n)
+            {
+                left[n] += toLeft * channels[c][n];
+                right[n] += toRight * channels[c][n];
+            }
+
+            recorded->speakers.push_back (source (c));
+        }
+
+        recorded->layout = layout;
+        set.paths[P::leftToLeft] = left;
+        set.paths[P::rightToLeft] = std::move (left);
+        set.paths[P::leftToRight] = right;
+        set.paths[P::rightToRight] = std::move (right);
+    }
+    else if (count == 1)
     {
         set.paths[P::leftToLeft] = source (0);
         set.paths[P::rightToRight] = source (0);
@@ -538,17 +584,28 @@ std::shared_ptr<const RecordedResponse> prepareRecordedResponse (const std::vect
     // of the peak, on any path), keeping the paths' relative timing.
     auto onset = length;
 
-    for (const auto& p : set.paths)
+    const auto findOnset = [&] (const std::vector<float>& p)
+    {
         for (std::size_t n = 0; n < std::min (onset, length); ++n)
             if (std::abs (p[n]) >= 0.1f * peak)
             {
                 onset = std::min (onset, n);
                 break;
             }
+    };
+
+    for (const auto& p : set.paths)
+        findOnset (p);
+
+    for (const auto& p : recorded->speakers)
+        findOnset (p);
 
     const auto start = onset > samplesOf (leadSeconds, sampleRate) ? onset - samplesOf (leadSeconds, sampleRate) : 0;
 
     for (auto& p : set.paths)
+        p.erase (p.begin(), p.begin() + static_cast<std::ptrdiff_t> (start));
+
+    for (auto& p : recorded->speakers)
         p.erase (p.begin(), p.begin() + static_cast<std::ptrdiff_t> (start));
 
     // Measure the decay while the noise floor is still there to be estimated.
@@ -556,7 +613,20 @@ std::shared_ptr<const RecordedResponse> prepareRecordedResponse (const std::vect
 
     resize (set, std::min (usefulLength (set), samplesOf (maxSeconds, sampleRate)));
     fadeOut (set, std::min (samplesOf (endFadeSeconds, sampleRate), set.length() / 4));
-    normalise (set);
+    const auto gain = normalise (set);
+
+    // The surround channels get the same cut, fade and gain as their fold-down.
+    for (auto& p : recorded->speakers)
+    {
+        p.resize (set.length(), 0.0f);
+        const auto fade = std::min (samplesOf (endFadeSeconds, sampleRate), set.length() / 4);
+
+        for (std::size_t n = 0; n < p.size(); ++n)
+            p[n] *= gain;
+
+        for (std::size_t n = 0; n < fade; ++n)
+            p[p.size() - 1 - n] *= static_cast<float> (bands::raisedCosine (static_cast<double> (n) / static_cast<double> (fade)));
+    }
     recorded->room.mixingTimeSeconds = static_cast<float> (mixingTime (set));
     estimateRoom (recorded->room);
 

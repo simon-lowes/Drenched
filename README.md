@@ -23,10 +23,15 @@ the room (drag them on the room map, or automate them). Cloud size lets the reve
 panned: lower it and a voice panned to one side, or to a rear speaker,
 keeps its reverb gathered around it. Low CPU runs the convolution on about a third of the
 processing by playing everything 21 ms late, which the DAW makes up. You can load your own impulse response (WAV, AIFF
-or FLAC; mono, stereo or four-channel true stereo): it is resampled to the
+or FLAC; mono, stereo, four-channel true stereo, or surround up to 9.1.6): it is resampled to the
 session rate, its decay is measured into the graph, dragging the graph
 reshapes it, and Size makes the room bigger or smaller by moving its
-reflections later or sooner while keeping its decay and tone. Or capture a space yourself: Capture a space plays a sine
+reflections later or sooner while keeping its decay and tone. A surround
+file plays its own channels on a surround track: each speaker plays the
+channel recorded nearest it, channels with no speaker nearby join the
+nearest one, and speakers the recording lacks get reverb made from its
+fold-down; on a stereo track it plays folded down. The speaker order comes
+from the WAV channel mask, or the usual WAV order for the channel count. Or capture a space yourself: Capture a space plays a sine
 sweep from the left speaker (or left, then right, for true stereo) while
 recording the track's input, deconvolves it with the speaker's distortion
 removed, saves the result in Documents/Drenched/Captures and loads it.

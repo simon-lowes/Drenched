@@ -761,6 +761,9 @@ juce::var DrenchedProcessor::impulseResponseInfo()
     if (current != nullptr)
     {
         object->setProperty ("ch", current->channels);
+
+        if (current->isSurround())
+            object->setProperty ("layout", channelLayouts::nameOf (current->layout));
         object->setProperty ("rate", current->responses.sampleRate);
         object->setProperty ("W", static_cast<double> (current->room.width));
         object->setProperty ("D", static_cast<double> (current->room.depth));

@@ -15,6 +15,7 @@ add_executable(drenched_tests
     ClapCaptureTests.cpp
     SweepCaptureTests.cpp
     SurroundTests.cpp
+    SurroundFileTests.cpp
     LicenceTests.cpp)
 
 target_link_libraries(drenched_tests PRIVATE drenched_engine drenched_licence drenched_monocypher Catch2::Catch2WithMain)

@@ -27,9 +27,16 @@ struct RoomAnalysis
 struct RecordedResponse
 {
     std::string name;
-    int channels = 0;           // 1, 2 or 4, as the file had them
+    int channels = 0;           // as the file had them
     ImpulseResponseSet responses; // four true-stereo paths, native rate, trimmed and normalised
     RoomAnalysis room;
+
+    // A surround recording keeps its own channels too, one per speaker, trimmed
+    // and scaled like `responses` (which holds their fold-down to stereo).
+    SpeakerLayout layout;
+    std::vector<std::vector<float>> speakers;
+
+    bool isSurround() const noexcept { return ! speakers.empty(); }
 };
 
 /** Turns decoded audio into a RecordedResponse.
@@ -39,6 +46,12 @@ struct RecordedResponse
       2: one source captured in stereo, so both inputs feed both outputs;
       4: true stereo, in the order left-to-left, left-to-right,
          right-to-left, right-to-right.
+    Any other count (3, or 5 to 16) is one source captured in surround, with
+    `layout` saying which speaker each channel is for. Its channels are kept
+    for surround playback (see placeSpeakerResponses()), and folded down to
+    stereo as a stereo capture for everything else: front channels panned
+    between left and right, the rest 3 dB down on their side, the LFE left
+    out.
 
     Silence before the direct sound is trimmed (keeping 1 ms), as is the
     noise floor the recording ends in, and the level is normalised like the
@@ -49,7 +62,12 @@ struct RecordedResponse
     that cannot be an impulse response. Allocates; never on the audio thread. */
 std::shared_ptr<const RecordedResponse> prepareRecordedResponse (const std::vector<std::vector<float>>& channels,
                                                                  double sampleRate,
-                                                                 std::string name);
+                                                                 std::string name,
+                                                                 const SpeakerLayout& layout = {});
+
+/** How a surround channel at this speaker folds down to stereo: its gains
+    into the left and right. */
+std::array<float, 2> foldDownGains (const Speaker& speaker) noexcept;
 
 /** Converts a recorded response's paths to another sample rate. */
 ImpulseResponseSet resampleResponses (const ImpulseResponseSet& responses, double newRate);

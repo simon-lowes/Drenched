@@ -76,6 +76,7 @@ private:
     // Guarded by buildMutex: the last loaded response, at the session rate.
     std::shared_ptr<const RecordedResponse> resampledFrom;
     ImpulseResponseSet resampled;
+    std::vector<ImpulseResponseSet> resampledSpeakers; // a surround recording's channels, four to a set
     std::thread worker;
 };
 

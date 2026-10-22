@@ -32,6 +32,37 @@ namespace
             }
         }
     }
+
+    /** A surround recording's channels, four to a set, so the shaping steps
+        (which treat every path alike) run on them as on a stereo response. */
+    std::vector<ImpulseResponseSet> inSets (const std::vector<std::vector<float>>& channels, double sampleRate)
+    {
+        std::vector<ImpulseResponseSet> sets;
+        const auto length = channels.empty() ? 0 : channels[0].size();
+
+        for (std::size_t c = 0; c < channels.size(); c += 4)
+        {
+            auto& set = sets.emplace_back();
+            set.sampleRate = sampleRate;
+
+            for (std::size_t p = 0; p < 4; ++p)
+                set.paths[p] = c + p < channels.size() ? channels[c + p] : std::vector<float> (length, 0.0f);
+        }
+
+        return sets;
+    }
+
+    std::vector<std::vector<float>> outOfSets (std::vector<ImpulseResponseSet>&& sets, std::size_t count)
+    {
+        std::vector<std::vector<float>> channels;
+
+        for (auto& set : sets)
+            for (auto& path : set.paths)
+                if (channels.size() < count)
+                    channels.push_back (std::move (path));
+
+        return channels;
+    }
 }
 
 KernelBuilder::KernelBuilder (ConvolutionReverb& target, std::chrono::milliseconds debounce, std::size_t sampleBudget)
@@ -98,6 +129,11 @@ void KernelBuilder::build (const ImpulseResponseRequest& wanted)
         if (resampledFrom != wanted.recorded || resampled.sampleRate != wanted.sampleRate)
         {
             resampled = resampleResponses (wanted.recorded->responses, wanted.sampleRate);
+            resampledSpeakers.clear();
+
+            for (const auto& set : inSets (wanted.recorded->speakers, wanted.recorded->responses.sampleRate))
+                resampledSpeakers.push_back (resampleResponses (set, wanted.sampleRate));
+
             resampledFrom = wanted.recorded;
         }
 
@@ -108,6 +144,7 @@ void KernelBuilder::build (const ImpulseResponseRequest& wanted)
         responses = synthesiseImpulseResponse (wanted);
         resampledFrom.reset(); // let go of the file's audio
         resampled = {};
+        resampledSpeakers.clear();
     }
 
     // The tail is fitted to the whole response, so Freeze still holds the
@@ -124,16 +161,48 @@ void KernelBuilder::build (const ImpulseResponseRequest& wanted)
     const auto paths = stereo ? responses.paths.size() : 2 * wanted.outputs.size();
     auto shortenedSeconds = 0.0;
 
+    // A surround recording on surround speakers plays its own channels, shaped
+    // the same way as its stereo fold-down (all but the cross-feed, which
+    // placeSpeakerResponses() applies by side).
+    const auto native = ! stereo && wanted.recorded != nullptr && wanted.recorded->isSurround();
+    std::vector<ImpulseResponseSet> speakerSets;
+
+    if (native)
+    {
+        for (const auto& set : resampledSpeakers)
+        {
+            auto& shaped = speakerSets.emplace_back (shapeRecordedResponse (set, *wanted.recorded, wanted));
+            applyDirect (shaped, wanted);
+            applyEnvelope (shaped, wanted);
+
+            if (! cutsTail (wanted))
+                applyLivingBlend (shaped, wanted.livingPercent, mixingTimeSeconds (wanted));
+        }
+    }
+
     if (budget > 0 && responses.length() * paths > budget)
     {
         shorten (responses, budget / paths);
+
+        for (auto& set : speakerSets)
+            if (set.length() > budget / paths)
+                shorten (set, budget / paths);
+
         shortenedSeconds = static_cast<double> (responses.length()) / responses.sampleRate;
     }
 
-    auto kernel = stereo
-                    ? std::make_unique<ReverbKernel> (responses, tail, wanted.latencySamples)
-                    : std::make_unique<ReverbKernel> (spreadResponses (responses, wanted.outputs, mixingTimeSeconds (wanted)), tail,
-                                                      wanted.latencySamples);
+    std::unique_ptr<ReverbKernel> kernel;
+
+    if (stereo)
+        kernel = std::make_unique<ReverbKernel> (responses, tail, wanted.latencySamples);
+    else if (native)
+        kernel = std::make_unique<ReverbKernel> (placeSpeakerResponses (outOfSets (std::move (speakerSets), wanted.recorded->speakers.size()),
+                                                                        wanted.recorded->layout, responses, wanted.outputs,
+                                                                        mixingTimeSeconds (wanted), wanted.crossFeedPercent),
+                                                 tail, wanted.latencySamples);
+    else
+        kernel = std::make_unique<ReverbKernel> (spreadResponses (responses, wanted.outputs, mixingTimeSeconds (wanted)), tail,
+                                                 wanted.latencySamples);
     kernel->setLivingLevel (living);
     reverb.submit (std::move (kernel));
     shortened.store (shortenedSeconds, std::memory_order_relaxed);

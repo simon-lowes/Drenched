@@ -69,6 +69,74 @@ namespace channelLayouts
         return speakers;
     }
 
+    /** Which speaker each channel of an impulse response file is for: the
+        file's own channel layout when it has one (a WAV channel mask), or else
+        the WAV order for its channel count (L R C LFE, back left and right,
+        side left and right, then the heights). Empty when there is no telling.
+        Only used for counts other than 1, 2 and 4. */
+    inline SpeakerLayout fileLayout (const juce::AudioChannelSet& fromFile, int numChannels)
+    {
+        using T = juce::AudioChannelSet;
+
+        const auto with = [] (std::initializer_list<T::ChannelType> types)
+        {
+            T set;
+
+            for (auto t : types)
+                set.addChannel (t);
+
+            return set;
+        };
+
+        // JUCE reads a maskless 7 or 8 channel WAV as SDDS, which reverb files never are.
+        const auto sdds = fromFile == T::create7point0SDDS() || fromFile == T::create7point1SDDS();
+        auto set = fromFile;
+
+        if (set.size() != numChannels || sdds || set.isDiscreteLayout())
+        {
+            const auto back = { T::left, T::right, T::centre, T::LFE, T::leftSurround, T::rightSurround,
+                                T::leftSurroundSide, T::rightSurroundSide, T::topFrontLeft, T::topFrontRight,
+                                T::topRearLeft, T::topRearRight };
+
+            switch (numChannels)
+            {
+                case 3:  set = T::createLCR(); break;
+                case 5:  set = T::create5point0(); break;
+                case 6:  set = T::create5point1(); break;
+                case 7:  set = with ({ T::left, T::right, T::centre, T::leftSurround, T::rightSurround, T::leftSurroundSide, T::rightSurroundSide }); break;
+                case 8:  set = with ({ T::left, T::right, T::centre, T::LFE, T::leftSurround, T::rightSurround, T::leftSurroundSide, T::rightSurroundSide }); break;
+                case 10: set = with ({ T::left, T::right, T::centre, T::LFE, T::leftSurround, T::rightSurround, T::leftSurroundSide, T::rightSurroundSide,
+                                       T::topFrontLeft, T::topFrontRight }); break;
+                case 12: set = with (back); break;
+                default: return {};
+            }
+        }
+
+        auto speakers = speakersOf (set);
+
+        // In WAV terms "surround" is the back pair once there are side speakers too.
+        if (! speakers.empty() && set.getChannelIndexForType (T::leftSurroundSide) >= 0)
+        {
+            for (const auto [type, azimuth] : { std::pair { T::leftSurround, -150.0f }, std::pair { T::rightSurround, 150.0f } })
+                if (const auto index = set.getChannelIndexForType (type); index >= 0)
+                    speakers[static_cast<size_t> (index)].azimuth = azimuth;
+        }
+
+        return speakers;
+    }
+
+    /** A layout's usual name: 5.1, 7.1.4, 5.0 and so on (ear-level speakers,
+        LFE, heights). */
+    inline juce::String nameOf (const SpeakerLayout& layout)
+    {
+        int ear = 0, lfe = 0, height = 0;
+
+        for (const auto& s : layout)
+            (s.lfe ? lfe : s.elevation >= 10.0f ? height : ear) += 1;
+
+        return juce::String (ear) + "." + juce::String (lfe) + (height > 0 ? "." + juce::String (height) : juce::String());
+    }
+
     inline bool isSupported (const juce::AudioChannelSet& set)
     {
         return ! speakersOf (set).empty();
