@@ -48,21 +48,16 @@ namespace ParamIDs
                                                              "Decay 1 kHz",  "Decay 2 kHz",  "Decay 4 kHz",  "Decay 8 kHz" };
 
     /** Every id, in a fixed order, for code that keeps per-parameter state. */
+    inline constexpr std::array<const char*, 37> ordered { mix, output, predelay, size, brightness, earlyLate, distance, freeze,
+                                                           predelaySync, crossover, wetLowCut, wetHighCut, width, ducking, monoBelow,
+                                                           decay[0], decay[1], decay[2], decay[3], decay[4], decay[5], decay[6], decay[7],
+                                                           living, movement, movementRate, reverse, gate, attack, directLevel, directDelay,
+                                                           directColour, crossFeed, lowCpu, cloudSize, listenerX, sourceX };
+
+    /** The same, as strings. */
     inline const juce::StringArray& all()
     {
-        static const juce::StringArray ids = []
-        {
-            juce::StringArray list { mix, output, predelay, size, brightness, earlyLate, distance, freeze,
-                                     predelaySync, crossover, wetLowCut, wetHighCut, width, ducking, monoBelow };
-
-            for (auto* id : decay)
-                list.add (id);
-
-            list.addArray ({ living, movement, movementRate, reverse, gate, attack, directLevel, directDelay, directColour, crossFeed, lowCpu, cloudSize, listenerX, sourceX });
-
-            return list;
-        }();
-
+        static const juce::StringArray ids (ordered.data(), static_cast<int> (ordered.size()));
         return ids;
     }
 }

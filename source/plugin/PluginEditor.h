@@ -65,7 +65,7 @@ private:
     DrenchedProcessor& processor;
     juce::AudioProcessorValueTreeState& state;
 
-    static constexpr size_t numParams = 23;
+    static constexpr size_t numParams = ParamIDs::ordered.size();
     std::array<std::atomic<bool>, numParams> dirty {};
     std::atomic<bool> uiDirty { true };
     std::atomic<bool> settingFromUi { false };
