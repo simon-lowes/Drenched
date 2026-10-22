@@ -1,5 +1,6 @@
 #pragma once
 
+#include "drenched/Ambisonics.h"
 #include "drenched/ImpulseResponseSynth.h"
 
 #include <array>
@@ -36,6 +37,11 @@ struct RecordedResponse
     SpeakerLayout layout;
     std::vector<std::vector<float>> speakers;
 
+    // A B-format recording keeps its four channels in `speakers` as AmbiX
+    // (W Y Z X), with no layout: they are decoded to whatever speakers it
+    // plays on (see decodeAmbisonic()), and `responses` holds its stereo decode.
+    bool ambisonic = false;
+
     bool isSurround() const noexcept { return ! speakers.empty(); }
 };
 
@@ -64,6 +70,17 @@ std::shared_ptr<const RecordedResponse> prepareRecordedResponse (const std::vect
                                                                  double sampleRate,
                                                                  std::string name,
                                                                  const SpeakerLayout& layout = {});
+
+/** The same for a B-format (first-order ambisonic) recording, in any of the
+    usual channel orders (see AmbisonicFormat); higher-order AmbiX files are
+    heard at first order. `responses` is a stereo pair of virtual microphones
+    (see ambisonicStereoAzimuth); surround layouts decode the four channels
+    to their own speakers. Throws std::invalid_argument like
+    prepareRecordedResponse(). */
+std::shared_ptr<const RecordedResponse> prepareAmbisonicResponse (const std::vector<std::vector<float>>& channels,
+                                                                  double sampleRate,
+                                                                  std::string name,
+                                                                  AmbisonicFormat format);
 
 /** How a surround channel at this speaker folds down to stereo: its gains
     into the left and right. */
