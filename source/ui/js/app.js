@@ -82,8 +82,8 @@ function onCapture(m){if(!m)return;var was=st.capStatus.stage,msgWas=st.capStatu
 
 /* ---- credits for the recorded spaces: who made each recording, and its licence ---- */
 st.credits=false;
-function creditsHTML(){var seen={},rows=[];LIBRARY.forEach(function(x){var k=x.credit+'|'+x.licence;if(!x.credit||seen[k])return;seen[k]=[];rows.push({credit:x.credit,licence:x.licence,source:x.source,changes:x.changes,spaces:seen[k]});});
- LIBRARY.forEach(function(x){var k=x.credit+'|'+x.licence;if(seen[k])seen[k].push(x.name);});
+function creditsHTML(){var seen={},rows=[];LIBRARY.forEach(function(x){var k=x.credit+'|'+x.licence+'|'+x.source+'|'+x.changes;if(!x.credit||seen[k])return;seen[k]=[];rows.push({credit:x.credit,licence:x.licence,source:x.source,changes:x.changes,spaces:seen[k]});});
+ LIBRARY.forEach(function(x){var k=x.credit+'|'+x.licence+'|'+x.source+'|'+x.changes;if(seen[k])seen[k].push(x.name);});
  var body=rows.length?'<ul class="crl">'+rows.map(function(r){return '<li><b>'+esc(r.credit)+'</b><span>'+esc(r.licence)+(r.source?', '+esc(r.source):'')+'</span><small>'+esc(r.spaces.join('; '))+'</small>'+(r.changes?'<small>Changes: '+esc(r.changes)+'</small>':'')+'</li>';}).join('')+'</ul>'
    :'<p>This build has no recorded spaces.</p>';
  return '<div class="cap crd" role="dialog" aria-modal="true" aria-labelledby="crd-h"><div class="cbox"><div class="chd"><h2 id="crd-h">Recording credits</h2><button class="cx" data-act="credits" aria-label="Close">Close</button></div>'+
