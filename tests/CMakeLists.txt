@@ -9,6 +9,7 @@ add_executable(drenched_tests
     LivingTailTests.cpp
     RecordedResponseTests.cpp
     ResponseEnvelopeTests.cpp
+    SpeakerTrimTests.cpp
     SweepCaptureTests.cpp
     SurroundTests.cpp
     LicenceTests.cpp)

@@ -8,7 +8,8 @@ standalone form with the real interface (one set of controls, a decay-by-
 frequency graph you drag, a space browser, Studio and Stage views, twelve
 user-selectable looks) and a working zero-latency convolution
 engine, true stereo and surround up to 9.1.6 (each room spreads over the
-surround and height speakers with decorrelated tails), with a living tail: a feedback delay network fitted to each room
+surround and height speakers with decorrelated tails, and Reverb speakers
+sets the reverb's level and delay in each speaker, with a meter for each), with a living tail: a feedback delay network fitted to each room
 that powers Freeze (Crossover sets where the frozen room stops holding, so
 the bass keeps fading). Living tail hands the late reverberation over to it
 at the same level, keeping the early reflections, and Movement lets it

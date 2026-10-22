@@ -107,6 +107,18 @@ void DrenchedProcessor::cacheUiState()
 
     spaceIndex.store (index);
     listenerX.store (juce::jlimit (0.0f, 1.0f, static_cast<float> (static_cast<double> (ui.getProperty (UiIDs::listenerX, 0.5)))));
+
+    const auto speakers = juce::StringArray::fromTokens (ui.getProperty (UiIDs::speakers, "").toString(), ";", "");
+
+    for (size_t k = 0; k < maxChannels; ++k)
+    {
+        const auto pair = k < static_cast<size_t> (speakers.size()) ? juce::StringArray::fromTokens (speakers[static_cast<int> (k)], " ", "")
+                                                                     : juce::StringArray();
+        const auto level = pair.size() > 0 ? pair[0].getFloatValue() : 0.0f;
+        const auto delay = pair.size() > 1 ? pair[1].getFloatValue() : 0.0f;
+        speakerLevelDb[k].store (juce::jlimit (SpeakerTrim::minLevelDb, SpeakerTrim::maxLevelDb, std::isfinite (level) ? level : 0.0f));
+        speakerDelayMs[k].store (juce::jlimit (0.0f, SpeakerTrim::maxDelayMs, std::isfinite (delay) ? delay : 0.0f));
+    }
 }
 
 std::optional<ImpulseResponseRequest> DrenchedProcessor::currentRequest (double sampleRate) const
@@ -578,6 +590,33 @@ DrenchedProcessor::Peaks DrenchedProcessor::takePeaks() noexcept
              peaks[2].exchange (0.0f), peaks[3].exchange (0.0f) };
 }
 
+std::array<float, maxChannels> DrenchedProcessor::takeSpeakerPeaks() noexcept
+{
+    std::array<float, maxChannels> out {};
+
+    for (size_t k = 0; k < maxChannels; ++k)
+        out[k] = speakerPeaks[k].exchange (0.0f);
+
+    return out;
+}
+
+juce::var DrenchedProcessor::outputSpeakerNames() const
+{
+    const auto set = getChannelLayoutOfBus (false, 0);
+    juce::Array<juce::var> list;
+
+    for (const auto type : set.getChannelTypes())
+    {
+        auto speaker = std::make_unique<juce::DynamicObject>();
+        const auto name = set.size() == 1 ? juce::String ("M") : juce::AudioChannelSet::getAbbreviatedChannelTypeName (type);
+        speaker->setProperty ("name", name);
+        speaker->setProperty ("wet", type != juce::AudioChannelSet::LFE && type != juce::AudioChannelSet::LFE2);
+        list.add (juce::var (speaker.release()));
+    }
+
+    return list;
+}
+
 bool DrenchedProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
     const auto in = layouts.getMainInputChannelSet();
@@ -689,6 +728,12 @@ void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     controls.movement = params.movement->load() / 100.0f;
     controls.movementRateHz = params.movementRate->load();
 
+    for (size_t k = 0; k < maxChannels; ++k)
+    {
+        controls.speakerLevelDb[k] = speakerLevelDb[k].load (std::memory_order_relaxed);
+        controls.speakerDelayMs[k] = speakerDelayMs[k].load (std::memory_order_relaxed);
+    }
+
     // After the trial, without a licence, only the dry signal plays.
     if (! licence->isAudioAllowed())
         controls.mix = 0.0f;
@@ -697,6 +742,16 @@ void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
                     static_cast<size_t> (numSamples), controls);
 
     notePeak (2, numOutputs);
+
+    for (int channel = 0; channel < std::min (numOutputs, static_cast<int> (maxChannels)); ++channel)
+    {
+        auto& peak = speakerPeaks[static_cast<size_t> (channel)];
+        const auto level = buffer.getMagnitude (channel, 0, numSamples);
+        auto current = peak.load (std::memory_order_relaxed);
+
+        while (level > current && ! peak.compare_exchange_weak (current, level, std::memory_order_relaxed))
+        {}
+    }
 }
 
 juce::AudioProcessorEditor* DrenchedProcessor::createEditor()
