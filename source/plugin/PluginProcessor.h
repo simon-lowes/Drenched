@@ -232,6 +232,8 @@ private:
         std::atomic<float>* lowCpu = nullptr;
         std::atomic<float>* scene = nullptr;
         std::array<std::atomic<float>*, 8> decay {};
+        std::array<std::atomic<float>*, 6> eqFrequency {}, eqGain {};
+        std::array<std::atomic<float>*, 4> eqQ {};
     } params;
 
     // The output speakers, for kernel requests. Written in prepareToPlay, read by the timer.

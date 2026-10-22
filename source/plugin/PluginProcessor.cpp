@@ -60,6 +60,15 @@ DrenchedProcessor::DrenchedProcessor()
     params.lowCpu = raw (ParamIDs::lowCpu);
     params.scene = raw (ParamIDs::scene);
 
+    for (size_t band = 0; band < params.eqFrequency.size(); ++band)
+    {
+        params.eqFrequency[band] = raw (ParamIDs::eqFrequency[band]);
+        params.eqGain[band] = raw (ParamIDs::eqGain[band]);
+    }
+
+    for (size_t band = 0; band < params.eqQ.size(); ++band)
+        params.eqQ[band] = raw (ParamIDs::eqQ[band]);
+
     // A new instance opens on the first recorded space, with the graph on its measured decay.
     if (const auto& recordings = library::spaces(); ! recordings.empty())
     {
@@ -1124,6 +1133,16 @@ void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     controls.crossoverHz = params.crossover->load();
     controls.movement = params.movement->load() / 100.0f;
     controls.movementRateHz = params.movementRate->load();
+
+    for (size_t band = 0; band < WetEqualiser::numBands; ++band)
+    {
+        auto& eq = controls.eq[band];
+        eq.frequencyHz = params.eqFrequency[band]->load();
+        eq.gainDb = params.eqGain[band]->load();
+
+        if (WetEqualiser::shapeOf (band) == WetEqualiser::Shape::bell)
+            eq.q = params.eqQ[band - 1]->load();
+    }
 
     for (size_t k = 0; k < maxChannels; ++k)
     {

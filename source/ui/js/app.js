@@ -11,6 +11,7 @@ var JUCE=(window.__JUCE__&&window.__JUCE__.backend)?window.__JUCE__.backend:null
 var PID={mix:'mix',pre:'predelay',size:'size',bright:'brightness',el:'earlyLate',dist:'distance',output:'output',freeze:'freeze',
          preSync:'predelaySync',xover:'crossover',locut:'wetLowCut',hicut:'wetHighCut',width:'width',duck:'ducking',mono:'monoBelow',
          living:'living',move:'movement',moveRate:'movementRate',rev:'reverse',gate:'gate',attack:'attack',dLvl:'directLevel',dDel:'directDelay',dCol:'directColour',xfeed:'crossFeed',cpu:'lowCpu',cloud:'cloudSize',lx:'listenerX',sx:'sourceX'};
+for(var eb=1;eb<=EQ_N;eb++){PID['eq'+eb+'f']='eq'+eb+'Freq';PID['eq'+eb+'g']='eq'+eb+'Gain';if(eqBell(eb-1))PID['eq'+eb+'q']='eq'+eb+'Q';}
 var BAND_ID=['decay63','decay125','decay250','decay500','decay1k','decay2k','decay4k','decay8k'];
 function keyOf(id){for(var k in PID)if(PID[k]===id)return k;return null;}
 function paramValues(s){var o={};for(var k in PID)o[PID[k]]=k==='freeze'?(s.freeze?1:0):s[k];s.bands.forEach(function(b,i){o[BAND_ID[i]]=b;});return o;}
@@ -125,6 +126,26 @@ function speakersHTML(){var rows=st.outputs.map(function(o,i){var v=speakerOf(st
   '<div class="sph"><span>Speaker</span><span>Output</span><span>Level</span><span>Delay</span></div><div class="spl">'+rows+'</div>'+
   '<div class="cft"><button class="cgo stop" data-act="spkreset">Reset all</button><span class="ct">Levels from Off to +12 dB, delays up to 100 ms. Saved with the session.</span></div></div></div>';}
 
+/* ---- the wet EQ: six bands on the reverb, drawn as a response curve with a point per band ---- */
+st.eq=false;st.eqCur=null;var EQ_Q_SPAN=100;
+function eqKey(i,c){return 'eq'+(i+1)+c;}
+function eqHTML(){var cur=st.eqCur,cols=function(f){var o='';for(var i=0;i<EQ_N;i++)o+=f(i);return o;};
+ var heads=cols(function(i){return '<b'+(i===cur?' class="cur"':'')+'>'+EQ_NAME[i]+'</b>';});
+ var row=function(c){return cols(function(i){return eqBell(i)||c!=='q'?roEl(st,eqKey(i,c)):'<em title="The shelves have a fixed slope">\u2013</em>';});};
+ return '<div class="cap eqd" role="dialog" aria-modal="true" aria-labelledby="eq-h"><div class="cbox"><div class="chd"><h2 id="eq-h">Wet EQ</h2><button class="cx" data-act="eq" aria-label="Close">Close</button></div>'+
+  '<p>Six bands shape the reverb alone: a low shelf, four bells and a high shelf, after the wet low cut and high cut. The dry sound is not changed, and each value can be automated.</p>'+
+  eqSVG(st,728,236,cur)+
+  '<div class="eqt" role="group" aria-label="Band values"><span></span>'+heads+'<span>Frequency</span>'+row('f')+'<span>Gain</span>'+row('g')+'<span>Q</span>'+row('q')+'</div>'+
+  '<div class="cft"><button class="cgo stop" data-act="eqreset"'+(eqFlat(st)?' disabled':'')+'>Reset to flat</button><span class="ct">Drag a point sideways for frequency and up or down for gain. Scroll over a bell, or drag it with Alt held, for Q. Shift gives fine steps; double-click a point to return it to 0 dB.</span></div></div></div>';}
+function eqSet(i,c,v){setParam(st,eqKey(i,c),v);st.eqCur=i;}
+function eqReset(){for(var i=0;i<EQ_N;i++){eqSet(i,'f',EQ_DEF[i][0]);eqSet(i,'g',0);if(eqBell(i))eqSet(i,'q',EQ_DEF[i][1]);}st.eqCur=null;st.hint=null;st.note='<b>Wet EQ flat.</b> The reverb plays as recorded.';}
+/* the ids a drag of one point touches: frequency and gain, or Q alone with Alt held */
+function eqIds(i,alt){return alt&&eqBell(i)?[PID[eqKey(i,'q')]]:[PID[eqKey(i,'f')],PID[eqKey(i,'g')]];}
+function applyEq(e){var d=drag,sc=d.w/d.rect.width,dx=(e.clientX-d.x0)*sc,dy=(e.clientY-d.y0)*sc,fine=e.shiftKey?0.1:1;
+ if(d.alt){eqSet(d.i,'q',d.q0*Math.pow(EQ_Q_SPAN,-dy/d.ph*fine));}
+ else{eqSet(d.i,'f',d.f0*Math.pow(EQ_MAX/EQ_MIN,dx/d.pw*fine));eqSet(d.i,'g',d.g0-dy/d.ph*2*EQ_DB*fine);}
+ st.note=null;schedule();}
+
 /* ---- scenes: every setting and the space under a name, recalled here or by automating Scene ---- */
 st.scn=false;st.scenes=[];st.scene=0;st.scnLocal={};
 var MAX_SCENES=32;
@@ -168,7 +189,7 @@ function licenceHTML(){var L=st.licence,busy=!!L.busy,dis=busy?' disabled':'',bo
    '<button class="ldisc" data-act="licoffline" aria-expanded="'+st.licOff+'">Activate without internet</button>'+
    (st.licOff?'<ol class="lsteps"><li>On any device with internet, open <b>'+esc(L.page)+'</b>'+(JUCE?' <button class="lsm" data-act="licpage">Open</button>':'')+'</li>'+
     '<li>Enter your licence number and this computer\u2019s code:<span class="lcode"><b class="lmono">'+esc(L.machine)+'</b><button class="lsm" data-act="liccopy">Copy</button></span></li>'+
-    '<li>Paste the activation code it gives you:<div class="lrow top"><textarea id="lic-code" data-fid="lic-code" data-in="licCode" spellcheck="false" aria-label="Activation code" placeholder="DRN1.…"'+dis+'>'+esc(st.licCode)+'</textarea>'+
+    '<li>Paste the activation code it gives you:<div class="lrow top"><textarea id="lic-code" data-fid="lic-code" data-in="licCode" spellcheck="false" aria-label="Activation code" placeholder="DRN1.\u2026"'+dis+'>'+esc(st.licCode)+'</textarea>'+
     '<button class="lsm" data-act="licpaste" data-v="licCode"'+dis+'>Paste</button><button class="cgo" data-act="liccode"'+dis+'>Use code</button></div></li></ol>':'');}
  var dev=L.testKey?'<p class="ldev">Development build: its activation codes use the published test key, so this copy is not for sale.</p>':'';
  return '<div class="cap lic" role="dialog" aria-modal="true" aria-labelledby="lic-h"><div class="cbox"><div class="chd"><h2 id="lic-h">'+(L.state==='licensed'?'Licence':'Activate Drenched')+'</h2><button class="cx" data-act="licence" aria-label="Close">Close</button></div>'+body+dev+'</div></div>';}
@@ -179,11 +200,11 @@ function fit(){var w=live.clientWidth,h=live.clientHeight,sc=Math.min(w/W,h/H),e
  el.style.transform='translate('+((w-W*sc)/2).toFixed(2)+'px,'+((h-H*sc)/2).toFixed(2)+'px) scale('+sc.toFixed(5)+')';
  var frs=live.querySelectorAll('.skins .fr');for(var i=0;i<frs.length;i++){var s2=frs[i].firstElementChild;if(s2)s2.style.transform='scale('+(frs[i].clientWidth/W).toFixed(5)+')';}}
 function renderLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAttribute('data-fid'):null;
- var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';
+ var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';
  live.innerHTML=html;fit();
  if(fid){var n=live.querySelector('[data-fid="'+fid+'"]');if(n){n.focus({preventScroll:true});if(n.matches('input,textarea'))n.selectionStart=n.selectionEnd=n.value.length;}}
  // A dialog keeps the keyboard even when the control that had it is redrawn away.
- if((st.lic||st.capture||st.credits||st.spk||st.scn)&&!live.contains(document.activeElement)){var d=live.querySelector('.cap .cgo:not([disabled])')||live.querySelector('.cap .cx');if(d)d.focus({preventScroll:true});}}
+ if((st.lic||st.capture||st.credits||st.spk||st.scn||st.eq)&&!live.contains(document.activeElement)){var d=live.querySelector('.cap .cgo:not([disabled])')||live.querySelector('.cap .cx');if(d)d.focus({preventScroll:true});}}
 var raf=0;function schedule(){if(!raf)raf=requestAnimationFrame(function(){raf=0;renderLive();sync();syncUi();});}
 window.schedule=schedule;
 window.addEventListener('resize',fit);
@@ -195,10 +216,15 @@ function changeSpace(i){var old=snap(st),sp=SPACES[i],held=[];st.sp=i;st.bands=s
  if(st.locks.decay){var f=decayOf(old.bands)/decayOf(sp.bands);st.bands=st.bands.map(function(b){return clamp(b*f,0.1,20);});held.push('Decay');}
  if(st.locks.pre){st.pre=old.pre;held.push('Pre-delay');}if(st.locks.mix)held.push('Mix');
  st.hint=null;st.note='<b>'+esc(sp.name)+'</b> loaded.'+(held.length?' Locked and held: '+held.join(', ')+'.':' Lock a value to hold it when you change space.')+(sp.credit?' Recording: '+esc(sp.credit)+', '+esc(sp.licence)+'.':'');}
-var drag=null;
+var drag=null,eqTap=null;
 live.addEventListener('pointerdown',function(e){var t=e.target;if(t.closest('input,button'))return;
- var kn=t.closest('[data-knob]'),lis=t.closest('[data-drag]'),dg=t.closest('svg[data-decay]');
- if(kn){var k=kn.getAttribute('data-knob'),h=kn.getAttribute('data-h')==='1';drag={type:'knob',k:k,h:h,x0:e.clientX,y0:e.clientY,n0:to01(k,getV(st,k)),w:kn.getBoundingClientRect().width*(W/live.firstElementChild.getBoundingClientRect().width),ids:k==='decay'?BAND_ID.slice():[PID[k]]};kn.focus({preventScroll:true});}
+ var kn=t.closest('[data-knob]'),lis=t.closest('[data-drag]'),dg=t.closest('svg[data-decay]'),en=t.closest('[data-eqn]');
+ if(en){var es=en.closest('svg'),ei=+en.getAttribute('data-eqn'),alt=(e.altKey||e.ctrlKey)&&eqBell(ei),now=Date.now();
+  // the page is redrawn between the two clicks, so a double click is counted here: it returns the band to 0 dB
+  if(eqTap&&eqTap.i===ei&&now-eqTap.t<400){eqTap=null;eqSet(ei,'g',0);st.note=null;schedule();e.preventDefault();return;}eqTap={i:ei,t:now};
+  drag={type:'eq',i:ei,alt:alt,rect:es.getBoundingClientRect(),w:+es.getAttribute('data-w'),pw:+es.getAttribute('data-pw'),ph:+es.getAttribute('data-ph'),x0:e.clientX,y0:e.clientY,f0:st[eqKey(ei,'f')],g0:st[eqKey(ei,'g')],q0:st[eqKey(ei,'q')],ids:eqIds(ei,alt)};
+  st.eqCur=ei;en.focus({preventScroll:true});schedule();}
+ else if(kn){var k=kn.getAttribute('data-knob'),h=kn.getAttribute('data-h')==='1';drag={type:'knob',k:k,h:h,x0:e.clientX,y0:e.clientY,n0:to01(k,getV(st,k)),w:kn.getBoundingClientRect().width*(W/live.firstElementChild.getBoundingClientRect().width),ids:k==='decay'?BAND_ID.slice():[PID[k]]};kn.focus({preventScroll:true});}
  else if(lis){var sv=lis.closest('svg');drag={type:'lis',rect:sv.getBoundingClientRect(),w:+sv.getAttribute('data-w'),mode:sv.getAttribute('data-mode'),ox:+sv.getAttribute('data-ox'),oy:+sv.getAttribute('data-oy'),sc:+sv.getAttribute('data-sc'),rw:+sv.getAttribute('data-rw'),ids:lis.getAttribute('data-drag')==='src'?[PID.sx]:[PID.dist,PID.lx],src:lis.getAttribute('data-drag')==='src'};lis.focus({preventScroll:true});}
  else if(dg){var r=dg.getBoundingClientRect(),d={rect:r,l:+dg.getAttribute('data-l'),t:+dg.getAttribute('data-t'),pw:+dg.getAttribute('data-pw'),ph:+dg.getAttribute('data-ph'),ymax:+dg.getAttribute('data-ymax'),w:+dg.getAttribute('data-w'),bars:dg.getAttribute('data-bars')==='1'};
   var sx=(e.clientX-r.left)*d.w/r.width,sy=(e.clientY-r.top)*d.w/r.width;d.polar=dg.getAttribute('data-polar')==='1';d.horiz=dg.getAttribute('data-horiz')==='1';
@@ -214,18 +240,30 @@ function applyDecay(e){var d=drag,sc=d.w/d.rect.width,sx=(e.clientX-d.rect.left)
 live.addEventListener('pointermove',function(e){if(!drag)return;
  if(drag.type==='knob'){var k=live.firstElementChild.getBoundingClientRect().width/W,dn=drag.h?(e.clientX-drag.x0)/k/Math.max(drag.w,60):(drag.y0-e.clientY)/k/220;if(e.shiftKey)dn/=10;setParam(st,drag.k,from01(drag.k,drag.n0+dn));schedule();}
  else if(drag.type==='decay')applyDecay(e);
+ else if(drag.type==='eq')applyEq(e);
  else if(drag.type==='lis'){var r=drag.rect,kk=drag.w/r.width,px=(e.clientX-r.left)*kk,py=(e.clientY-r.top)*kk;
   if(drag.src){if(drag.mode==='plan')st.sx=clamp(Math.round((px-drag.ox)/(drag.rw*drag.sc)*1000)/10,6,94);st.hint='sx';st.note=null;schedule();return;}
   if(drag.mode==='plan'){st.lx=clamp(Math.round((px-drag.ox)/(drag.rw*drag.sc)*1000)/10,6,94);st.dist=Math.round(distFromM(st,(py-drag.oy)/drag.sc));}else st.dist=Math.round(distFromM(st,(px-drag.ox)/drag.sc));
   st.hint='dist';st.note=null;schedule();}});
 function endDrag(){if(drag){var ids=drag.ids;drag=null;schedule();gesture(ids,false);}}
 live.addEventListener('pointerup',endDrag);live.addEventListener('pointercancel',endDrag);
+/* on a bell, the wheel sets Q */
+live.addEventListener('wheel',function(e){var en=e.target.closest&&e.target.closest('[data-eqn]');if(!en||drag)return;var i=+en.getAttribute('data-eqn');e.preventDefault();if(!eqBell(i)||!e.deltaY)return;
+ eqSet(i,'q',st[eqKey(i,'q')]*Math.pow(e.shiftKey?1.015:1.06,e.deltaY<0?1:-1));st.note=null;schedule();},{passive:false});
+
 live.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1,PageUp:10,PageDown:-10};
- if(e.key==='Escape'&&(st.skins||st.browse||st.capture||st.lic||st.credits||st.spk||st.scn)){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.scn)st.scn=false;else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
+ if(e.key==='Escape'&&(st.skins||st.browse||st.capture||st.lic||st.credits||st.spk||st.scn||st.eq)){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.eq)st.eq=false;else if(st.scn)st.scn=false;else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
  if(e.key==='Enter'&&t.id==='lic-key'){e.preventDefault();licActivate();renderLive();return;}
  if(e.key==='Enter'&&t.matches('input[data-scn]')){e.preventDefault();t.blur();return;}
  if(t.matches('.sk')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.click();return;}
  if(t.matches('[data-knob]')){var k=t.getAttribute('data-knob'),p=P[k];if(e.key==='Home')setParam(st,k,p.min);else if(e.key==='End')setParam(st,k,p.max);else if(keys[e.key])setParam(st,k,from01(k,to01(k,getV(st,k))+keys[e.key]*(e.shiftKey?0.002:0.02)));else return;e.preventDefault();schedule();}
+ else if(t.matches('[data-eqn]')){var qi=+t.getAttribute('data-eqn'),fine=e.shiftKey,ek=e.key;st.eqCur=qi;
+  if(ek==='ArrowLeft'||ek==='ArrowRight')eqSet(qi,'f',st[eqKey(qi,'f')]*Math.pow(2,(ek==='ArrowRight'?1:-1)/(fine?48:12)));
+  else if(ek==='ArrowUp'||ek==='ArrowDown')eqSet(qi,'g',st[eqKey(qi,'g')]+(ek==='ArrowUp'?1:-1)*(fine?0.1:0.5));
+  else if((ek==='PageUp'||ek==='PageDown')&&eqBell(qi))eqSet(qi,'q',st[eqKey(qi,'q')]*Math.pow(fine?1.015:1.12,ek==='PageUp'?1:-1));
+  else if(ek==='Delete'||ek==='Backspace')eqSet(qi,'g',0);
+  else if(ek==='Home'||ek==='End'){var nx=ek==='End'?EQ_N-1:0;st.eqCur=nx;renderLive();var nn=live.querySelector('[data-fid="eqn-'+nx+'"]');if(nn)nn.focus({preventScroll:true});e.preventDefault();return;}
+  else return;st.note=null;e.preventDefault();schedule();}
  else if(t.matches('[data-node]')){var i=+t.getAttribute('data-node');if(e.key==='ArrowLeft'||e.key==='ArrowRight'){var ni=clamp(i+(e.key==='ArrowRight'?1:-1),0,7);st.lastBand=ni;e.preventDefault();renderLive();var n2=live.querySelector('[data-fid="nd-'+ni+'"]');if(n2)n2.focus({preventScroll:true});return;}
   if(e.key==='ArrowUp'||e.key==='ArrowDown'){st.bands[i]=clamp(Math.round((st.bands[i]+(e.key==='ArrowUp'?1:-1)*(e.shiftKey?0.01:0.1))*100)/100,0.1,20);st.lastBand=i;st.hint='decay';st.note=null;e.preventDefault();schedule();}}
  else if(t.matches('[data-drag="src"]')){if(e.key==='ArrowLeft'||e.key==='ArrowRight')st.sx=clamp(st.sx+(e.key==='ArrowRight'?3:-3),6,94);else return;st.hint='sx';st.note=null;e.preventDefault();schedule();}
@@ -241,7 +279,7 @@ live.addEventListener('change',function(e){var t=e.target;
  if(ty==='band'){var i=+t.getAttribute('data-i');st.bands[i]=clamp(v,0.1,20);st.lastBand=i;st.hint='decay';}
  else if(ty==='dist'){st.dist=Math.round(distFromM(st,v));st.hint='dist';}
  else if((ty==='lx'||ty==='sx')&&/left|right/i.test(raw)){setParam(st,ty,50+(/left/i.test(raw)?-v:v)/2);}
- else if(ty==='hicut'&&/k/i.test(raw)){setParam(st,ty,v*1000);}
+ else if((ty==='hicut'||/^eq\df$/.test(ty))&&/k/i.test(raw)){setParam(st,ty,v*1000);}
  else setParam(st,ty,v);
  st.note=null;renderLive();sync();});
 live.addEventListener('input',function(e){var k=e.target.getAttribute&&e.target.getAttribute('data-in');if(k==='licKey'||k==='licCode')st[k]=e.target.value;});
@@ -264,6 +302,8 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'speakers':st.spk=!st.spk;st.browse=false;st.hint=null;break;
   case 'spkreset':st.speakers=[];break;
   case 'scenes':st.scn=!st.scn;st.browse=false;st.hint=null;break;
+  case 'eq':st.eq=!st.eq;st.browse=false;st.hint=null;break;
+  case 'eqreset':eqReset();break;
   case 'scstore':sceneAct('store',0,'');st.hint=null;st.note='<b>Stored.</b> Automate Scene to recall it on the cut.';break;
   case 'scupdate':sceneAct('store',+v,'');st.hint=null;st.note='<b>'+esc((sceneOf(+v)||{}).name||'Scene '+v)+'</b> now holds the current settings.';break;
   case 'screcall':sceneAct('recall',+v,'');break;
@@ -292,6 +332,7 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
  else if(a==='skins'&&st.skins){var sk=live.querySelector('.skins .sk[aria-current="true"]');if(sk)sk.focus({preventScroll:true});}
  else if(a==='capture'&&st.capture){var cf=live.querySelector('.cap .cgo');if(cf)cf.focus({preventScroll:true});}
  else if(a==='speakers'&&st.spk){var sf=live.querySelector('.spkd input');if(sf)sf.focus({preventScroll:true});}
+ else if(a==='eq'&&st.eq){var ef=live.querySelector('.eqd [data-eqn="'+(st.eqCur||0)+'"]');if(ef)ef.focus({preventScroll:true});}
  else if(a==='licence'&&st.lic){var lf=live.querySelector('#lic-key')||live.querySelector('.lic .cgo');if(lf)lf.focus({preventScroll:true});}
  else if(a==='capstart'||a==='capstop'){var cg=live.querySelector('.cap .cgo:not([disabled])')||live.querySelector('.cap .cx');if(cg)cg.focus({preventScroll:true});}
  else{var same=live.querySelector('[data-act="'+a+'"]'+(v!=null?'[data-v="'+v+'"]':'')+(a==='lock'||a==='toggle'||a==='capopt'?'[data-k="'+b.getAttribute('data-k')+'"]':''));if(same)same.focus({preventScroll:true});}});
