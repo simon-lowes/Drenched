@@ -33,7 +33,10 @@ The St Paul's Hall files come from the MAIR repository on GitHub. The OpenAIR
 and AIR files come from audEERING's public copies of those databases
 (`audb-public` on Amazon S3: `openair` 1.0.0 and `air` 1.4.x), because the
 original servers were not reachable from the build machine; each file is
-checked against the MD5 sum in the database's own file table.
+checked against the MD5 sum in the database's own file table. The Detmold,
+ARVERIR, ChurchIR and WDR files come from their Zenodo records: the script
+reads only the files it needs out of each zip, using HTTP range requests, and
+checks each against the MD5 sum recorded when it was first fetched.
 
 What the script does to each kind of source:
 
@@ -45,8 +48,24 @@ What the script does to each kind of source:
   source is 45 degrees to its left and to its right, make one true-stereo file.
   The 16-bit copies end in digital silence, so the last 30 % of the kept tail is
   faded out.
-- Files above 48 kHz are resampled to 48 kHz (soxr). The OpenAIR and AIR
-  spaces are cut a quarter of a second after their tail sinks into the noise
+- Detmold: dummy-head responses. The Konzerthaus spaces (set C, measured with
+  the hall's enhancement system off) pair two sources of the loudspeaker
+  orchestra into true stereo: S2 and S3 (4 m apart) for the front stalls (seat
+  126), S1 and S4 (8 m apart) for mid hall (seat 285). Brahmssaal (row 9) and
+  Sommertheater (row 6) use the one stage source. The set A responses with the
+  enhancement system's artificial reverberation switched on are left out.
+- ARVERIR: each 8-capsule response is encoded to first-order B-format by a
+  least-squares fit over its cardioid capsules, at the positions in
+  `pos_receivers.csv`, then decoded as for OpenAIR, facing the centre of the
+  stage. Seat 10 of row 4, with the first violin's source (S1) on the left and
+  the cello's (S4) on the right, makes one true-stereo file.
+- ChurchIR: four omni responses in row 5, at the left and right microphone
+  positions (about 5 m apart, from the arrival times) with the left and right
+  sources, make one true-stereo file.
+- WDR: the ORTF and large AB pairs, with the omni source at the centre of the
+  stage, used as recorded.
+- Files above 48 kHz are resampled to 48 kHz (soxr). Every space except St
+  Paul's Hall is cut a quarter of a second after its tail sinks into the noise
   floor (or 100 dB below its loudest). Every file is peak-normalised to -1 dBFS.
 
 ## Credits
@@ -69,3 +88,9 @@ What the script does to each kind of source:
 | Terry's Factory Warehouse, York | Damian T. Murphy, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=735). Changes: level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Terry's Typing Room, York | Damian T. Murphy, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=740). Changes: resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | R1 Reactor Hall | [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=626) (www.openairlib.net). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Detmold Konzerthaus (front stalls, mid hall) | Sebastia Vicenc Amengual Gari, Banu Sahin, Dusty Eddy and Malte Kob, Detmold University of Music: [Detmold SRIR database](https://zenodo.org/records/4116247) (Amengual Gari, Sahin, Eddy and Kob, "Open Database of Spatial Room Impulse Responses at Detmold University of Music", AES 149th Convention, 2020). Changes: two dummy-head responses (a source on the left and on the right) combined into a true-stereo file, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Brahmssaal, Detmold | As above: [Detmold SRIR database](https://zenodo.org/records/4116247). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Detmold Sommertheater | As above: [Detmold SRIR database](https://zenodo.org/records/4116247). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Arvedi Auditorium, Cremona | Federico Miotello, Gioele Greco, Paolo Ostan, Francesca Del Gaudio, Luca Comanducci, Raffaele Malvermi, Mirco Pezzoli and Fabio Antonacci, Politecnico di Milano: [ARVERIR dataset](https://zenodo.org/records/20098848) ("The Sound of the Violin's Home: A Higher-Order Room Impulse Response Dataset of the Arvedi Auditorium in Cremona", IWAENC 2026). Changes: capsule responses encoded to first-order B-format and decoded to a pair of virtual supercardioids, two sources (left and right) combined into a true-stereo file, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Ss. Marcellino e Pietro, Cremona | Riccardo Giampiccolo, Sofia Parrinelli and Fabio Antonacci, Politecnico di Milano: [ChurchIR dataset](https://zenodo.org/records/14901751) (2025). Changes: four omni responses (left and right microphone positions, sources on the left and right) combined into a true-stereo file, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| WDR Großer Sendesaal (ORTF, spaced omnis) and Kleiner Sendesaal, Cologne | P. Stade, B. Bernschütz and M. Rühl, TH Köln: [WDR broadcast studios compilation](https://zenodo.org/records/3930833) (Stade, Bernschütz and Rühl, "A Spatial Audio Impulse Response Compilation Captured at the WDR Broadcast Studios", 27th Tonmeistertagung, 2012). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
