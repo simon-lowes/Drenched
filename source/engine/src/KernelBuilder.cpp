@@ -131,8 +131,9 @@ void KernelBuilder::build (const ImpulseResponseRequest& wanted)
     }
 
     auto kernel = stereo
-                    ? std::make_unique<ReverbKernel> (responses, tail)
-                    : std::make_unique<ReverbKernel> (spreadResponses (responses, wanted.outputs, mixingTimeSeconds (wanted)), tail);
+                    ? std::make_unique<ReverbKernel> (responses, tail, wanted.latencySamples)
+                    : std::make_unique<ReverbKernel> (spreadResponses (responses, wanted.outputs, mixingTimeSeconds (wanted)), tail,
+                                                      wanted.latencySamples);
     kernel->setLivingLevel (living);
     reverb.submit (std::move (kernel));
     shortened.store (shortenedSeconds, std::memory_order_relaxed);

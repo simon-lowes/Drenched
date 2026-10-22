@@ -46,6 +46,7 @@ DrenchedProcessor::DrenchedProcessor()
     params.directDelay = raw (ParamIDs::directDelay);
     params.directColour = raw (ParamIDs::directColour);
     params.crossFeed = raw (ParamIDs::crossFeed);
+    params.lowCpu = raw (ParamIDs::lowCpu);
 
     // A new instance opens on the first recorded space, with the graph on its measured decay.
     if (const auto& recordings = library::spaces(); ! recordings.empty())
@@ -162,6 +163,7 @@ std::optional<ImpulseResponseRequest> DrenchedProcessor::currentRequest (double 
     request.directDelayMs = params.directDelay->load();
     request.directColourDb = params.directColour->load();
     request.crossFeedPercent = params.crossFeed->load();
+    request.latencySamples = wantedLatency (sampleRate);
 
     for (size_t band = 0; band < params.decay.size(); ++band)
         request.decaySeconds[band] = params.decay[band]->load();
@@ -169,10 +171,26 @@ std::optional<ImpulseResponseRequest> DrenchedProcessor::currentRequest (double 
     return request;
 }
 
+int DrenchedProcessor::wantedLatency (double sampleRate) const
+{
+    return params.lowCpu->load() >= 0.5f ? static_cast<int> (ConvolutionReverb::lowCpuLatency (sampleRate)) : 0;
+}
+
+void DrenchedProcessor::updateLatency (double sampleRate)
+{
+    // The reverb delays its dry sound to match the running kernel, so the host
+    // only needs telling; a new kernel with the new latency follows.
+    if (const auto wanted = wantedLatency (sampleRate); wanted != getLatencySamples())
+        setLatencySamples (wanted);
+}
+
 void DrenchedProcessor::timerCallback()
 {
     cacheUiState();
     pollCapture();
+
+    if (const auto rate = preparedRate.load(); rate > 0.0)
+        updateLatency (rate);
 
     if (const auto rate = preparedRate.load(); rate > 0.0)
         if (auto request = currentRequest (rate))
@@ -658,6 +676,7 @@ void DrenchedProcessor::prepareToPlay (double sampleRate, int)
 
     reverb.prepare (sampleRate, inputs, outputs);
     preparedRate.store (sampleRate);
+    updateLatency (sampleRate);
     loadLibrarySpace (chosenSpaceId(), true);
     cacheUiState();
 
@@ -778,8 +797,12 @@ void DrenchedProcessor::setStateInformation (const void* data, int sizeInBytes)
     cacheUiState();
 
     if (const auto rate = preparedRate.load(); rate > 0.0)
+    {
+        updateLatency (rate);
+
         if (auto request = currentRequest (rate))
             builder->request (*request);
+    }
 }
 
 } // namespace drenched

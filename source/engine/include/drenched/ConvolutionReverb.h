@@ -25,15 +25,20 @@ namespace drenched
 class ReverbKernel
 {
 public:
-    /** True stereo, for a stereo output. */
-    explicit ReverbKernel (const ImpulseResponseSet& responses, const LivingTailDesign& tail = {});
+    /** True stereo, for a stereo output. A latency (see PartitionedConvolver)
+        makes the convolution cheaper and that many samples late; the reverb
+        then delays its dry sound and living tail to match. */
+    explicit ReverbKernel (const ImpulseResponseSet& responses, const LivingTailDesign& tail = {},
+                           std::size_t latency = 0);
 
     /** Any output layout (see spreadResponses()). */
-    explicit ReverbKernel (const SpatialResponseSet& responses, const LivingTailDesign& tail = {});
+    explicit ReverbKernel (const SpatialResponseSet& responses, const LivingTailDesign& tail = {},
+                           std::size_t latency = 0);
 
     double sampleRate() const noexcept { return rate; }
     std::size_t length() const noexcept { return irLength; }
     std::size_t numOutputs() const noexcept { return fromLeft.numOutputs(); }
+    std::size_t latency() const noexcept { return fromLeft.latency(); }
     const LivingTailDesign& livingTail() const noexcept { return tailDesign; }
 
     /** How loud the living tail plays alongside this kernel, 0..1: the builder
@@ -82,7 +87,13 @@ struct ReverbControls
 
 /** The complete reverb: pre-delay, convolution from the two stage sources to
     every output speaker, the living tail, wet tone, width, ducking and the
-    dry/wet mix. Zero latency. Mono, stereo and surround up to 9.1.6.
+    dry/wet mix. Mono, stereo and surround up to 9.1.6.
+
+    Zero latency, unless the running kernel was built with one (low-CPU
+    mode): then the dry sound and the living tail are delayed by the same
+    amount so everything stays in time, and the host is told the latency
+    (see lowCpuLatency()). Changing it crossfades the dry sound to its new
+    delay over a few milliseconds.
 
     The input channels feed two stage sources: left-hand speakers the left
     one, right-hand speakers the right, centred ones both. The LFE input
@@ -110,6 +121,15 @@ class ConvolutionReverb
 public:
     static constexpr std::size_t chunkSize = 256;
     static constexpr double maxPredelaySeconds = 1.0;
+    static constexpr std::size_t maxLatency = 8192;
+
+    /** The latency low-CPU mode uses at a sample rate: about 21 ms, as a
+        power of two (1024 samples at 44.1 and 48 kHz). */
+    static std::size_t lowCpuLatency (double sampleRate) noexcept;
+
+    /** The latency the dry sound is delayed by now: the running kernel's.
+        Audio thread only. */
+    std::size_t latency() const noexcept { return dryTap; }
 
     ConvolutionReverb();
     ~ConvolutionReverb();
@@ -157,6 +177,7 @@ private:
     void retire (ReverbKernel* kernel) noexcept;
     void updateFilters (const ReverbControls& controls) noexcept;
     void runKernels (std::size_t numSamples) noexcept;
+    void delayDry (std::size_t wanted, std::size_t numSamples) noexcept;
     void updateFreeze (const ReverbControls& controls) noexcept;
     bool tailAudible() const noexcept { return frozen || tailPosition > 0.0f; }
 
@@ -204,6 +225,11 @@ private:
 
     // Each speaker's reverb level and delay.
     SpeakerTrim speakerTrim;
+
+    // The dry sound's delay, matching the running kernel's latency: a line
+    // per input, and a crossfade from the old tap when it changes.
+    std::vector<float> dryLines;
+    std::size_t dryMask = 0, dryWrite = 0, dryTap = 0, dryFrom = 0, dryFade = 0, dryFadeLength = 960;
 
     // Living tail and freeze. Positions run 0..1 and become equal-power gains.
     LivingTail livingTail;
