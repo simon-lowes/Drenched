@@ -55,9 +55,13 @@ in the plugin (space menu, Recording credits) and in
 | [MAIR library](https://github.com/APL-Huddersfield/MAIR-Library-and-Renderer): Hyunkook Lee and Connor Millns, Applied Psychoacoustics Lab, University of Huddersfield (2017) | St Paul's Hall, Huddersfield (five microphone setups) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | [OpenAIR library](https://www.openair.hosted.york.ac.uk/) (www.openairlib.net), Audiolab, University of York, with the recordists each space's page names (listed in [library/README.md](library/README.md)); copied from audEERING's public mirror (`audb-public`, openair 1.0.0) | Jack Lyons Concert Hall, Spokane Woman's Club, Dixon Studio Theatre, York Minster, Lady Chapel St Albans, St Patrick's Patrington, St Margaret's York, Heslington Church, Spring Lane Stairwell, Hamilton Mausoleum, Tyndall Bruce Monument, Terry's Factory Warehouse, Terry's Typing Room, R1 Reactor Hall | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | [AIR database](https://www.iks.rwth-aachen.de/en/research/tools-downloads/databases/aachen-impulse-response-database/): Marco Jeub, Magnus Schäfer, Hauke Krüger, Christoph M. Nelke, Christophe Beaugeant and Peter Vary, Institute of Communication Systems, RWTH Aachen University; copied from audEERING's public mirror (`audb-public`, air 1.4) | Aula Carolina, Aachen | [MIT](https://opensource.org/licenses/MIT) |
+| [Detmold SRIR database](https://zenodo.org/records/4116247): Sebastia Vicenc Amengual Gari, Banu Sahin, Dusty Eddy and Malte Kob, Detmold University of Music (2020) | Detmold Konzerthaus (front stalls, mid hall), Brahmssaal, Sommertheater | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| [ARVERIR](https://zenodo.org/records/20098848): Federico Miotello, Gioele Greco, Paolo Ostan, Francesca Del Gaudio, Luca Comanducci, Raffaele Malvermi, Mirco Pezzoli and Fabio Antonacci, Politecnico di Milano (2026) | Arvedi Auditorium, Cremona | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| [ChurchIR](https://zenodo.org/records/14901751): Riccardo Giampiccolo, Sofia Parrinelli and Fabio Antonacci, Politecnico di Milano (2025) | Ss. Marcellino e Pietro, Cremona | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| [WDR broadcast studios compilation](https://zenodo.org/records/3930833): P. Stade, B. Bernschütz and M. Rühl, TH Köln (2012) | WDR Großer Sendesaal (ORTF, spaced omnis), WDR Kleiner Sendesaal | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 
-The changes made to each recording (B-format decoding, resampling, trimming,
-channel mapping, normalising) are listed in [library/README.md](library/README.md)
+The changes made to each recording (B-format decoding, array encoding,
+resampling, trimming, channel mapping, normalising) are listed in [library/README.md](library/README.md)
 and under Recording credits in the plugin.
 
 The MIT licence of the AIR database requires its copyright notice and

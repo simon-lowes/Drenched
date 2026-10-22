@@ -8,20 +8,23 @@ collection, assembled into one FLAC file the plugin reads:
   4 channels: true stereo, left-to-left, left-to-right, right-to-left, right-to-right,
               made from a source on each side of the stage.
 
-The sources come in four shapes:
+The sources come in five shapes:
 
-  - mono files, one per microphone (MAIR): paired into stereo, a Decca tree's centre
-    folded into both sides;
-  - a stereo file (OpenAIR ORTF pairs, AIR's dummy head): used as it is;
+  - mono files, one per microphone (MAIR, ChurchIR): paired into stereo, a Decca
+    tree's centre folded into both sides;
+  - a stereo file (OpenAIR ORTF pairs, dummy heads, WDR's stereo pairs): used as it is;
   - a first-order B-format file (OpenAIR): decoded to a coincident pair of virtual
     supercardioids 110 degrees apart;
-  - two stereo files of one microphone, with the source on either side: true stereo.
+  - two stereo files of one microphone, with the source on either side: true stereo;
+  - two files of an array of cardioid capsules (ARVERIR), with the source on either
+    side: each encoded to first-order B-format from the capsule positions, decoded
+    as above, and made into true stereo.
 
 The level between channels is kept, and each file is peak-normalised to -1 dBFS
 before it is stored as 24-bit FLAC. Files recorded above 48 kHz are resampled to
-48 kHz, and the OpenAIR and AIR spaces have the silence after their tail cut off to
-keep the plugin small. Noise removal and loudness matching happen in the plugin, as
-for any loaded file.
+48 kHz, and every space except St Paul's Hall has the silence after its tail cut off
+to keep the plugin small. Noise removal and loudness matching happen in the plugin,
+as for any loaded file.
 
 Usage: build_library.py [--download] [--analyse TOOL] [--only ID]... SOURCE_DIR
 
@@ -35,6 +38,7 @@ Needs numpy and ffmpeg (with soxr).
 """
 
 import argparse
+import csv
 import hashlib
 import io
 import json
@@ -60,6 +64,10 @@ MAIR = "https://raw.githubusercontent.com/APL-Huddersfield/MAIR-Library-and-Rend
 # MD5 sums are from each database's db.csv.
 AUDB = "https://s3.dualstack.eu-north-1.amazonaws.com/audb-public/"
 
+# Zenodo records, each one zip read in place over HTTP ranges, so only the files used
+# are fetched. The MD5 sums are of each file as first fetched for the library.
+ZENODO = "https://zenodo.org/api/records/"
+
 
 def mair (folder, prefix, mic, speaker, channel):
     return f"{MAIR}{folder}/{prefix}_{mic}_{speaker}_{channel}.wav"
@@ -83,6 +91,31 @@ def openair (archive, md5, name):
 
 def air (archive, md5, name):
     return f"{AUDB}air/media/1.4.0/{archive}.zip#{name}#{md5}"
+
+
+def zenodo (record, archive, name, md5):
+    """A file inside a zip in a Zenodo record. A name with "!" is a file in a zip inside that zip."""
+    return f"{ZENODO}{record}/files/{archive}/content#{name}#{md5}"
+
+
+# Detmold SRIR database (Detmold University of Music, CC BY 4.0), dummy-head responses.
+def detmold (name, md5):
+    return zenodo (4116247, "DetmoldSRIR_v01.zip", name, md5)
+
+
+# ARVERIR (Politecnico di Milano, CC BY 4.0): 8-capsule arrays in the Arvedi Auditorium.
+def arvedi (name, md5):
+    return zenodo (20098848, "arvedi_auditorium_dataset.zip", f"arvedi_auditorium_dataset/{name}", md5)
+
+
+# ChurchIR (Politecnico di Milano, CC BY 4.0): omni responses in Ss. Marcellino e Pietro.
+def church (name, md5):
+    return zenodo (14901751, "ChurchIR.zip", f"OMNI/{name}", md5)
+
+
+# WDR broadcast studios (TH Köln, CC BY 4.0): the stereo microphone responses.
+def wdr (name, md5):
+    return zenodo (3930833, "miro_wav_format_data.zip", f"miro_wav_format_data/WDR_MIC.zip!{name}", md5)
 
 
 # Stage positions (MAIR guide, Fig. 2): S3 and S6 are front-row speakers either
@@ -137,6 +170,39 @@ SOURCES = {
                          "right_file": air ("13589139-f0c4-23b7-2ac0-b8a940f40060", "990c198b98f807a46051795a2a612dfd",
                                             "air_binaural_aula_carolina_1_3_135_3.wav"),
                          "fadeTail": True},
+
+    # Detmold. Konzerthaus (set C): a dummy head in the hall with a pair of the
+    # loudspeaker orchestra's sources, the front pair 4 m apart or the outer pair 8 m
+    # apart (set C has no enhancement system switched in). Brahmssaal and
+    # Sommertheater (set A): one source on stage, the dummy head in the audience.
+    "detmold-konzerthaus": {"left_file": detmold ("SetC_DenseKH_LSOrchestra/Data/DummyHead/S2R126.wav", "37e1178b94209c258ae803249bc99811"),
+                            "right_file": detmold ("SetC_DenseKH_LSOrchestra/Data/DummyHead/S3R126.wav", "4976eaad6462b22435e68fdeecdac6c5")},
+    "detmold-konzerthaus-mid": {"left_file": detmold ("SetC_DenseKH_LSOrchestra/Data/DummyHead/S1R285.wav", "5134548da027abb5d76a246857f630cc"),
+                                "right_file": detmold ("SetC_DenseKH_LSOrchestra/Data/DummyHead/S4R285.wav", "dc61af0e8d39809412184e70c7deb905")},
+    "detmold-brahmssaal": {"file": detmold ("SetA_SingleSources/Data/Brahmssaal/DummyHead/C1S1R5.wav", "9951f172c262a13bad84e3c201d12c1e")},
+    "detmold-sommertheater": {"file": detmold ("SetA_SingleSources/Data/SommerTheater/DummyHead/C1S1R3.wav", "380e8df6fa08501667a2ceca3bda9b19")},
+
+    # ARVERIR: row 4, seat 10, with the first violin's loudspeaker (S1, on the
+    # listener's left) and the cello's (S4, on the right). The pair faces the omni
+    # source S0 at the centre of the stage, which is the origin of the positions.
+    "arvedi-auditorium": {"left_array": arvedi ("rirs/rir-S1-A410.wav", "1d7091c2153f6ffba00c484f373b131c"),
+                          "right_array": arvedi ("rirs/rir-S4-A410.wav", "b0150eeb1f6f649571180b3318266573"),
+                          "positions": arvedi ("pos_receivers.csv", "ebd6388f15a811fa4feefc66e982ebb6"),
+                          "receiver": "A410"},
+
+    # ChurchIR: the omni at the left and right positions of row 5 (about 5 m apart,
+    # from the arrival times), with the left and right sources.
+    "cremona-church": {"left": [church ("SL_ML_OMNI_5.wav", "0e22d406ec2d0415453a650dc0760282"),
+                                church ("SL_MR_OMNI_5.wav", "cb0469cb94339ddb40540318756baa8f")],
+                       "right": [church ("SR_ML_OMNI_5.wav", "1af1a1b428c0d0cfae916675532a13e3"),
+                                 church ("SR_MR_OMNI_5.wav", "3780a31540bb6ccd68432592aeade93c")],
+                       "trim": True},
+
+    # WDR: the stereo pairs in the large (CHL) and small (CHS) studios, with the
+    # omni source at the centre of the stage (SBC).
+    "wdr-large-ortf": {"file": wdr ("CHL_MIC_ORTF_MK4-SBC.wav", "53ceb6d244cfff8b6edb8afe786d6ef8")},
+    "wdr-large-ab":   {"file": wdr ("CHL_MIC_LargeAB_MK2-SBC.wav", "5fb7189719e0c6f13f8525e851d2e6a3")},
+    "wdr-small-ortf": {"file": wdr ("CHS_MIC_ORTF_MK4-SBC.wav", "2a8f8a3b428ba382105dbe57579d0ae2")},
 }
 
 
@@ -144,7 +210,7 @@ def urls (recipe):
     """Every source file a recipe uses."""
     found = []
     for value in recipe.values():
-        if isinstance (value, str):
+        if isinstance (value, str) and "://" in value:
             found.append (value)
         elif isinstance (value, list):
             found.extend (value)
@@ -152,8 +218,60 @@ def urls (recipe):
 
 
 def local (source_dir, url):
-    name = url.split ("#")[1] if "#" in url else url.rsplit ("/", 1)[1]
+    name = url.split ("#")[1].replace ("!", "/").replace ("/", "_") if "#" in url else url.rsplit ("/", 1)[1]
     return source_dir / name
+
+
+class RemoteFile (io.RawIOBase):
+    """A file on a web server, read with HTTP range requests."""
+
+    def __init__ (self, url):
+        self.url, self.pos = url, 0
+        with urllib.request.urlopen (urllib.request.Request (url, headers={"Range": "bytes=0-0"})) as response:
+            self.size = int (response.headers["Content-Range"].split ("/")[1])
+
+    def readable (self):
+        return True
+
+    def seekable (self):
+        return True
+
+    def tell (self):
+        return self.pos
+
+    def seek (self, offset, whence=io.SEEK_SET):
+        self.pos = {io.SEEK_SET: 0, io.SEEK_CUR: self.pos, io.SEEK_END: self.size}[whence] + offset
+        return self.pos
+
+    def readinto (self, buffer):
+        end = min (self.size, self.pos + len (buffer))
+        if end <= self.pos:
+            return 0
+        request = urllib.request.Request (self.url, headers={"Range": f"bytes={self.pos}-{end - 1}"})
+        with urllib.request.urlopen (request) as response:
+            data = response.read()
+        buffer[:len (data)] = data
+        self.pos += len (data)
+        return len (data)
+
+
+def unzip (packed, name, archive):
+    """One member of a zip, found by its path or, for the audb copies, its file name.
+    Some zip64 archives made on macOS (WDR's) give offsets past 4 GB without their top
+    bits; the member's header is then a multiple of 4 GB before where it says."""
+    members = [m for m in packed.infolist() if name in (m.filename, m.filename.rsplit ("/", 1)[-1])]
+    if len (members) != 1:
+        sys.exit (f"{archive}: expected one {name}, found {len (members)}")
+    info = members[0]
+    for wraps in range (4):
+        offset = info.header_offset - wraps * 2 ** 32
+        if offset < 0:
+            break
+        packed.fp.seek (offset)
+        if packed.fp.read (4) == b"PK\x03\x04":
+            info.header_offset = offset
+            return packed.read (info)
+    sys.exit (f"{archive}: cannot find {name}")
 
 
 def download (url, target):
@@ -162,14 +280,12 @@ def download (url, target):
         return
 
     archive, name, md5 = url.split ("#")
-    with urllib.request.urlopen (archive) as response:
-        packed = zipfile.ZipFile (io.BytesIO (response.read()))
-    members = [m for m in packed.namelist() if m.rsplit ("/", 1)[-1] == name]
-    if len (members) != 1:
-        sys.exit (f"{archive}: expected {name}, found {packed.namelist()}")
-    data = packed.read (members[0])
+    outer, *inner = name.split ("!")
+    data = unzip (zipfile.ZipFile (io.BufferedReader (RemoteFile (archive), buffer_size=1 << 20)), outer, archive)
+    for member in inner:
+        data = unzip (zipfile.ZipFile (io.BytesIO (data)), member, outer)
     if hashlib.md5 (data).hexdigest() != md5:
-        sys.exit (f"{name}: checksum does not match the database's")
+        sys.exit (f"{name}: checksum does not match the one recorded")
     target.write_bytes (data)
 
 
@@ -215,7 +331,28 @@ def decode_bformat (wxyz, rate):
     onset = int (np.argmax (np.abs (w) > 0.3 * np.max (np.abs (w))))
     late = slice (onset + int (0.08 * rate), onset + int (0.4 * rate))
     gain = np.sqrt ((np.sum (x[late] ** 2) + np.sum (y[late] ** 2) + np.sum (z[late] ** 2)) / np.sum (w[late] ** 2))
-    pressure = w * gain
+    return supercardioids (w * gain, x, y)
+
+
+def decode_array (capsules, positions, receiver):
+    """The supercardioid pair from an array of cardioid capsules (ARVERIR). Each capsule
+    hears half the pressure plus half the particle velocity along the direction it
+    faces, out from the array's centre; a least-squares fit over the capsules gives the
+    pressure and velocity, turned so X faces the origin (the centre of the stage) and
+    Y is to the listener's left."""
+    rows = {row["mic"]: row for row in csv.DictReader (io.StringIO (positions.read_text (encoding="utf-8")), delimiter=";")}
+    row = rows[receiver]
+    centre = np.array ([float (row[f"C_{k}"]) for k in "xyz"])
+    facing = np.array ([float (row[f"x{i}_{k}"]) for i in range (1, len (capsules) + 1) for k in "xyz"]).reshape (-1, 3) - centre
+    facing /= np.linalg.norm (facing, axis=1, keepdims=True)
+    w, *velocity = np.linalg.pinv (0.5 * np.hstack ([np.ones ((len (facing), 1)), facing])) @ capsules
+    front = -centre * [1, 1, 0]
+    front /= np.linalg.norm (front)
+    left = np.cross ([0, 0, 1], front)
+    return supercardioids (w, front @ velocity, left @ velocity)
+
+
+def supercardioids (pressure, x, y):
     a = 0.37 # supercardioid
     angle = np.radians (55.0)
     left = a * pressure + (1 - a) * (np.cos (angle) * x + np.sin (angle) * y)
@@ -245,7 +382,14 @@ def build (space_id, recipe, source_dir):
         (rl, rr), other = stereo_from (recipe["right"], source_dir)
         if other != rate:
             sys.exit (f"{space_id}: mixed sample rates")
-        channels = [ll, lr, rl, rr]
+        channels, trimmed = [ll, lr, rl, rr], recipe.get ("trim", False)
+    elif "left_array" in recipe:
+        positions = local (source_dir, recipe["positions"])
+        (left, rate), (right, other) = (read (local (source_dir, recipe[side]), 8) for side in ("left_array", "right_array"))
+        if other != rate:
+            sys.exit (f"{space_id}: mixed sample rates")
+        channels = decode_array (left, positions, recipe["receiver"]) + decode_array (right, positions, recipe["receiver"])
+        trimmed = True
     elif "file" in recipe:
         audio, rate = read (local (source_dir, recipe["file"]), 2)
         channels, trimmed = list (audio), True
