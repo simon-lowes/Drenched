@@ -18,7 +18,8 @@ backwards, Gate cuts it off after a set time, and Attack fades it in.
 The direct sound (the first arrival, before any reflection) has its own
 level, delay and colour, and Cross-feed sets how much each side of the
 input reaches the other side of the room (at 0 the left and right get
-separate reverbs). Cloud size lets the reverb follow where the sound is
+separate reverbs). Listener position and Source position place you and the sound across
+the room (drag them on the room map, or automate them). Cloud size lets the reverb follow where the sound is
 panned: lower it and a voice panned to one side, or to a rear speaker,
 keeps its reverb gathered around it. Low CPU runs the convolution on about a third of the
 processing by playing everything 21 ms late, which the DAW makes up. You can load your own impulse response (WAV, AIFF

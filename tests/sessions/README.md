@@ -24,3 +24,7 @@ Rules:
 - If a change is meant to alter the sound of old sessions, run the plugin tests with
   `DRENCHED_UPDATE_SESSIONS=1` and commit the rewritten `.expected` files with it,
   saying why.
+- When a setting moves (session version 2 made the listener's place across the room a
+  parameter instead of interface state), `DrenchedProcessor::migrateState()` converts
+  older sessions, and `savedValues()` in `tests/plugin/SessionTests.cpp` reads the
+  setting from where those sessions kept it.

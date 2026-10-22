@@ -57,7 +57,7 @@ public:
         saved state changes, and teach migrateState() to bring older sessions up to it.
         1: the first versioned sessions (0.1); sessions without a version are from the
         betas before it and need nothing else. */
-    static constexpr int stateVersion = 1;
+    static constexpr int stateVersion = 2;
 
     /** Brings a loaded session up to date before it replaces the current state. */
     void migrateState (juce::ValueTree& session) const;
@@ -184,6 +184,8 @@ private:
         std::atomic<float>* directColour = nullptr;
         std::atomic<float>* crossFeed = nullptr;
         std::atomic<float>* cloudSize = nullptr;
+        std::atomic<float>* listenerX = nullptr;
+        std::atomic<float>* sourceX = nullptr;
         std::atomic<float>* lowCpu = nullptr;
         std::array<std::atomic<float>*, 8> decay {};
     } params;
@@ -193,7 +195,6 @@ private:
     SpeakerLayout outputSpeakers = layouts::stereo();
 
     std::atomic<int> spaceIndex { 0 };
-    std::atomic<float> listenerX { 0.5f };
     std::atomic<double> preparedRate { 0.0 };
 
     // The loaded impulse response, shared with the builder through requests. Read and

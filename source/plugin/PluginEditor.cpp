@@ -191,7 +191,6 @@ juce::var DrenchedEditor::uiValues()
     auto object = std::make_unique<juce::DynamicObject>();
 
     object->setProperty ("spaceId", processor.chosenSpaceId());
-    object->setProperty ("lx", static_cast<double> (ui.getProperty (UiIDs::listenerX, 0.5)));
     object->setProperty ("locks", ui.getProperty (UiIDs::locks, "").toString());
     object->setProperty ("mode", ui.getProperty (UiIDs::mode, "studio").toString());
     object->setProperty ("view", ui.getProperty (UiIDs::view, "plan").toString());
@@ -288,7 +287,6 @@ void DrenchedEditor::onUi (const juce::var& payload)
     forEachProperty (payload, [&ui] (const juce::String& key, const juce::var& value)
     {
         if (key == "spaceId")    ui.setProperty (UiIDs::spaceId, value.toString(), nullptr);
-        else if (key == "lx")    ui.setProperty (UiIDs::listenerX, static_cast<double> (value), nullptr);
         else if (key == "locks") ui.setProperty (UiIDs::locks, value.toString(), nullptr);
         else if (key == "mode")  ui.setProperty (UiIDs::mode, value.toString(), nullptr);
         else if (key == "view")  ui.setProperty (UiIDs::view, value.toString(), nullptr);

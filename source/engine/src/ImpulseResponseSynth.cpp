@@ -199,17 +199,19 @@ ImpulseResponseSet synthesiseImpulseResponse (const ImpulseResponseRequest& requ
     const auto rtMid = 0.5 * (rt[3] + rt[4]);
     const auto betaMid = 0.5 * (reflection[3] + reflection[4]);
 
-    // Positions: two sources across the stage, two receivers 60 cm apart.
+    // Positions: two sources across the stage, either side of where the sound
+    // is placed (kept clear of the side walls), two receivers 60 cm apart.
     const auto sourceY = std::clamp (D * 0.12, 0.5, 4.0);
     const auto sourceZ = std::min (1.6, H * 0.6);
     const auto sourceSpread = std::min (1.5, W * 0.15);
+    const auto sourceX = std::clamp (static_cast<double> (request.sourceX) * W, sourceSpread + 0.3, W - sourceSpread - 0.3);
     const auto listenerY = std::clamp (static_cast<double> (listenerDistanceMetres (spaceIndex, request.sizePercent, request.distancePercent)),
                                        sourceY + 0.5, D - 0.3);
     const auto listenerX = std::clamp (static_cast<double> (request.listenerX) * W, 0.6, W - 0.6);
     const auto listenerZ = std::min (1.4, H * 0.5);
 
-    const std::array<Vec3, 2> sources { Vec3 { W * 0.5 - sourceSpread, sourceY, sourceZ },
-                                        Vec3 { W * 0.5 + sourceSpread, sourceY, sourceZ } };
+    const std::array<Vec3, 2> sources { Vec3 { sourceX - sourceSpread, sourceY, sourceZ },
+                                        Vec3 { sourceX + sourceSpread, sourceY, sourceZ } };
     const std::array<Vec3, 2> receivers { Vec3 { listenerX - 0.3, listenerY, listenerZ },
                                           Vec3 { listenerX + 0.3, listenerY, listenerZ } };
 

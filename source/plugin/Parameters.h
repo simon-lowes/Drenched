@@ -39,6 +39,8 @@ namespace ParamIDs
     inline constexpr auto crossFeed = "crossFeed";
     inline constexpr auto lowCpu = "lowCpu";
     inline constexpr auto cloudSize = "cloudSize";
+    inline constexpr auto listenerX = "listenerX";
+    inline constexpr auto sourceX = "sourceX";
 
     inline constexpr std::array<const char*, 8> decay { "decay63",  "decay125", "decay250", "decay500",
                                                         "decay1k",  "decay2k",  "decay4k",  "decay8k" };
@@ -56,7 +58,7 @@ namespace ParamIDs
             for (auto* id : decay)
                 list.add (id);
 
-            list.addArray ({ living, movement, movementRate, reverse, gate, attack, directLevel, directDelay, directColour, crossFeed, lowCpu, cloudSize });
+            list.addArray ({ living, movement, movementRate, reverse, gate, attack, directLevel, directDelay, directColour, crossFeed, lowCpu, cloudSize, listenerX, sourceX });
 
             return list;
         }();
@@ -73,7 +75,7 @@ namespace UiIDs
     inline const juce::Identifier tree { "ui" };
     inline const juce::Identifier space { "space" };     // sessions before space ids: an index
     inline const juce::Identifier spaceId { "spaceId" }; // a library id, a modelled id, or "user"
-    inline const juce::Identifier listenerX { "lx" };
+    inline const juce::Identifier listenerX { "lx" };    // sessions before version 2: now the listenerX parameter
     inline const juce::Identifier locks { "locks" };
     inline const juce::Identifier mode { "mode" };
     inline const juce::Identifier view { "view" };
@@ -107,6 +109,23 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     const auto millis = AudioParameterFloatAttributes().withLabel ("ms");
     const auto hertz = AudioParameterFloatAttributes().withLabel ("Hz");
     const auto seconds = AudioParameterFloatAttributes().withLabel ("s");
+
+    // Across the room, 0 at the left wall and 100 at the right, shown from the centre.
+    const auto across = AudioParameterFloatAttributes()
+        .withStringFromValueFunction ([] (float v, int)
+        {
+            const auto off = juce::roundToInt ((v - 50.0f) * 2.0f);
+            return off == 0 ? String ("Centre") : String (std::abs (off)) + "% " + (off < 0 ? "left" : "right");
+        })
+        .withValueFromStringFunction ([] (const String& text)
+        {
+            const auto amount = text.retainCharacters ("0123456789.").getFloatValue();
+            if (text.containsIgnoreCase ("left"))
+                return 50.0f - amount / 2.0f;
+            if (text.containsIgnoreCase ("right"))
+                return 50.0f + amount / 2.0f;
+            return text.containsIgnoreCase ("centre") || text.containsIgnoreCase ("center") ? 50.0f : amount;
+        });
 
     const auto logRange = [] (float lo, float hi, float step)
     {
@@ -185,6 +204,13 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     // How much each input feeds the opposite side: 0 makes two separate reverbs.
     layout.add (std::make_unique<Float> (ParameterID { ParamIDs::crossFeed, 1 }, "Cross-feed",
                                          NormalisableRange<float> (0.0f, 100.0f, 1.0f), 100.0f, percent));
+
+    // Where the listener sits and the sound plays from, across the room (the map
+    // drags them). Both default to the centre, where earlier versions put them.
+    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::listenerX, 1 }, "Listener position",
+                                         NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f, across));
+    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::sourceX, 1 }, "Source position",
+                                         NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f, across));
 
     // Low-CPU mode trades about 21 ms of latency, which the host makes up, for a
     // third of the convolution's cost. Changing latency mid-song is no use to

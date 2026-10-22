@@ -24,6 +24,7 @@ struct ImpulseResponseRequest
     float sizePercent = 100.0f;            // 50 .. 150, scales the room
     float distancePercent = 40.0f;         // 0 .. 100, listener from near to far
     float listenerX = 0.5f;                // 0 .. 1, across the room
+    float sourceX = 0.5f;                  // 0 .. 1, the sound's place across the stage
     float earlyLatePercent = 55.0f;        // 0 = all early, 100 = all late
     float livingPercent = 0.0f;            // 0 = the recorded tail, 100 = the living tail
 
@@ -43,7 +44,7 @@ struct ImpulseResponseRequest
     std::size_t latencySamples = 0;        // the kernel's convolution latency (low-CPU mode), 0 = none
 
     // A loaded impulse response to play instead of the bundled space. Size
-    // stretches it in time; distance and listener position only shape
+    // stretches it in time; distance and the listener and source positions only shape
     // synthesised spaces.
     std::shared_ptr<const RecordedResponse> recorded {};
 

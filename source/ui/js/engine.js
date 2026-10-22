@@ -68,6 +68,8 @@ var P={
  locut:{l:'Wet low cut',min:20,max:1000,st:1,log:1,help:'removes low end from the wet signal.'},
  hicut:{l:'Wet high cut',min:1000,max:20000,st:10,log:1,help:'removes top end from the wet signal.'},
  width:{l:'Width',min:0,max:200,st:1,help:'narrows or widens the wet signal.'},
+ lx:{l:'Listener position',min:0,max:100,st:0.1,help:'moves the listener across the room, from the left wall to the right. On the room map you can drag it.'},
+ sx:{l:'Source position',min:0,max:100,st:0.1,help:'moves the sound across the stage, from the left wall to the right. On the room map you can drag it.'},
  cloud:{l:'Cloud size',min:0,max:100,st:1,help:'lets the reverb follow where the sound is panned. At 100 it fills the room; lower gathers it around the sound, so a voice panned to the left rear keeps its reverb there.'},
  xfeed:{l:'Cross-feed',min:0,max:100,st:1,help:'sets how much each side of the input reaches the opposite side of the room. At 0 the left and right get separate reverbs.'},
  duck:{l:'Ducking',min:0,max:100,st:1,help:'turns the tail down while the dry signal plays.'},
@@ -77,7 +79,7 @@ var P={
  moveRate:{l:'Movement rate',min:0.05,max:5,st:0.01,log:1,help:'sets how fast the living tail drifts.'},
  cpu:{l:'Low CPU',min:0,max:1,st:1,help:'runs the reverb on about a third of the processing by playing everything 21 ms late. Your DAW makes up the delay, so it stays in time; leave it off when you play live through the reverb.'}
 };
-var DEEP=['output','preSync','rev','gate','attack','dLvl','dDel','dCol','xover','living','move','moveRate','locut','hicut','width','cloud','xfeed','duck','mono','cpu'];
+var DEEP=['lx','sx','output','preSync','rev','gate','attack','dLvl','dDel','dCol','xover','living','move','moveRate','locut','hicut','width','cloud','xfeed','duck','mono','cpu'];
 var TOGGLES=['preSync','rev','cpu'];
 var MAIN=['decay','pre','size','bright','el','dist'];
 function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
@@ -87,7 +89,7 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 var UID=0;function uid(){return 'u'+(++UID);}
 function vol(sp){var v=sp.W*sp.D*sp.H;v=v>2000?Math.round(v/100)*100:Math.round(v/10)*10;return v.toLocaleString('en-GB')+' m\u00b3';}
 function decayOf(b){return (b[3]+b[4])/2;}
-function newState(){var sp=SPACES[0];return {sp:0,bands:sp.bands.slice(),mix:30,pre:sp.pre,size:100,bright:0,el:55,dist:40,output:0,preSync:0,xover:320,locut:80,hicut:14000,width:100,duck:0,mono:0,living:0,move:20,moveRate:0.7,rev:0,gate:0,attack:0,dLvl:0,dDel:0,dCol:0,xfeed:100,cloud:100,cpu:0,lx:0.5,mode:'studio',slot:'A',slots:{A:null,B:null},freeze:false,adv:false,browse:false,view:'plan',locks:{},hint:null,note:null,lastBand:4,skin:'aperture',skins:false,inL:-60,inR:-60,outL:-60,outR:-60};}
+function newState(){var sp=SPACES[0];return {sp:0,bands:sp.bands.slice(),mix:30,pre:sp.pre,size:100,bright:0,el:55,dist:40,lx:50,sx:50,output:0,preSync:0,xover:320,locut:80,hicut:14000,width:100,duck:0,mono:0,living:0,move:20,moveRate:0.7,rev:0,gate:0,attack:0,dLvl:0,dDel:0,dCol:0,xfeed:100,cloud:100,cpu:0,mode:'studio',slot:'A',slots:{A:null,B:null},freeze:false,adv:false,browse:false,view:'plan',locks:{},hint:null,note:null,lastBand:4,skin:'aperture',skins:false,inL:-60,inR:-60,outL:-60,outR:-60};}
 var st=newState();
 function spOf(s){return SPACES[s.sp];}
 function getV(s,k){return k==='decay'?decayOf(s.bands):s[k];}
@@ -102,7 +104,7 @@ function fmt(s,k,v){if(v==null)v=getV(s,k);switch(k){
  case 'dist':var old=s.dist;s.dist=v;var m=distM(s);s.dist=old;return f1(m)+' m';
  case 'output':return (v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+' dB';case 'preSync':case 'rev':case 'cpu':return v>=0.5?'On':'Off';
  case 'xover':case 'locut':return Math.round(v)+' Hz';case 'hicut':return (v/1000).toFixed(1)+' kHz';
- case 'width':case 'cloud':case 'xfeed':return Math.round(v)+'%';case 'duck':return v>0?Math.round(v)+'%':'Off';case 'mono':return v>0?Math.round(v)+' Hz':'Off';
+ case 'lx':case 'sx':var off=Math.round((v-50)*2);return off===0?'Centre':Math.abs(off)+'% '+(off<0?'left':'right');case 'width':case 'cloud':case 'xfeed':return Math.round(v)+'%';case 'duck':return v>0?Math.round(v)+'%':'Off';case 'mono':return v>0?Math.round(v)+' Hz':'Off';
  case 'living':return v>0?Math.round(v)+'%':'Off';case 'move':return v>0?Math.round(v)+'%':'Still';
  case 'moveRate':return (v<1?v.toFixed(2):v.toFixed(1))+' Hz';case 'gate':case 'attack':return v>0?Math.round(v)+' ms':'Off';
  case 'dLvl':return v<=-60?'Off':(v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+' dB';case 'dDel':return f1(v)+' ms';
@@ -192,7 +194,7 @@ function planView(s,w,h){var sp=spOf(s),ss=s.size/100,W=sp.W*ss,D=sp.D*ss,H=sp.H
   var rs=sp.kind==='hall'?1.15:1.7;for(var ry=sdp+1.5;ry<D-1;ry+=rs){out+='<path class="pl-f" d="M'+X(0.9).toFixed(1)+' '+Y(ry).toFixed(1)+'H'+X(W/2-0.9).toFixed(1)+'M'+X(W/2+0.9).toFixed(1)+' '+Y(ry).toFixed(1)+'H'+X(W-0.9).toFixed(1)+'"/>';}}
  if(sp.kind==='chapel'||sp.kind==='garage'){var cx3=sp.kind==='chapel'?[W*0.17,W*0.83]:[W*0.14,W*0.38,W*0.62,W*0.86];for(var cz=3;cz<D-1;cz+=(sp.kind==='chapel'?4.5:8)){cx3.forEach(function(x){out+='<rect class="pl-fl" x="'+(X(x)-2.5).toFixed(1)+'" y="'+(Y(cz)-2.5).toFixed(1)+'" width="5" height="5"/>';});}}
  if(sp.kind==='room'){out+='<path class="pl-f" d="M'+X(W*0.2).toFixed(1)+' '+Y(0.4).toFixed(1)+'H'+X(W*0.8).toFixed(1)+'"/>';if(!cp)out+='<text class="pl-t" x="'+X(W*0.2).toFixed(1)+'" y="'+(Y(0.4)+14).toFixed(1)+'">DIFFUSERS</text>';}
- var sX=X(W/2),sY=Y(sdp?sdp*0.55:1.5),lm=distM(s),lX=X(s.lx*W),lY=Y(lm),dB=Math.hypot(lX-sX,lY-sY);
+ var sX=X(s.sx/100*W),sY=Y(sdp?sdp*0.55:1.5),lm=distM(s),lX=X(s.lx/100*W),lY=Y(lm),dB=Math.hypot(lX-sX,lY-sY);
  [1,1.8,2.7].forEach(function(f,i2){out+='<circle class="pl-ring" cx="'+sX.toFixed(1)+'" cy="'+sY.toFixed(1)+'" r="'+(Math.min(dB,200)*f*0.38+10).toFixed(1)+'" opacity="'+(0.7-i2*0.2)+'"/>';});
  [ox2,X(W)].forEach(function(wx,i3){var ix=i3===0?-sX+2*ox2:2*X(W)-sX,t=(wx-ix)/(lX-ix),py=sY+(lY-sY)*t;out+='<path class="pl-ray" d="M'+sX.toFixed(1)+' '+sY.toFixed(1)+'L'+wx.toFixed(1)+' '+py.toFixed(1)+'L'+lX.toFixed(1)+' '+lY.toFixed(1)+'" opacity=".8"/>';});
  out+='<path class="pl-dir" d="M'+sX.toFixed(1)+' '+sY.toFixed(1)+'L'+lX.toFixed(1)+' '+lY.toFixed(1)+'"/>';
@@ -200,7 +202,7 @@ function planView(s,w,h){var sp=spOf(s),ss=s.size/100,W=sp.W*ss,D=sp.D*ss,H=sp.H
  out+='<path class="pl-d" d="M'+ox2.toFixed(1)+' '+(oy2-24)+'H'+X(W).toFixed(1)+'M'+(ox2-4).toFixed(1)+' '+(oy2-20)+'l8 -8M'+(X(W)-4).toFixed(1)+' '+(oy2-20)+'l8 -8M'+ox2.toFixed(1)+' '+(oy2-30)+'V'+(oy2-8)+'M'+X(W).toFixed(1)+' '+(oy2-30)+'V'+(oy2-8)+'"/><text class="pl-tt" x="'+X(W/2).toFixed(1)+'" y="'+(oy2-30)+'" text-anchor="middle">W '+f1(W)+' m</text>';
  out+='<path class="pl-d" d="M'+(ox2-24)+' '+oy2.toFixed(1)+'V'+Y(D).toFixed(1)+'M'+(ox2-28)+' '+(oy2+4).toFixed(1)+'l8 -8M'+(ox2-28)+' '+(Y(D)+4).toFixed(1)+'l8 -8"/><text class="pl-tt" x="'+(ox2-32)+'" y="'+Y(D/2).toFixed(1)+'" text-anchor="end">D</text><text class="pl-tt" x="'+(ox2-32)+'" y="'+(Y(D/2)+15).toFixed(1)+'" text-anchor="end">'+f1(D)+' m</text>';
  var dX=X(W)+18;out+='<path class="pl-d" d="M'+dX.toFixed(1)+' '+sY.toFixed(1)+'V'+lY.toFixed(1)+'M'+(dX-4).toFixed(1)+' '+(sY+4).toFixed(1)+'l8 -8M'+(dX-4).toFixed(1)+' '+(lY+4).toFixed(1)+'l8 -8M'+(lX+10).toFixed(1)+' '+lY.toFixed(1)+'H'+(dX+4).toFixed(1)+'" opacity=".8"/><text class="pl-tt" x="'+(dX+8).toFixed(1)+'" y="'+((sY+lY)/2+4).toFixed(1)+'">'+f1(Math.abs(lm-(sdp?sdp*0.55:1.5)))+' m</text><text class="pl-t" x="'+(dX+8).toFixed(1)+'" y="'+((sY+lY)/2+18).toFixed(1)+'">S1 to R1</text>';
- out+='<circle class="pl-mko" cx="'+sX.toFixed(1)+'" cy="'+sY.toFixed(1)+'" r="6"/><text class="pl-tt" x="'+(sX+10).toFixed(1)+'" y="'+(sY-8).toFixed(1)+'">S1</text>';
+ out+='<g class="lis" data-drag="src" data-fid="src" tabindex="0" role="slider" aria-label="Source position. Left and right move it across the stage." aria-valuetext="'+fmt(s,'sx')+'"><circle class="pl-hit" cx="'+sX.toFixed(1)+'" cy="'+sY.toFixed(1)+'" r="16"/><circle class="pl-mko" cx="'+sX.toFixed(1)+'" cy="'+sY.toFixed(1)+'" r="6"/></g><text class="pl-tt" x="'+(sX+10).toFixed(1)+'" y="'+(sY-8).toFixed(1)+'">S1</text>';
  out+='<g class="lis" data-drag="lis" data-fid="lis" tabindex="0" role="slider" aria-label="Listener position. Up and down change distance, left and right move across the room." aria-valuetext="'+f1(lm)+' metres from the front"><circle class="pl-hit" cx="'+lX.toFixed(1)+'" cy="'+lY.toFixed(1)+'" r="16"/><circle class="pl-mk" cx="'+lX.toFixed(1)+'" cy="'+lY.toFixed(1)+'" r="6"/></g><text class="pl-tt" x="'+(lX+10).toFixed(1)+'" y="'+(lY+18).toFixed(1)+'">R1</text>';
  var sb=stp*sc2;out+='<path class="pl-d" d="M'+(w-16-sb*2).toFixed(1)+' '+(h-22)+'H'+(w-16)+'M'+(w-16-sb*2).toFixed(1)+' '+(h-26)+'V'+(h-18)+'M'+(w-16-sb).toFixed(1)+' '+(h-26)+'V'+(h-18)+'M'+(w-16)+' '+(h-26)+'V'+(h-18)+'"/><text class="pl-t" x="'+(w-16-sb*2).toFixed(1)+'" y="'+(h-30)+'">0</text><text class="pl-t" x="'+(w-16)+'" y="'+(h-30)+'" text-anchor="end">'+(stp*2)+' m</text>';
  return out+'</svg>';}
@@ -208,7 +210,7 @@ function planView(s,w,h){var sp=spOf(s),ss=s.size/100,W=sp.W*ss,D=sp.D*ss,H=sp.H
 /* pixel room (Signal) */
 function pixelRoom(s,w,h){var sp=spOf(s),ss=s.size/100,cell=12,cols=Math.floor((w-16)/cell),rows=Math.floor((h-36)/cell),ox=(w-cols*cell)/2,oy=6;
  var k=Math.min((cols-4)/sp.W,(rows-4)/sp.D)*(0.55+0.45*(s.size-50)/100),rw=Math.max(6,Math.round(sp.W*k)),rh=Math.max(6,Math.round(sp.D*k));rw=Math.min(rw,cols-2);rh=Math.min(rh,rows-2);
- var c0=Math.floor((cols-rw)/2),r0=Math.floor((rows-rh)/2),sc=c0+Math.floor(rw/2),sr=r0+2,lc=c0+1+Math.round(s.lx*(rw-3)),D=sp.D*ss,lr=r0+1+Math.round(clamp(distM(s)/D,0,1)*(rh-3)),reach=rh*clamp(decayOf(s.bands)/3,0.3,1.2);
+ var c0=Math.floor((cols-rw)/2),r0=Math.floor((rows-rh)/2),sc=c0+1+Math.round(s.sx/100*(rw-3)),sr=r0+2,lc=c0+1+Math.round(s.lx/100*(rw-3)),D=sp.D*ss,lr=r0+1+Math.round(clamp(distM(s)/D,0,1)*(rh-3)),reach=rh*clamp(decayOf(s.bands)/3,0.3,1.2);
  var out='<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" aria-hidden="true" style="display:block">';
  for(var r=0;r<rows;r++)for(var c=0;c<cols;c++){var x=ox+c*cell,y=oy+r*cell,inR=c>=c0&&c<c0+rw&&r>=r0&&r<r0+rh,wall=inR&&(c===c0||c===c0+rw-1||r===r0||r===r0+rh-1),fill=null;
   if(wall)fill='var(--tx)';else if(inR){var d=Math.hypot(c-sc,r-sr);if(d<reach&&(Math.floor(d)%3===0))fill='var(--ln)';}
@@ -306,7 +308,7 @@ var COMPOSE={
 
  section:function(s){var sp=spOf(s),e=eqp(s.el);
   var head='<div class="se-head">'+wordmark(s,'se-title','Drenched')+'<span class="se-sub" style="color:var(--tx);font-size:12px">'+esc(sp.name.toUpperCase())+'</span><span class="se-sub">PLAN AND SECTION, SHEET '+esc(sp.no.replace(/\D/g,''))+'</span>'+prevNext(s)+'<button class="ca-link" data-act="browse" aria-expanded="'+s.browse+'" style="font:11px var(--fnum);letter-spacing:.08em;color:var(--tx2)">CHANGE SPACE</button><span style="flex:1"></span><div class="se-box"><span class="cap">VIEW</span><button data-act="mode" data-v="studio" aria-pressed="'+(s.mode==='studio')+'">STUDIO</button><button data-act="mode" data-v="stage" aria-pressed="'+(s.mode==='stage')+'">STAGE</button></div><div class="se-box"><span class="cap">REV</span><button data-act="slot" data-v="A" aria-pressed="'+(s.slot==='A')+'">A</button><button data-act="slot" data-v="B" aria-pressed="'+(s.slot==='B')+'">B</button></div></div>';
-  var plan='<div class="se-plan"><div class="legend"><div class="se-box" style="height:24px;margin-right:6px"><button data-act="view" data-v="plan" aria-pressed="'+(s.view==='plan')+'">PLAN</button><button data-act="view" data-v="section" aria-pressed="'+(s.view==='section')+'">SECTION</button></div><span><i></i>S1 source</span><span><i class="r"></i>R1 listener, drag to move</span></div>'+planView(s,664,620)+'<div class="se-photo">'+photoEl(s,212,132)+'<span>SITE PHOTOGRAPH, '+esc(sp.date.toUpperCase())+'</span></div></div>';
+  var plan='<div class="se-plan"><div class="legend"><div class="se-box" style="height:24px;margin-right:6px"><button data-act="view" data-v="plan" aria-pressed="'+(s.view==='plan')+'">PLAN</button><button data-act="view" data-v="section" aria-pressed="'+(s.view==='section')+'">SECTION</button></div><span><i></i>S1 source</span><span><i class="r"></i>R1 listener. Drag either to move it</span></div>'+planView(s,664,620)+'<div class="se-photo">'+photoEl(s,212,132)+'<span>SITE PHOTOGRAPH, '+esc(sp.date.toUpperCase())+'</span></div></div>';
   var row=function(k){return '<div class="se-row"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+lockBtn(s,k,P[k].l)+'</div>';};
   var right=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="se-right"><div><div class="se-h"><span>SECTION A-A, DECAY TIME BY FREQUENCY</span><span>SOLID AS SET, DASHED AS CAPTURED</span></div>'+decaySVG('section',s,454,214,{dims:true,m:[40,16,16,24]})+'</div>'+
    '<div class="se-sched"><div class="se-row hd"><span>Parameter</span><span>Value</span><span style="text-align:right">Typed</span><span></span></div>'+row('mix')+MAIN.map(row).join('')+'</div>'+
