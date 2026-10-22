@@ -25,6 +25,7 @@ struct ImpulseResponseRequest
     float distancePercent = 40.0f;         // 0 .. 100, listener from near to far
     float listenerX = 0.5f;                // 0 .. 1, across the room
     float earlyLatePercent = 55.0f;        // 0 = all early, 100 = all late
+    float livingPercent = 0.0f;            // 0 = the recorded tail, 100 = the living tail
 
     // A loaded impulse response to play instead of the bundled space. Size,
     // distance and listener position only shape synthesised spaces.

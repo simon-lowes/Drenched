@@ -233,7 +233,8 @@ void ConvolutionReverb::prepare (double newSampleRate, const SpeakerLayout& inpu
     ready.store (current != nullptr);
     tail.store (current != nullptr ? static_cast<double> (current->length()) / sampleRate : 0.0);
 
-    const auto capacity = nextPowerOfTwo (static_cast<std::size_t> (maxPredelaySeconds * sampleRate) + chunkSize + 4);
+    const auto longest = maxPredelaySeconds + LivingTail::maxInputDelaySeconds;
+    const auto capacity = nextPowerOfTwo (static_cast<std::size_t> (longest * sampleRate) + chunkSize + 4);
     delayL.assign (capacity, 0.0f);
     delayR.assign (capacity, 0.0f);
     delayMask = capacity - 1;
@@ -247,6 +248,7 @@ void ConvolutionReverb::prepare (double newSampleRate, const SpeakerLayout& inpu
     inputCoef = onePole (sampleRate, 0.01);
     freezeStep = static_cast<float> (1.0 / (0.15 * sampleRate));
     returnStep = static_cast<float> (1.0 / (0.05 * sampleRate));
+    livingStep = static_cast<float> (1.0 / (0.05 * sampleRate));
 
     livingTail.prepare (sampleRate);
 
@@ -277,6 +279,8 @@ void ConvolutionReverb::reset() noexcept
     convInputGain = tailInputGain = 1.0f;
     convPosition = 1.0f;
     tailPosition = 0.0f;
+    livingGain = current != nullptr ? current->livingLevel() : 0.0f;
+    tailDelaySamples = static_cast<float> (livingTail.inputDelaySeconds() * sampleRate);
 
     if (tailDesignPending && current != nullptr)
         livingTail.setDesign (current->livingTail());
@@ -374,8 +378,9 @@ void ConvolutionReverb::installIncoming() noexcept
     ringRemaining = ringing != nullptr ? ringing->length() : 0;
     current = fresh;
 
-    // The living tail follows the new room at once if it is silent. While it
-    // is holding a freeze it keeps the old room until it has faded.
+    // The living tail follows the new room at once, gliding to its new line
+    // lengths. While it is holding a freeze it keeps the old room until the
+    // freeze has faded.
     if (tailAudible())
         tailDesignPending = true;
     else
@@ -530,6 +535,7 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
         wetGain = mix.wet;
         outGain = c.outputGain;
         delaySamples = targetDelay;
+        tailDelaySamples = static_cast<float> (livingTail.inputDelaySeconds() * sampleRate);
         firstBlock = false;
     }
 
@@ -541,7 +547,10 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
             std::copy_n (channels[i] + offset, n, dry.data() + i * chunkSize);
 
         // The stage sources, through the pre-delay, with the delay time
-        // gliding so moving it never clicks.
+        // gliding so moving it never clicks. The living tail reads the same
+        // lines a little further back.
+        const auto targetTailDelay = static_cast<float> (livingTail.inputDelaySeconds() * sampleRate);
+
         for (std::size_t s = 0; s < n; ++s)
         {
             float l = 0.0f, r = 0.0f;
@@ -564,53 +573,70 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
 
             wetInL[s] = delayL[a] + frac * (delayL[b] - delayL[a]);
             wetInR[s] = delayR[a] + frac * (delayR[b] - delayR[a]);
+
+            tailDelaySamples = targetTailDelay + delayCoef * (tailDelaySamples - targetTailDelay);
+            const auto tailTotal = delaySamples + tailDelaySamples;
+            const auto tailWhole = static_cast<std::size_t> (tailTotal);
+            const auto tailFrac = tailTotal - static_cast<float> (tailWhole);
+            const auto ta = (delayWrite - tailWhole) & delayMask;
+            const auto tb = (ta - 1) & delayMask;
+
+            tailInL[s] = delayL[ta] + tailFrac * (delayL[tb] - delayL[ta]);
+            tailInR[s] = delayR[ta] + tailFrac * (delayR[tb] - delayR[ta]);
             delayWrite = (delayWrite + 1) & delayMask;
         }
 
         // While frozen, new sound reaches neither the convolution nor the
-        // tail. The tail starts following the input again only once a
-        // released freeze has faded out completely.
+        // tail. Unless the tail is part of the sound, it starts following
+        // the input again only once a released freeze has faded out.
+        const auto livingTarget = current != nullptr ? current->livingLevel() : 0.0f;
         const auto convInputTarget = frozen ? 0.0f : 1.0f;
-        const auto tailInputTarget = tailAudible() ? 0.0f : 1.0f;
+        const auto tailInputTarget = frozen || (tailPosition > 0.0f && livingTarget == 0.0f) ? 0.0f : 1.0f;
 
         for (std::size_t i = 0; i < n; ++i)
         {
             convInputGain = convInputTarget + inputCoef * (convInputGain - convInputTarget);
             tailInputGain = tailInputTarget + inputCoef * (tailInputGain - tailInputTarget);
-            tailInL[i] = wetInL[i] * tailInputGain;
-            tailInR[i] = wetInR[i] * tailInputGain;
+            tailInL[i] *= tailInputGain;
+            tailInR[i] *= tailInputGain;
             wetInL[i] *= convInputGain;
             wetInR[i] *= convInputGain;
         }
 
         runKernels (n);
+        livingTail.setMovement (c.movement, c.movementRateHz);
         livingTail.process (tailInL.data(), tailInR.data(), tailPtr.data(), numOut, tailScale, n);
 
-        // Crossfade between the convolution and the living tail.
-        if (frozen || tailPosition > 0.0f || convPosition < 1.0f)
+        // Crossfade between the convolution and the living tail. Out of a
+        // freeze the tail still plays at the kernel's living level.
+        if (frozen || tailPosition > 0.0f || convPosition < 1.0f || livingGain > 0.0f || livingTarget > 0.0f)
         {
             const auto convTarget = frozen ? 0.0f : 1.0f;
             const auto tailTarget = frozen ? 1.0f : 0.0f;
             const auto convStep = frozen ? freezeStep : returnStep;
             const auto tailStep = frozen ? freezeStep : releaseStep;
             constexpr auto quarter = static_cast<float> (std::numbers::pi / 2.0);
-            const auto startConv = convPosition, startTail = tailPosition;
+            const auto startConv = convPosition, startTail = tailPosition, startLiving = livingGain;
 
             for (std::size_t k = 0; k < numOut; ++k)
             {
-                auto cp = startConv, tp = startTail;
+                auto cp = startConv, tp = startTail, lg = startLiving;
 
                 for (std::size_t i = 0; i < n; ++i)
                 {
                     cp = cp < convTarget ? std::min (convTarget, cp + convStep) : std::max (convTarget, cp - convStep);
                     tp = tp < tailTarget ? std::min (tailTarget, tp + tailStep) : std::max (tailTarget, tp - tailStep);
-                    wetPtr[k][i] = wetPtr[k][i] * std::sin (cp * quarter) + tailPtr[k][i] * std::sin (tp * quarter);
+                    lg = lg < livingTarget ? std::min (livingTarget, lg + livingStep) : std::max (livingTarget, lg - livingStep);
+                    const auto held = std::sin (tp * quarter);
+                    const auto tailWeight = lg > 0.0f ? 1.0f - (1.0f - held) * (1.0f - lg) : held;
+                    wetPtr[k][i] = wetPtr[k][i] * std::sin (cp * quarter) + tailPtr[k][i] * tailWeight;
                 }
 
                 if (k + 1 == numOut)
                 {
                     convPosition = cp;
                     tailPosition = tp;
+                    livingGain = lg;
                 }
             }
 

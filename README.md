@@ -10,7 +10,9 @@ user-selectable looks) and a working zero-latency convolution
 engine, true stereo and surround up to 9.1.6 (each room spreads over the
 surround and height speakers with decorrelated tails), with a living tail: a feedback delay network fitted to each room
 that powers Freeze (Crossover sets where the frozen room stops holding, so
-the bass keeps fading). You can load your own impulse response (WAV, AIFF
+the bass keeps fading). Living tail hands the late reverberation over to it
+at the same level, keeping the early reflections, and Movement lets it
+drift slowly so it breathes and never repeats. You can load your own impulse response (WAV, AIFF
 or FLAC; mono, stereo or four-channel true stereo): it is resampled to the
 session rate, its decay is measured into the graph, and dragging the graph
 reshapes it. Or capture a space yourself: Capture a space plays a sine

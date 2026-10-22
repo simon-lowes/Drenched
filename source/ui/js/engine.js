@@ -63,9 +63,12 @@ var P={
  hicut:{l:'Wet high cut',min:1000,max:20000,st:10,log:1,help:'removes top end from the wet signal.'},
  width:{l:'Width',min:0,max:200,st:1,help:'narrows or widens the wet signal.'},
  duck:{l:'Ducking',min:0,max:100,st:1,help:'turns the tail down while the dry signal plays.'},
- mono:{l:'Mono below',min:0,max:500,st:1,help:'sums the wet signal to mono under this frequency.'}
+ mono:{l:'Mono below',min:0,max:500,st:1,help:'sums the wet signal to mono under this frequency.'},
+ living:{l:'Living tail',min:0,max:100,st:1,help:'hands the tail over to a living one fitted to the same room, which can move and never repeats.'},
+ move:{l:'Movement',min:0,max:100,st:1,help:'lets the living tail drift slowly, like air moving in the room. Turn up Living tail to hear it.'},
+ moveRate:{l:'Movement rate',min:0.05,max:5,st:0.01,log:1,help:'sets how fast the living tail drifts.'}
 };
-var DEEP=['output','preSync','xover','locut','hicut','width','duck','mono'];
+var DEEP=['output','preSync','xover','living','move','moveRate','locut','hicut','width','duck','mono'];
 var MAIN=['decay','pre','size','bright','el','dist'];
 function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
 function lerp(a,b,t){return a+(b-a)*t;}
@@ -74,7 +77,7 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 var UID=0;function uid(){return 'u'+(++UID);}
 function vol(sp){var v=sp.W*sp.D*sp.H;v=v>2000?Math.round(v/100)*100:Math.round(v/10)*10;return v.toLocaleString('en-GB')+' m\u00b3';}
 function decayOf(b){return (b[3]+b[4])/2;}
-function newState(){var sp=SPACES[0];return {sp:0,bands:sp.bands.slice(),mix:30,pre:sp.pre,size:100,bright:0,el:55,dist:40,output:0,preSync:0,xover:320,locut:80,hicut:14000,width:100,duck:0,mono:0,lx:0.5,mode:'studio',slot:'A',slots:{A:null,B:null},freeze:false,adv:false,browse:false,view:'plan',locks:{},hint:null,note:null,lastBand:4,skin:'aperture',skins:false,inL:-60,inR:-60,outL:-60,outR:-60};}
+function newState(){var sp=SPACES[0];return {sp:0,bands:sp.bands.slice(),mix:30,pre:sp.pre,size:100,bright:0,el:55,dist:40,output:0,preSync:0,xover:320,locut:80,hicut:14000,width:100,duck:0,mono:0,living:0,move:20,moveRate:0.7,lx:0.5,mode:'studio',slot:'A',slots:{A:null,B:null},freeze:false,adv:false,browse:false,view:'plan',locks:{},hint:null,note:null,lastBand:4,skin:'aperture',skins:false,inL:-60,inR:-60,outL:-60,outR:-60};}
 var st=newState();
 function spOf(s){return SPACES[s.sp];}
 function getV(s,k){return k==='decay'?decayOf(s.bands):s[k];}
@@ -89,7 +92,9 @@ function fmt(s,k,v){if(v==null)v=getV(s,k);switch(k){
  case 'dist':var old=s.dist;s.dist=v;var m=distM(s);s.dist=old;return f1(m)+' m';
  case 'output':return (v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+' dB';case 'preSync':return v>=0.5?'On':'Off';
  case 'xover':case 'locut':return Math.round(v)+' Hz';case 'hicut':return (v/1000).toFixed(1)+' kHz';
- case 'width':return Math.round(v)+'%';case 'duck':return v>0?Math.round(v)+'%':'Off';case 'mono':return v>0?Math.round(v)+' Hz':'Off';}}
+ case 'width':return Math.round(v)+'%';case 'duck':return v>0?Math.round(v)+'%':'Off';case 'mono':return v>0?Math.round(v)+' Hz':'Off';
+ case 'living':return v>0?Math.round(v)+'%':'Off';case 'move':return v>0?Math.round(v)+'%':'Still';
+ case 'moveRate':return (v<1?v.toFixed(2):v.toFixed(1))+' Hz';}}
 function to01(k,v){var p=P[k];return p.log?Math.log(v/p.min)/Math.log(p.max/p.min):(v-p.min)/(p.max-p.min);}
 function from01(k,n){var p=P[k];n=clamp(n,0,1);var v=p.log?p.min*Math.pow(p.max/p.min,n):p.min+n*(p.max-p.min);return Math.round(v/p.st)*p.st;}
 function setParam(s,k,v){var p=P[k];v=clamp(Math.round(v/p.st)*p.st,p.min,p.max);

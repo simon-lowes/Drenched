@@ -36,6 +36,9 @@ DrenchedProcessor::DrenchedProcessor()
     params.monoBelow = raw (ParamIDs::monoBelow);
     params.freeze = raw (ParamIDs::freeze);
     params.crossover = raw (ParamIDs::crossover);
+    params.living = raw (ParamIDs::living);
+    params.movement = raw (ParamIDs::movement);
+    params.movementRate = raw (ParamIDs::movementRate);
 
     // A new instance opens on the first recorded space, with the graph on its measured decay.
     if (const auto& recordings = library::spaces(); ! recordings.empty())
@@ -132,6 +135,7 @@ std::optional<ImpulseResponseRequest> DrenchedProcessor::currentRequest (double 
     request.sizePercent = params.size->load();
     request.distancePercent = params.distance->load();
     request.earlyLatePercent = params.earlyLate->load();
+    request.livingPercent = params.living->load();
 
     for (size_t band = 0; band < params.decay.size(); ++band)
         request.decaySeconds[band] = params.decay[band]->load();
@@ -670,6 +674,8 @@ void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     controls.monoBelowHz = params.monoBelow->load();
     controls.freeze = params.freeze->load() >= 0.5f;
     controls.crossoverHz = params.crossover->load();
+    controls.movement = params.movement->load() / 100.0f;
+    controls.movementRateHz = params.movementRate->load();
 
     // After the trial, without a licence, only the dry signal plays.
     if (! licence->isAudioAllowed())

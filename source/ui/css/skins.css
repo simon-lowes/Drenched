@@ -462,7 +462,7 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .ap-strip{position:absolute;left:40px;right:40px;bottom:12px;height:22px;display:flex;align-items:center;gap:16px}
 .ap-strip .hint{flex:1;color:#B5B0A6}
 .s-aperture .menu{left:40px;top:196px}
-.s-aperture .adv{position:absolute;left:40px;right:40px;top:516px;height:190px;background:rgba(10,10,11,.92);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 20px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 28px;align-content:start;z-index:3}
+.s-aperture .adv{position:absolute;left:40px;right:40px;top:512px;height:198px;background:rgba(10,10,11,.92);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 20px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 28px;align-content:start;z-index:3}
 .s-aperture .adv .row{height:24px}.s-aperture .adv .row .ro{font-size:13px;height:20px}
 
 /* ========== 8 Contact: the print ========== */
@@ -539,7 +539,7 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .st-strip{position:absolute;left:470px;right:40px;bottom:14px;height:20px;display:flex;align-items:center;gap:16px}
 .st-strip .hint{flex:1}
 .s-strata .menu{left:470px;top:60px}
-.s-strata .adv{position:absolute;left:470px;right:40px;top:520px;height:182px;background:var(--p);border:1px solid var(--ln);border-radius:10px;padding:8px 16px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 24px;align-content:start;z-index:2}
+.s-strata .adv{position:absolute;left:470px;right:40px;top:516px;height:194px;background:var(--p);border:1px solid var(--ln);border-radius:10px;padding:8px 16px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 24px;align-content:start;z-index:2}
 .s-strata .adv .row{height:24px}
 
 /* ========== 10 Rotunda: the round ========== */
@@ -621,8 +621,8 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .ma-strip .hint{flex:1}
 .s-material .seg{background:rgba(0,0,0,.2);border-color:rgba(255,255,255,.12)}
 .s-material .menu{left:40px;top:160px}
-.s-material .adv{position:absolute;left:40px;right:40px;top:548px;height:150px;background:var(--p);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:6px 16px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 24px;align-content:start;z-index:2}
-.s-material .adv .row{height:22px;font-size:11px}.s-material .adv .row .ro{height:20px;font-size:12px}
+.s-material .adv{position:absolute;left:40px;right:40px;top:538px;height:166px;background:var(--p);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:6px 16px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 24px;align-content:start;z-index:2}
+.s-material .adv .row{height:21px;font-size:11px}.s-material .adv .row .ro{height:20px;font-size:12px}
 
 /* ========== 12 Folio: the spread ========== */
 .s-folio{--g:#FAF8F3;--p:#FFFFFF;--r:#EFECE4;--ln:#D9D4C8;--tx:#1A1917;--tx2:#6C675E;--ac:#2F6A4B;--ac2:#1A1917;--onac:#fff;--warn:#B3261E;--focus:#1A1917;--num:#1A1917;--mtr:#2F6A4B;

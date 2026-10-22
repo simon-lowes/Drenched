@@ -4,7 +4,9 @@
 #include <drenched/KernelBuilder.h>
 #include <drenched/LivingTail.h>
 #include <drenched/Spaces.h>
+#include <drenched/SurroundResponse.h>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -422,6 +424,128 @@ TEST_CASE ("Releasing a freeze lets the room die away naturally", "[reverb][free
     l[0] = r[0] = 1.0f;
     reverb.process (l.data(), r.data(), l.size(), c);
     CHECK (energy (l, 1) > 1.0e-4);
+}
+
+TEST_CASE ("The living blend hands only the late part to the tail", "[reverb][living]")
+{
+    const auto request = hall (48000.0);
+    const auto original = synthesiseImpulseResponse (request);
+    const auto tm = mixingTimeSeconds (request);
+    const auto at = [&] (double seconds) { return static_cast<std::size_t> (seconds * request.sampleRate); };
+
+    auto none = original;
+    CHECK (applyLivingBlend (none, 0.0f, tm) == 0.0f);
+    CHECK (none.paths == original.paths);
+
+    auto half = original;
+    CHECK (applyLivingBlend (half, 50.0f, tm) == Catch::Approx (std::sqrt (0.5)).margin (1.0e-6));
+
+    auto all = original;
+    CHECK (applyLivingBlend (all, 100.0f, tm) == Catch::Approx (1.0).margin (1.0e-6));
+
+    for (std::size_t p = 0; p < 4; ++p)
+    {
+        for (auto n = std::size_t { 0 }; n < at (tm); ++n)
+        {
+            CHECK (all.paths[p][n] == original.paths[p][n]); // early reflections untouched
+            CHECK (half.paths[p][n] == original.paths[p][n]);
+        }
+
+        for (auto n = at (2.0 * tm); n < original.length(); ++n)
+        {
+            CHECK (std::abs (all.paths[p][n]) < 1.0e-6f);
+            CHECK (half.paths[p][n] == Catch::Approx (original.paths[p][n] * std::sqrt (0.5)).margin (1.0e-6));
+        }
+    }
+}
+
+TEST_CASE ("With the living tail up, the late reverberation keeps its level", "[reverb][living]")
+{
+    constexpr double sr = 48000.0;
+    ReverbControls c;
+    c.mix = 1.0f;
+
+    const auto play = [&] (float living)
+    {
+        auto request = hall (sr);
+        request.livingPercent = living;
+
+        ConvolutionReverb reverb;
+        reverb.prepare (sr);
+        KernelBuilder builder (reverb);
+        builder.buildNow (request);
+
+        std::vector<float> l (static_cast<std::size_t> (1.5 * sr), 0.0f), r (l.size(), 0.0f);
+        l[0] = r[0] = 1.0f;
+
+        for (std::size_t pos = 0; pos < l.size(); pos += 480)
+            reverb.process (l.data() + pos, r.data() + pos, std::min<std::size_t> (480, l.size() - pos), c);
+
+        return l;
+    };
+
+    const auto recorded = play (0.0f), blended = play (50.0f), living = play (100.0f);
+    const auto rt = 0.5 * (bundledSpaces[3].decaySeconds[3] + bundledSpaces[3].decaySeconds[4]);
+    const auto from = 0.25 * rt, to = from + 0.15;
+
+    const auto early = energyDb (recorded, 0.0, 0.01, sr);
+    const auto late = energyDb (recorded, from, to, sr);
+    INFO ("late: recorded " << late << " dB, half " << energyDb (blended, from, to, sr) << " dB, living "
+                            << energyDb (living, from, to, sr) << " dB");
+    CHECK (std::abs (energyDb (blended, from, to, sr) - late) < 2.0);
+    CHECK (std::abs (energyDb (living, from, to, sr) - late) < 2.0);
+    CHECK (std::abs (energyDb (living, 0.0, 0.01, sr) - early) < 1.0);
+
+    // And it is a different tail, not the recorded one at the same level.
+    double a = 0.0, b = 0.0, ab = 0.0;
+
+    for (auto n = static_cast<std::size_t> (from * sr); n < static_cast<std::size_t> (to * sr); ++n)
+    {
+        a += static_cast<double> (recorded[n]) * recorded[n];
+        b += static_cast<double> (living[n]) * living[n];
+        ab += static_cast<double> (recorded[n]) * living[n];
+    }
+
+    CHECK (std::abs (ab) / std::sqrt (a * b) < 0.3);
+}
+
+TEST_CASE ("Changing the living blend while sound plays is smooth", "[reverb][living]")
+{
+    constexpr double sr = 48000.0;
+    ReverbControls c;
+    c.mix = 1.0f;
+    c.movement = 0.5f;
+
+    auto request = hall (sr);
+    ConvolutionReverb reverb;
+    reverb.prepare (sr);
+    reverb.submit (kernelWithTail (request));
+
+    auto l = testing::noise (static_cast<std::size_t> (2.0 * sr), 41), r = l;
+    const auto switchAt = static_cast<std::size_t> (1.0 * sr);
+
+    for (std::size_t pos = 0; pos < l.size(); pos += 480)
+    {
+        if (pos == switchAt)
+        {
+            request.livingPercent = 100.0f;
+            const auto responses = synthesiseImpulseResponse (request);
+            auto blended = responses;
+            const auto design = designLivingTail (request, responses);
+            const auto level = applyLivingBlend (blended, request.livingPercent, mixingTimeSeconds (request));
+            auto kernel = std::make_unique<ReverbKernel> (blended, design);
+            kernel->setLivingLevel (level);
+            reverb.submit (std::move (kernel));
+        }
+
+        reverb.process (l.data() + pos, r.data() + pos, std::min<std::size_t> (480, l.size() - pos), c);
+    }
+
+    const auto before = energyDb (l, 0.8, 1.0, sr), after = energyDb (l, 1.0, 1.2, sr), settled = energyDb (l, 1.8, 2.0, sr);
+    INFO ("before " << before << " dB, during the change " << after << " dB, settled " << settled << " dB");
+    CHECK (std::abs (after - before) < 2.0);
+    CHECK (std::abs (settled - before) < 2.0);
+    CHECK (std::all_of (l.begin(), l.end(), [] (float x) { return std::isfinite (x); }));
 }
 
 TEST_CASE ("Freeze and crossover moves never allocate", "[reverb][freeze][realtime]")
