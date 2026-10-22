@@ -77,6 +77,10 @@ namespace UiIDs
     inline const juce::Identifier skin { "skin" };
     inline const juce::Identifier width { "width" };
 
+    // Each output speaker's reverb level (dB) and delay (ms), in the output
+    // bus's channel order: "level delay" pairs separated by ";".
+    inline const juce::Identifier speakers { "speakers" };
+
     // A loaded impulse response: the file it came from, its name, and the
     // outcome of the last load (an error to show, and a counter that changes
     // on every attempt so the page can tell a new outcome from an old one).

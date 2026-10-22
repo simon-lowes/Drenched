@@ -63,12 +63,12 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .menu button:hover,.menu button[aria-current="true"]{background:var(--r)}
 .menu small{color:var(--tx2);font:11px var(--fnum)}
 .menu .mload{margin-top:4px;border-top:1px solid var(--ln);border-radius:0 0 var(--rad) var(--rad);color:var(--ac)}
-.menu .mcap,.menu .mlic,.menu .mcred{color:var(--ac)}
+.menu .mcap,.menu .mlic,.menu .mcred,.menu .mspk{color:var(--ac)}
 .crl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px;max-height:360px;overflow:auto}
 .crl li{display:flex;flex-direction:column;gap:2px;font-size:13px}
 .crl span,.crl small{color:var(--tx2)}.crl small{font-size:12px}
 /* Capturing a space: a dialog over the screen, in the look's own tokens. */
-.cap{position:absolute;inset:0;z-index:30;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center}
+.cap[role="dialog"]{position:absolute;inset:0;z-index:30;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center}
 .cap .cbox{width:620px;background:var(--p);color:var(--tx);border:1px solid var(--ln);border-radius:var(--rad2,10px);box-shadow:0 24px 60px rgba(0,0,0,.45);padding:22px 26px 20px;font:13px/1.5 var(--fui)}
 .cap .chd{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
 .cap h2{margin:0;font:500 22px/1.2 var(--fdisp,var(--fui));letter-spacing:-.01em}
@@ -94,6 +94,16 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .cap .cgo.stop{background:transparent;color:var(--tx);border:1px solid var(--ln)}
 .cap .cgo:disabled{opacity:.6;cursor:default}
 .cap .ct{color:var(--tx2);font-size:11.5px}
+.spkd .sph,.spkd .spr{display:grid;grid-template-columns:64px 1fr 96px 96px;column-gap:14px;align-items:center}
+.spkd .sph{margin-top:16px;padding-bottom:6px;border-bottom:1px solid var(--ln);color:var(--tx2);font-size:11.5px}
+.spkd .spl{max-height:352px;overflow:auto;padding:4px 0 10px}
+.spkd .spr{padding:5px 0}
+.spkd .spr b{font:600 13px var(--fnum,var(--fui))}
+.spkd .bar{height:6px;border-radius:3px;background:var(--r);overflow:hidden}
+.spkd .bar i{display:block;height:100%;width:0;background:var(--ac)}
+.spkd input{width:100%;box-sizing:border-box;border:1px solid var(--ln);border-radius:var(--rad,6px);background:transparent;color:var(--tx);padding:5px 8px;font:12px var(--fnum,var(--fui));text-align:right}
+.spkd input:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+.spkd .spn{grid-column:3/5;color:var(--tx2);font-size:12px}
 /* The licence: the trial notice and the activation dialog, which reuses the capture dialog's frame. */
 .licchip{flex:none;margin:0 6px 0 12px;border:1px solid var(--ln);border-radius:999px;background:var(--p);color:var(--tx2);padding:3px 11px;font:11.5px/1.4 var(--fui);white-space:nowrap}
 .licchip u{text-decoration:none;color:var(--ac);font-weight:600;margin-left:2px}

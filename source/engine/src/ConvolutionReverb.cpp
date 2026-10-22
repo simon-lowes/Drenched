@@ -251,6 +251,7 @@ void ConvolutionReverb::prepare (double newSampleRate, const SpeakerLayout& inpu
     livingStep = static_cast<float> (1.0 / (0.05 * sampleRate));
 
     livingTail.prepare (sampleRate);
+    speakerTrim.prepare (sampleRate, numOut);
 
     if (current != nullptr)
         livingTail.setDesign (current->livingTail());
@@ -274,6 +275,7 @@ void ConvolutionReverb::reset() noexcept
 
     // A cleared room has nothing to hold; the next block re-freezes if asked.
     livingTail.reset();
+    speakerTrim.reset();
     livingTail.setFrozen (false, crossover);
     frozen = false;
     convInputGain = tailInputGain = 1.0f;
@@ -701,6 +703,8 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
             }
         }
 
+        speakerTrim.process (wetPtr.data(), numOut, n, c.speakerLevelDb.data(), c.speakerDelayMs.data());
+
         // Ducking follows the dry level; then the mix and output gain, with
         // the per-sample gains kept in tmp for every output to share.
         auto* dryGains = tmpPtr[0];
@@ -756,7 +760,8 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
         duckEnvelope = 0.0f;
 
     tail.store (frozen ? std::numeric_limits<double>::infinity()
-                       : (current != nullptr ? static_cast<double> (current->length()) / sampleRate : 0.0) + maxPredelaySeconds * 0.25,
+                       : (current != nullptr ? static_cast<double> (current->length()) / sampleRate : 0.0) + maxPredelaySeconds * 0.25
+                             + static_cast<double> (*std::max_element (c.speakerDelayMs.begin(), c.speakerDelayMs.end())) / 1000.0,
                 std::memory_order_relaxed);
 }
 
