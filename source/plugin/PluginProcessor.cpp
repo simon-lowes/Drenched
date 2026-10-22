@@ -45,6 +45,7 @@ DrenchedProcessor::DrenchedProcessor()
     params.directLevel = raw (ParamIDs::directLevel);
     params.directDelay = raw (ParamIDs::directDelay);
     params.directColour = raw (ParamIDs::directColour);
+    params.crossFeed = raw (ParamIDs::crossFeed);
 
     // A new instance opens on the first recorded space, with the graph on its measured decay.
     if (const auto& recordings = library::spaces(); ! recordings.empty())
@@ -148,6 +149,7 @@ std::optional<ImpulseResponseRequest> DrenchedProcessor::currentRequest (double 
     request.directLevelDb = params.directLevel->load();
     request.directDelayMs = params.directDelay->load();
     request.directColourDb = params.directColour->load();
+    request.crossFeedPercent = params.crossFeed->load();
 
     for (size_t band = 0; band < params.decay.size(); ++band)
         request.decaySeconds[band] = params.decay[band]->load();

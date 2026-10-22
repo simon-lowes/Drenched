@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace drenched
 {
@@ -12,6 +13,7 @@ namespace
 {
     constexpr double reverseFloorDecibels = -60.0;
     constexpr double reverseBlockSeconds = 0.01;
+    constexpr double crossFeedBlockSeconds = 0.01;
 
     std::size_t samplesFor (double seconds, double sampleRate) noexcept
     {
@@ -101,6 +103,63 @@ void applyEnvelope (ImpulseResponseSet& responses, const ImpulseResponseRequest&
         for (auto& path : responses.paths)
             for (std::size_t n = 0; n < attack; ++n)
                 path[n] *= static_cast<float> (bands::raisedCosine (static_cast<double> (n) / static_cast<double> (attack)));
+    }
+}
+
+void applyCrossFeed (ImpulseResponseSet& responses, float crossFeedPercent)
+{
+    const auto amount = std::clamp (static_cast<double> (crossFeedPercent), 0.0, 100.0) / 100.0;
+    const auto length = responses.length();
+
+    if (amount >= 1.0 || length == 0 || responses.sampleRate <= 0.0)
+        return;
+
+    using P = ImpulseResponseSet;
+    auto& paths = responses.paths;
+
+    // The energy a centred source sends to both outputs, block by block.
+    // Correlated paths (the direct sound and early reflections, or one source
+    // recorded in stereo) add up in phase and decorrelated ones (a diffuse
+    // tail) do not, so the make-up gain follows the response over time.
+    const auto block = std::max<std::size_t> (1, samplesFor (crossFeedBlockSeconds, responses.sampleRate));
+    const auto blocks = (length + block - 1) / block;
+    std::vector<double> gain (blocks, 1.0);
+
+    for (std::size_t b = 0; b < blocks; ++b)
+    {
+        auto before = 0.0, after = 0.0;
+
+        for (const auto& [same, opposite] : { std::pair { P::leftToLeft, P::rightToLeft }, std::pair { P::rightToRight, P::leftToRight } })
+        {
+            for (auto n = b * block; n < std::min (length, (b + 1) * block); ++n)
+            {
+                const auto kept = static_cast<double> (paths[same][n]), fed = static_cast<double> (paths[opposite][n]);
+                before += (kept + fed) * (kept + fed);
+                after += (kept + amount * fed) * (kept + amount * fed);
+            }
+        }
+
+        if (after > 0.0)
+            gain[b] = std::clamp (std::sqrt (before / after), 0.5, 2.0);
+    }
+
+    // Glide between block centres so the gain never steps.
+    const auto gainAt = [&] (std::size_t n)
+    {
+        const auto position = (static_cast<double> (n) + 0.5) / static_cast<double> (block) - 0.5;
+        const auto first = static_cast<std::size_t> (std::clamp (std::floor (position), 0.0, static_cast<double> (blocks - 1)));
+        const auto second = std::min (first + 1, blocks - 1);
+        const auto t = std::clamp (position - static_cast<double> (first), 0.0, 1.0);
+        return gain[first] + (gain[second] - gain[first]) * t;
+    };
+
+    for (std::size_t n = 0; n < length; ++n)
+    {
+        const auto g = gainAt (n);
+        paths[P::leftToLeft][n] = static_cast<float> (paths[P::leftToLeft][n] * g);
+        paths[P::rightToRight][n] = static_cast<float> (paths[P::rightToRight][n] * g);
+        paths[P::leftToRight][n] = static_cast<float> (paths[P::leftToRight][n] * amount * g);
+        paths[P::rightToLeft][n] = static_cast<float> (paths[P::rightToLeft][n] * amount * g);
     }
 }
 

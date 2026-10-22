@@ -114,6 +114,7 @@ void KernelBuilder::build (const ImpulseResponseRequest& wanted)
     // room when the response is gated or reversed.
     const auto tail = designLivingTail (wanted, responses);
     applyDirect (responses, wanted);
+    applyCrossFeed (responses, wanted.crossFeedPercent);
     applyEnvelope (responses, wanted);
 
     const auto living = cutsTail (wanted) ? 0.0f

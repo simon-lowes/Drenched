@@ -15,7 +15,9 @@ at the same level, keeping the early reflections, and Movement lets it
 drift slowly so it breathes and never repeats. Reverse plays the room
 backwards, Gate cuts it off after a set time, and Attack fades it in.
 The direct sound (the first arrival, before any reflection) has its own
-level, delay and colour. You can load your own impulse response (WAV, AIFF
+level, delay and colour, and Cross-feed sets how much each side of the
+input reaches the other side of the room (at 0 the left and right get
+separate reverbs). You can load your own impulse response (WAV, AIFF
 or FLAC; mono, stereo or four-channel true stereo): it is resampled to the
 session rate, its decay is measured into the graph, and dragging the graph
 reshapes it. Or capture a space yourself: Capture a space plays a sine
