@@ -10,11 +10,12 @@ out, and so is anything made for or taken from another reverb product.
   appear under Recording credits; `bands` (RT60 per octave, 63 Hz to 8 kHz)
   and `W`, `D`, `H` (metres) are measured from the recording. `kind` and
   `img` pick the plan drawing and picture. `fixedSize` keeps the size given
-  instead of the measured one. The `id` is saved in sessions: never change or
+  instead of the measured one (the real dimensions, or a shoebox of the
+  volume the source publishes). The `id` is saved in sessions: never change or
   reuse one.
-- `ir/<id>.flac`: the response, 24-bit. Two channels are one source recorded
-  in stereo; four are true stereo (left to left, left to right, right to left,
-  right to right).
+- `ir/<id>.flac`: the response, 24-bit, at 44.1 or 48 kHz. Two channels are one
+  source recorded in stereo; four are true stereo (left to left, left to right,
+  right to left, right to right).
 
 ## Rebuilding
 
@@ -26,10 +27,45 @@ Build the analysis tool first with
 `cmake --build build --target drenched_analyse_library`. The script fetches the
 source recordings, assembles each space as `build_library.py` describes, and
 writes the measured decay and size into `library.json`. It needs numpy and
-ffmpeg.
+ffmpeg (built with soxr). `--only <id>` (repeatable) rebuilds just those spaces.
+
+The St Paul's Hall files come from the MAIR repository on GitHub. The OpenAIR
+and AIR files come from audEERING's public copies of those databases
+(`audb-public` on Amazon S3: `openair` 1.0.0 and `air` 1.4.x), because the
+original servers were not reachable from the build machine; each file is
+checked against the MD5 sum in the database's own file table.
+
+What the script does to each kind of source:
+
+- OpenAIR stereo files: used as recorded.
+- OpenAIR B-format files (W, X, Y, Z): decoded to a coincident pair of virtual
+  supercardioids 110 degrees apart. W is matched to X, Y and Z from the diffuse
+  part of each file's tail, since the captures differ in how W is scaled.
+- AIR: two dummy-head responses from one position, with the head turned so the
+  source is 45 degrees to its left and to its right, make one true-stereo file.
+  The 16-bit copies end in digital silence, so the last 30 % of the kept tail is
+  faded out.
+- Files above 48 kHz are resampled to 48 kHz (soxr). The OpenAIR and AIR
+  spaces are cut a quarter of a second after their tail sinks into the noise
+  floor (or 100 dB below its loudest). Every file is peak-normalised to -1 dBFS.
 
 ## Credits
 
 | Space | Recording | Licence |
 | --- | --- | --- |
 | St Paul's Hall, Huddersfield (ORTF, spaced omnis, Decca tree, back of stage, in the hall) | Hyunkook Lee and Connor Millns, Applied Psychoacoustics Lab, University of Huddersfield: [MAIR library](https://github.com/APL-Huddersfield/MAIR-Library-and-Renderer) (Lee and Millns, "Microphone Array Impulse Response (MAIR) Library for Spatial Audio Research", AES 143rd Convention, 2017). Changes: mono responses combined into stereo and true-stereo files, the Decca tree's centre folded into both sides, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Jack Lyons Concert Hall, University of York | Alex Duffell, Aishwarya Sridhar and Zhong Li, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=571) (www.openairlib.net). Changes: B-format decoded to stereo, resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Spokane Woman's Club | James Cadwallader: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=659). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Dixon Studio Theatre, University of York | Ben Lavin, Darren Robinson and Ya-Hsin Chou, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=452). Changes: B-format decoded to stereo, resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| York Minster | [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=797) (www.openairlib.net), University of York. Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Lady Chapel, St Albans Cathedral | Marcin Gorzel, Gavin Kearney, Aglaia Foteinou, Sorrel Hoare and Simon Shelley, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=595). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| St Patrick's Church, Patrington | Aglaia Foteinou and Damian T. Murphy, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=722). Changes: resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| St Margaret's Church, York (National Centre for Early Music) | Aglaia Foteinou and Simon Shelley, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=696). Changes: B-format decoded to stereo, resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Heslington Church, York | Marc Ciufo Green, Michael Lovedee-Turner and Yuchen Gong, AudioLab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=508). Changes: B-format decoded to stereo, resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Aula Carolina, Aachen | Marco Jeub, Magnus Schäfer, Hauke Krüger, Christoph M. Nelke, Christophe Beaugeant and Peter Vary, Institute of Communication Systems, RWTH Aachen University: [AIR database](https://www.iks.rwth-aachen.de/en/research/tools-downloads/databases/aachen-impulse-response-database/) (Jeub, Schäfer and Vary, "A Binaural Room Impulse Response Database for the Evaluation of Dereverberation Algorithms", DSP 2009). Changes: two dummy-head responses combined into a true-stereo file, the end of the tail faded where the 16-bit copy runs out of resolution, level normalised. | [MIT](https://opensource.org/licenses/MIT) (see [NOTICE.md](../NOTICE.md)) |
+| Spring Lane Stairwell, University of York | Gavin Davies, Ignacio Gomez-Lanzaco, James Geary and Thomas Wood, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=670). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Hamilton Mausoleum | Damian T. Murphy, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=502). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Tyndall Bruce Monument | Damian T. Murphy, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=764). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Terry's Factory Warehouse, York | Damian T. Murphy, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=735). Changes: level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Terry's Typing Room, York | Damian T. Murphy, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=740). Changes: resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| R1 Reactor Hall | [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=626) (www.openairlib.net). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
