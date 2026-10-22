@@ -4,6 +4,7 @@ add_executable(drenched_plugin_tests
     Main.cpp
     SessionTests.cpp
     MatchTests.cpp
+    ChannelLayoutTests.cpp
     SceneTests.cpp)
 
 target_link_libraries(drenched_plugin_tests PRIVATE Drenched Catch2::Catch2)

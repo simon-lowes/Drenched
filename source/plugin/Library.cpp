@@ -1,4 +1,5 @@
 #include "Library.h"
+#include "ChannelLayouts.h"
 
 #include <DrenchedLibrary.h>
 
@@ -37,7 +38,9 @@ std::shared_ptr<const RecordedResponse> prepareFromReader (juce::AudioFormatRead
 
     try
     {
-        return prepareRecordedResponse (audio, reader.sampleRate, name.toStdString());
+        const auto layout = channels == 1 || channels == 2 || channels == 4 ? SpeakerLayout {}
+                                                                            : channelLayouts::fileLayout (reader.getChannelLayout(), channels);
+        return prepareRecordedResponse (audio, reader.sampleRate, name.toStdString(), layout);
     }
     catch (const std::invalid_argument& e)
     {
