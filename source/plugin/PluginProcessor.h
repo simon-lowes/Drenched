@@ -183,6 +183,7 @@ private:
         std::atomic<float>* directDelay = nullptr;
         std::atomic<float>* directColour = nullptr;
         std::atomic<float>* crossFeed = nullptr;
+        std::atomic<float>* cloudSize = nullptr;
         std::atomic<float>* lowCpu = nullptr;
         std::array<std::atomic<float>*, 8> decay {};
     } params;

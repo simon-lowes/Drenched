@@ -38,6 +38,7 @@ namespace ParamIDs
     inline constexpr auto directColour = "directColour";
     inline constexpr auto crossFeed = "crossFeed";
     inline constexpr auto lowCpu = "lowCpu";
+    inline constexpr auto cloudSize = "cloudSize";
 
     inline constexpr std::array<const char*, 8> decay { "decay63",  "decay125", "decay250", "decay500",
                                                         "decay1k",  "decay2k",  "decay4k",  "decay8k" };
@@ -55,7 +56,7 @@ namespace ParamIDs
             for (auto* id : decay)
                 list.add (id);
 
-            list.addArray ({ living, movement, movementRate, reverse, gate, attack, directLevel, directDelay, directColour, crossFeed, lowCpu });
+            list.addArray ({ living, movement, movementRate, reverse, gate, attack, directLevel, directDelay, directColour, crossFeed, lowCpu, cloudSize });
 
             return list;
         }();
@@ -190,6 +191,11 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     // automate, so hosts don't offer it.
     layout.add (std::make_unique<Bool> (ParameterID { ParamIDs::lowCpu, 1 }, "Low CPU", false,
                                         AudioParameterBoolAttributes().withAutomatable (false)));
+
+    // How far the reverb spreads from where the sound is panned: 100 fills the
+    // room as captured (how every earlier version played).
+    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::cloudSize, 1 }, "Cloud size",
+                                         NormalisableRange<float> (0.0f, 100.0f, 1.0f), 100.0f, percent));
 
     return layout;
 }
