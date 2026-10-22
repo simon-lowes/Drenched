@@ -2,6 +2,7 @@
 #include "drenched/LivingTail.h"
 #include "drenched/ConvolutionReverb.h"
 #include "drenched/RecordedResponse.h"
+#include "drenched/ResponseEnvelope.h"
 
 #include <algorithm>
 #include <cmath>
@@ -108,8 +109,13 @@ void KernelBuilder::build (const ImpulseResponseRequest& wanted)
         resampled = {};
     }
 
+    // The tail is fitted to the whole response, so Freeze still holds the
+    // room when the response is gated or reversed.
     const auto tail = designLivingTail (wanted, responses);
-    const auto living = applyLivingBlend (responses, wanted.livingPercent, mixingTimeSeconds (wanted));
+    applyEnvelope (responses, wanted);
+
+    const auto living = cutsTail (wanted) ? 0.0f
+                                          : applyLivingBlend (responses, wanted.livingPercent, mixingTimeSeconds (wanted));
 
     const auto stereo = wanted.outputs == layouts::stereo();
     const auto paths = stereo ? responses.paths.size() : 2 * wanted.outputs.size();

@@ -58,6 +58,9 @@ var P={
  dist:{l:'Distance',min:0,max:100,st:1,help:'moves the listener away from the source.'},
  output:{l:'Output',min:-24,max:12,st:0.1,help:'trims the plugin output.'},
  preSync:{l:'Pre-delay sync',min:0,max:1,st:1,help:'locks pre-delay to the host tempo.'},
+ rev:{l:'Reverse',min:0,max:1,st:1,help:'plays the room backwards, so it swells up into each sound.'},
+ gate:{l:'Gate',min:0,max:2000,st:1,help:'cuts the room off after this long, like a gated drum room. The living tail rests while it is on.'},
+ attack:{l:'Attack',min:0,max:500,st:1,help:'fades the room in over this long, so it blooms behind the sound instead of starting with it.'},
  xover:{l:'Crossover',min:100,max:1000,st:1,log:1,help:'sets where Freeze stops holding. Below it, a frozen room keeps fading so the bass never builds up.'},
  locut:{l:'Wet low cut',min:20,max:1000,st:1,log:1,help:'removes low end from the wet signal.'},
  hicut:{l:'Wet high cut',min:1000,max:20000,st:10,log:1,help:'removes top end from the wet signal.'},
@@ -68,7 +71,8 @@ var P={
  move:{l:'Movement',min:0,max:100,st:1,help:'lets the living tail drift slowly, like air moving in the room. Turn up Living tail to hear it.'},
  moveRate:{l:'Movement rate',min:0.05,max:5,st:0.01,log:1,help:'sets how fast the living tail drifts.'}
 };
-var DEEP=['output','preSync','xover','living','move','moveRate','locut','hicut','width','duck','mono'];
+var DEEP=['output','preSync','rev','gate','attack','xover','living','move','moveRate','locut','hicut','width','duck','mono'];
+var TOGGLES=['preSync','rev'];
 var MAIN=['decay','pre','size','bright','el','dist'];
 function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
 function lerp(a,b,t){return a+(b-a)*t;}
@@ -77,7 +81,7 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 var UID=0;function uid(){return 'u'+(++UID);}
 function vol(sp){var v=sp.W*sp.D*sp.H;v=v>2000?Math.round(v/100)*100:Math.round(v/10)*10;return v.toLocaleString('en-GB')+' m\u00b3';}
 function decayOf(b){return (b[3]+b[4])/2;}
-function newState(){var sp=SPACES[0];return {sp:0,bands:sp.bands.slice(),mix:30,pre:sp.pre,size:100,bright:0,el:55,dist:40,output:0,preSync:0,xover:320,locut:80,hicut:14000,width:100,duck:0,mono:0,living:0,move:20,moveRate:0.7,lx:0.5,mode:'studio',slot:'A',slots:{A:null,B:null},freeze:false,adv:false,browse:false,view:'plan',locks:{},hint:null,note:null,lastBand:4,skin:'aperture',skins:false,inL:-60,inR:-60,outL:-60,outR:-60};}
+function newState(){var sp=SPACES[0];return {sp:0,bands:sp.bands.slice(),mix:30,pre:sp.pre,size:100,bright:0,el:55,dist:40,output:0,preSync:0,xover:320,locut:80,hicut:14000,width:100,duck:0,mono:0,living:0,move:20,moveRate:0.7,rev:0,gate:0,attack:0,lx:0.5,mode:'studio',slot:'A',slots:{A:null,B:null},freeze:false,adv:false,browse:false,view:'plan',locks:{},hint:null,note:null,lastBand:4,skin:'aperture',skins:false,inL:-60,inR:-60,outL:-60,outR:-60};}
 var st=newState();
 function spOf(s){return SPACES[s.sp];}
 function getV(s,k){return k==='decay'?decayOf(s.bands):s[k];}
@@ -90,11 +94,11 @@ function fmt(s,k,v){if(v==null)v=getV(s,k);switch(k){
  case 'mix':return Math.round(v)+'%';case 'decay':return f1(v)+' s';case 'pre':return Math.round(v)+' ms';case 'size':return Math.round(v)+'%';
  case 'bright':return (v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+' dB';case 'el':return (100-Math.round(v))+' / '+Math.round(v);
  case 'dist':var old=s.dist;s.dist=v;var m=distM(s);s.dist=old;return f1(m)+' m';
- case 'output':return (v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+' dB';case 'preSync':return v>=0.5?'On':'Off';
+ case 'output':return (v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+' dB';case 'preSync':case 'rev':return v>=0.5?'On':'Off';
  case 'xover':case 'locut':return Math.round(v)+' Hz';case 'hicut':return (v/1000).toFixed(1)+' kHz';
  case 'width':return Math.round(v)+'%';case 'duck':return v>0?Math.round(v)+'%':'Off';case 'mono':return v>0?Math.round(v)+' Hz':'Off';
  case 'living':return v>0?Math.round(v)+'%':'Off';case 'move':return v>0?Math.round(v)+'%':'Still';
- case 'moveRate':return (v<1?v.toFixed(2):v.toFixed(1))+' Hz';}}
+ case 'moveRate':return (v<1?v.toFixed(2):v.toFixed(1))+' Hz';case 'gate':case 'attack':return v>0?Math.round(v)+' ms':'Off';}}
 function to01(k,v){var p=P[k];return p.log?Math.log(v/p.min)/Math.log(p.max/p.min):(v-p.min)/(p.max-p.min);}
 function from01(k,n){var p=P[k];n=clamp(n,0,1);var v=p.log?p.min*Math.pow(p.max/p.min,n):p.min+n*(p.max-p.min);return Math.round(v/p.st)*p.st;}
 function setParam(s,k,v){var p=P[k];v=clamp(Math.round(v/p.st)*p.st,p.min,p.max);
@@ -263,7 +267,7 @@ function meterPct(v){return clamp(1+v/60,0,1)*100;}
 function meters(){var i=Math.max(st.inL,st.inR),o=Math.max(st.outL,st.outR);return '<div class="mm">In<span class="bar"><i data-m="in" style="width:'+meterPct(i).toFixed(0)+'%"></i></span><em data-mt="in">'+dbText(i)+'</em></div><div class="mm">Out<span class="bar"><i data-m="out" style="width:'+meterPct(o).toFixed(0)+'%"></i></span><em data-mt="out">'+dbText(o)+'</em></div>';}
 function menuHTML(s){return '<div class="menu" role="menu"><div class="mh"><span>'+(LIBRARY.length?'Recorded':'Spaces')+'</span><span>RT60, volume</span></div>'+SPACES.map(function(sp,i){return (LIBRARY.length&&i===LIBRARY.length?'<div class="mh"><span>Modelled</span></div>':'')+'<button role="menuitem" data-act="pick" data-v="'+i+'" aria-current="'+(i===s.sp)+'"><span>'+esc(sp.name)+'</span><small>'+f1(decayOf(sp.bands))+' s, '+vol(sp)+'</small></button>';}).join('')+'<button role="menuitem" class="mload" data-act="loadir"><span>Load your own IR\u2026</span><small>WAV, AIFF, FLAC</small></button><button role="menuitem" class="mcap" data-act="capture"><span>Capture a space\u2026</span><small>Sweep and record</small></button>'+(LIBRARY.length?'<button role="menuitem" class="mcred" data-act="credits"><span>Recording credits\u2026</span><small>'+LIBRARY.length+' recorded</small></button>':'')+(s.licence&&s.licence.state==='beta'?'':'<button role="menuitem" class="mlic" data-act="licence"><span>Licence\u2026</span><small>'+(s.licence&&s.licence.state==='licensed'?'Activated':s.licence&&s.licence.state==='ended'?'Trial ended':'Trial')+'</small></button>')+'</div>';}
 function advRows(s){
- var deepRow=function(k){if(k==='preSync')return '<div class="row"><span>'+P[k].l+'</span><button class="tg" data-act="toggle" data-k="preSync" aria-pressed="'+(s.preSync>=0.5)+'">'+fmt(s,k)+'</button></div>';return '<div class="row"><span>'+P[k].l+'</span>'+roEl(s,k)+'</div>';};
+ var deepRow=function(k){if(TOGGLES.indexOf(k)>=0)return '<div class="row"><span>'+P[k].l+'</span><button class="tg" data-act="toggle" data-k="'+k+'" aria-pressed="'+(s[k]>=0.5)+'">'+fmt(s,k)+'</button></div>';return '<div class="row"><span>'+P[k].l+'</span>'+roEl(s,k)+'</div>';};
  return '<div class="ph"><span class="lbl">All parameters</span><span class="ph-r"><button data-act="skins" aria-expanded="'+s.skins+'">Look: '+esc(skinOf(s.skin).name)+'</button><button data-act="adv" aria-label="Close all parameters">Close</button></span></div>'+MAIN.map(function(k){return '<div class="row"><span>'+P[k].l+'</span>'+roEl(s,k)+'</div>';}).join('')+DEEP.map(deepRow).join('')+'<div class="row"><span>Early pattern</span><em>As captured</em></div>';}
 function prevNext(s){return '<button class="ib" data-act="prev" aria-label="Previous space">'+ICON.prev+'</button><button class="ib" data-act="next" aria-label="Next space">'+ICON.next+'</button>';}
 

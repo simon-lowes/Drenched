@@ -27,6 +27,12 @@ struct ImpulseResponseRequest
     float earlyLatePercent = 55.0f;        // 0 = all early, 100 = all late
     float livingPercent = 0.0f;            // 0 = the recorded tail, 100 = the living tail
 
+    // How the response is played (see applyEnvelope()). These shape any
+    // response, bundled or loaded.
+    bool reverse = false;                  // play the response backwards
+    float gateMs = 0.0f;                   // cut the response after this long, 0 = off
+    float attackMs = 0.0f;                 // fade the response in over this long
+
     // A loaded impulse response to play instead of the bundled space. Size,
     // distance and listener position only shape synthesised spaces.
     std::shared_ptr<const RecordedResponse> recorded {};

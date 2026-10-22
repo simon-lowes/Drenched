@@ -30,6 +30,9 @@ namespace ParamIDs
     inline constexpr auto living = "living";
     inline constexpr auto movement = "movement";
     inline constexpr auto movementRate = "movementRate";
+    inline constexpr auto reverse = "reverse";
+    inline constexpr auto gate = "gate";
+    inline constexpr auto attack = "attack";
 
     inline constexpr std::array<const char*, 8> decay { "decay63",  "decay125", "decay250", "decay500",
                                                         "decay1k",  "decay2k",  "decay4k",  "decay8k" };
@@ -47,7 +50,7 @@ namespace ParamIDs
             for (auto* id : decay)
                 list.add (id);
 
-            list.addArray ({ living, movement, movementRate });
+            list.addArray ({ living, movement, movementRate, reverse, gate, attack });
 
             return list;
         }();
@@ -146,6 +149,20 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
                                          NormalisableRange<float> (0.0f, 100.0f, 1.0f), 20.0f, percent));
     layout.add (std::make_unique<Float> (ParameterID { ParamIDs::movementRate, 1 }, "Movement rate",
                                          logRange (0.05f, 5.0f, 0.01f), 0.7f, hertz));
+
+    // How the response plays: backwards, cut short, or fading in. 0 ms is off.
+    const auto skewed = [] (float hi, float centre)
+    {
+        NormalisableRange<float> range (0.0f, hi, 1.0f);
+        range.setSkewForCentre (centre);
+        return range;
+    };
+
+    layout.add (std::make_unique<Bool> (ParameterID { ParamIDs::reverse, 1 }, "Reverse", false));
+    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::gate, 1 }, "Gate",
+                                         skewed (2000.0f, 250.0f), 0.0f, millis));
+    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::attack, 1 }, "Attack",
+                                         skewed (500.0f, 60.0f), 0.0f, millis));
 
     return layout;
 }

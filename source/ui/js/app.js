@@ -10,7 +10,7 @@ var JUCE=(window.__JUCE__&&window.__JUCE__.backend)?window.__JUCE__.backend:null
 /* ---- parameters: UI keys on the left, plugin parameter ids on the right ---- */
 var PID={mix:'mix',pre:'predelay',size:'size',bright:'brightness',el:'earlyLate',dist:'distance',output:'output',freeze:'freeze',
          preSync:'predelaySync',xover:'crossover',locut:'wetLowCut',hicut:'wetHighCut',width:'width',duck:'ducking',mono:'monoBelow',
-         living:'living',move:'movement',moveRate:'movementRate'};
+         living:'living',move:'movement',moveRate:'movementRate',rev:'reverse',gate:'gate',attack:'attack'};
 var BAND_ID=['decay63','decay125','decay250','decay500','decay1k','decay2k','decay4k','decay8k'];
 function keyOf(id){for(var k in PID)if(PID[k]===id)return k;return null;}
 function paramValues(s){var o={};for(var k in PID)o[PID[k]]=k==='freeze'?(s.freeze?1:0):s[k];s.bands.forEach(function(b,i){o[BAND_ID[i]]=b;});return o;}
@@ -170,7 +170,7 @@ live.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,Arrow
   if(e.key==='ArrowUp'||e.key==='ArrowDown'){st.bands[i]=clamp(Math.round((st.bands[i]+(e.key==='ArrowUp'?1:-1)*(e.shiftKey?0.01:0.1))*100)/100,0.1,20);st.lastBand=i;st.hint='decay';st.note=null;e.preventDefault();schedule();}}
  else if(t.matches('[data-drag]')){if(e.key==='ArrowUp'||e.key==='ArrowDown')st.dist=clamp(st.dist+(e.key==='ArrowDown'?2:-2),0,100);else if(e.key==='ArrowLeft'||e.key==='ArrowRight')st.lx=clamp(st.lx+(e.key==='ArrowRight'?0.03:-0.03),0.06,0.94);else return;st.hint='dist';st.note=null;e.preventDefault();schedule();}});
 live.addEventListener('change',function(e){var t=e.target;if(!t.matches('input[data-type]'))return;var ty=t.getAttribute('data-type'),raw=t.value.replace(/\u2212/g,'-'),nums=raw.match(/-?\d+(\.\d+)?/g);
- if(!nums){renderLive();return;}var v=parseFloat(nums[nums.length-1]);
+ if(!nums){if(/off/i.test(raw)&&P[ty]&&P[ty].min===0)setParam(st,ty,0);st.note=null;renderLive();sync();return;}var v=parseFloat(nums[nums.length-1]);
  if(ty==='band'){var i=+t.getAttribute('data-i');st.bands[i]=clamp(v,0.1,20);st.lastBand=i;st.hint='decay';}
  else if(ty==='dist'){st.dist=Math.round(distFromM(st,v));st.hint='dist';}
  else if(ty==='hicut'&&/k/i.test(raw)){setParam(st,ty,v*1000);}

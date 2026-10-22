@@ -39,6 +39,9 @@ DrenchedProcessor::DrenchedProcessor()
     params.living = raw (ParamIDs::living);
     params.movement = raw (ParamIDs::movement);
     params.movementRate = raw (ParamIDs::movementRate);
+    params.reverse = raw (ParamIDs::reverse);
+    params.gate = raw (ParamIDs::gate);
+    params.attack = raw (ParamIDs::attack);
 
     // A new instance opens on the first recorded space, with the graph on its measured decay.
     if (const auto& recordings = library::spaces(); ! recordings.empty())
@@ -136,6 +139,9 @@ std::optional<ImpulseResponseRequest> DrenchedProcessor::currentRequest (double 
     request.distancePercent = params.distance->load();
     request.earlyLatePercent = params.earlyLate->load();
     request.livingPercent = params.living->load();
+    request.reverse = params.reverse->load() >= 0.5f;
+    request.gateMs = params.gate->load();
+    request.attackMs = params.attack->load();
 
     for (size_t band = 0; band < params.decay.size(); ++band)
         request.decaySeconds[band] = params.decay[band]->load();
