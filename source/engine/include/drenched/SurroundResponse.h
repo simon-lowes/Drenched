@@ -40,6 +40,24 @@ struct SpatialResponseSet
 SpatialResponseSet spreadResponses (const ImpulseResponseSet& stereo, const SpeakerLayout& outputs,
                                     double mixingTimeSeconds);
 
+/** Plays a surround recording's own channels on an output layout.
+
+    `channels` are the recording's speaker responses (already shaped like the
+    stereo response, at its rate), `recorded` says where each was captured.
+    An output speaker within 20 degrees of a captured one plays it. A captured
+    channel no output speaker is near (heights on a 5.1 system, say) joins the
+    nearest one. An output speaker with nothing captured near it (heights the
+    recording lacks) gets what spreadResponses() would give it from `stereo`,
+    the recording's fold-down. LFE outputs stay silent.
+
+    The recording is one source, so both inputs feed every speaker; cross-feed
+    below 100 % turns each input down in the speakers on the other side, its
+    own speakers making up the level. The total energy matches `stereo`, as
+    spreadResponses() does. Allocates; run it off the audio thread. */
+SpatialResponseSet placeSpeakerResponses (const std::vector<std::vector<float>>& channels, const SpeakerLayout& recorded,
+                                          const ImpulseResponseSet& stereo, const SpeakerLayout& outputs,
+                                          double mixingTimeSeconds, float crossFeedPercent);
+
 /** Where reflections blur into a diffuse tail, for a request: measured for a
     loaded response, estimated from the volume for a bundled space. */
 double mixingTimeSeconds (const ImpulseResponseRequest& request) noexcept;

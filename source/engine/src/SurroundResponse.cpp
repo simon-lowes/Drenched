@@ -216,6 +216,161 @@ SpatialResponseSet spreadResponses (const ImpulseResponseSet& stereo, const Spea
     return out;
 }
 
+SpatialResponseSet placeSpeakerResponses (const std::vector<std::vector<float>>& channels, const SpeakerLayout& recorded,
+                                          const ImpulseResponseSet& stereo, const SpeakerLayout& outputs,
+                                          double mixingTime, float crossFeedPercent)
+{
+    constexpr double nearDegrees = 20.0;
+    const auto count = std::min (channels.size(), recorded.size());
+
+    const auto directionOf = [] (const Speaker& s)
+    {
+        constexpr auto radians = std::numbers::pi / 180.0;
+        const auto az = s.azimuth * radians, el = s.elevation * radians;
+        return std::array<double, 3> { std::sin (az) * std::cos (el), std::cos (az) * std::cos (el), std::sin (el) };
+    };
+
+    const auto degreesBetween = [&] (const Speaker& a, const Speaker& b)
+    {
+        const auto u = directionOf (a), v = directionOf (b);
+        const auto dot = std::clamp (u[0] * v[0] + u[1] * v[1] + u[2] * v[2], -1.0, 1.0);
+        return std::acos (dot) * 180.0 / std::numbers::pi;
+    };
+
+    // Which captured channels each output speaker plays.
+    std::vector<std::vector<std::size_t>> plays (outputs.size());
+    std::vector<bool> used (count, false);
+
+    for (std::size_t k = 0; k < outputs.size(); ++k)
+    {
+        if (outputs[k].lfe)
+            continue;
+
+        auto best = count;
+
+        for (std::size_t c = 0; c < count; ++c)
+            if (! recorded[c].lfe && degreesBetween (outputs[k], recorded[c]) <= nearDegrees
+                && (best == count || degreesBetween (outputs[k], recorded[c]) < degreesBetween (outputs[k], recorded[best])))
+                best = c;
+
+        if (best < count)
+        {
+            plays[k].push_back (best);
+            used[best] = true;
+        }
+    }
+
+    for (std::size_t c = 0; c < count; ++c)
+    {
+        if (used[c] || recorded[c].lfe)
+            continue;
+
+        auto nearest = outputs.size();
+
+        for (std::size_t k = 0; k < outputs.size(); ++k)
+            if (! outputs[k].lfe && (nearest == outputs.size() || degreesBetween (outputs[k], recorded[c]) < degreesBetween (outputs[nearest], recorded[c])))
+                nearest = k;
+
+        if (nearest < outputs.size())
+            plays[nearest].push_back (c);
+    }
+
+    bool missing = false;
+
+    for (std::size_t k = 0; k < outputs.size(); ++k)
+        missing = missing || (! outputs[k].lfe && plays[k].empty());
+
+    SpatialResponseSet spread;
+
+    if (missing)
+        spread = spreadResponses (stereo, outputs, mixingTime);
+
+    SpatialResponseSet out;
+    out.sampleRate = stereo.sampleRate;
+    auto length = stereo.length();
+
+    for (const auto& c : channels)
+        length = std::max (length, c.size());
+
+    if (missing)
+        length = std::max (length, spread.length());
+
+    for (std::size_t k = 0; k < outputs.size(); ++k)
+    {
+        std::vector<float> path (length, 0.0f);
+
+        if (! outputs[k].lfe && plays[k].empty())
+        {
+            // Both sources share the speaker's fill-in: the recording is one source.
+            const auto& a = spread.paths[0][k];
+            const auto& b = spread.paths[1][k];
+
+            for (std::size_t n = 0; n < std::min (a.size(), b.size()); ++n)
+                path[n] = std::numbers::sqrt2_v<float> / 2.0f * (a[n] + b[n]);
+        }
+
+        for (const auto c : plays[k])
+            for (std::size_t n = 0; n < channels[c].size(); ++n)
+                path[n] += channels[c][n];
+
+        out.paths[0].push_back (path);
+        out.paths[1].push_back (std::move (path));
+    }
+
+    // Cross-feed: each input quieter on the other side, louder on its own, so
+    // its total stays the same.
+    const auto feed = std::clamp (crossFeedPercent, 0.0f, 100.0f) / 100.0f;
+
+    if (feed < 1.0f)
+    {
+        for (std::size_t s = 0; s < 2; ++s)
+        {
+            double before = 0.0, after = 0.0;
+
+            for (std::size_t k = 0; k < outputs.size(); ++k)
+            {
+                const auto e = energyOf (out.paths[s][k]);
+                const auto across = s == 0 ? outputs[k].isRight() : outputs[k].isLeft();
+                before += e;
+                after += across ? e * feed * feed : e;
+            }
+
+            const auto makeUp = after > 0.0 ? static_cast<float> (std::sqrt (before / after)) : 1.0f;
+
+            for (std::size_t k = 0; k < outputs.size(); ++k)
+            {
+                const auto across = s == 0 ? outputs[k].isRight() : outputs[k].isLeft();
+                const auto g = makeUp * (across ? feed : 1.0f);
+
+                for (auto& v : out.paths[s][k])
+                    v *= g;
+            }
+        }
+    }
+
+    // Same overall level as the stereo response.
+    double total = 0.0, reference = 0.0;
+
+    for (const auto& source : out.paths)
+        for (const auto& p : source)
+            total += energyOf (p);
+
+    for (const auto& p : stereo.paths)
+        reference += energyOf (p);
+
+    if (total > 0.0 && reference > 0.0)
+    {
+        const auto g = static_cast<float> (std::sqrt (reference / total));
+
+        for (auto& source : out.paths)
+            for (auto& p : source)
+                for (auto& v : p)
+                    v *= g;
+    }
+
+    return out;
+}
+
 double mixingTimeSeconds (const ImpulseResponseRequest& request) noexcept
 {
     if (request.recorded != nullptr)
