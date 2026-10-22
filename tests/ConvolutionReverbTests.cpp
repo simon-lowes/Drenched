@@ -267,6 +267,30 @@ TEST_CASE ("Ducking lowers the wet signal while the input is loud", "[reverb]")
     REQUIRE (wetLevelWith (1.0f) < 0.1 * wetLevelWith (0.0f));
 }
 
+TEST_CASE ("The wet EQ shapes the reverberation and never the dry sound", "[reverb][eq]")
+{
+    const auto render = [] (float mix, float highShelfDb)
+    {
+        ConvolutionReverb reverb;
+        reverb.prepare (48000.0);
+        reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (48000.0))));
+
+        auto l = testing::noise (24000, 11), r = testing::noise (24000, 12);
+        ReverbControls c;
+        c.mix = mix;
+        c.highCutHz = 20000.0f;
+        c.eq[5].gainDb = highShelfDb;
+        run (reverb, l, r, c);
+        return l;
+    };
+
+    const auto flat = render (1.0f, 0.0f), cut = render (1.0f, -12.0f);
+    const auto band = [] (const std::vector<float>& x) { return energy (octaveBand (x, 48000.0, 16000.0), 12000); };
+    REQUIRE (band (cut) < 0.1 * band (flat));
+
+    REQUIRE (render (0.0f, -12.0f) == render (0.0f, 0.0f));
+}
+
 TEST_CASE ("The audio path never allocates, including kernel swaps", "[reverb][realtime]")
 {
     ConvolutionReverb reverb;
@@ -295,6 +319,7 @@ TEST_CASE ("The audio path never allocates, including kernel swaps", "[reverb][r
     for (std::size_t pos = 512; pos + 517 <= l.size(); pos += 517)
     {
         c.predelayMs = pos > 20000 ? 40.0f : 20.0f;
+        c.eq[2].gainDb = pos > 30000 ? -4.0f : 0.0f;
         reverb.process (l.data() + pos, r.data() + pos, 517, c);
     }
 
