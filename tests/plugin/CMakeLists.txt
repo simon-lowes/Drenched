@@ -13,4 +13,5 @@ target_compile_definitions(drenched_plugin_tests PRIVATE
     $<TARGET_PROPERTY:Drenched,COMPILE_DEFINITIONS>
     DRENCHED_SESSIONS_DIR="${PROJECT_SOURCE_DIR}/tests/sessions")
 
-catch_discover_tests(drenched_plugin_tests)
+# A hang (for example waiting on a message loop) fails in two minutes, not CTest's 25.
+catch_discover_tests(drenched_plugin_tests PROPERTIES TIMEOUT 120)

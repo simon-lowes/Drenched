@@ -2,22 +2,11 @@
 
 #include <catch2/catch_session.hpp>
 
-#include <thread>
-
-/** The plugin expects a message thread, so the tests run on a second thread while this
-    one dispatches messages, the way a host runs. */
+/** The tests run on the message thread, as a host calls a plugin's state and setup
+    functions. Waiting on a dispatch loop from another thread hangs on macOS, where the
+    loop needs a full application, and nothing here needs one. */
 int main (int argc, char* argv[])
 {
     juce::ScopedJuceInitialiser_GUI juce;
-    auto result = 0;
-
-    std::thread tests ([&]
-    {
-        result = Catch::Session().run (argc, argv);
-        juce::MessageManager::getInstance()->stopDispatchLoop();
-    });
-
-    juce::MessageManager::getInstance()->runDispatchLoop();
-    tests.join();
-    return result;
+    return Catch::Session().run (argc, argv);
 }

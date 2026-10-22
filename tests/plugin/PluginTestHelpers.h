@@ -10,10 +10,14 @@
 
 namespace testing
 {
-    /** Runs fn on the message thread and waits for its result. */
+    /** Runs fn on the message thread and waits for its result. The tests themselves run
+        on the message thread (see Main.cpp), so this normally just calls it. */
     template <typename Fn>
     auto onMessageThread (Fn fn)
     {
+        if (juce::MessageManager::existsAndIsCurrentThread())
+            return fn();
+
         using Result = decltype (fn());
         juce::WaitableEvent done;
         std::optional<std::conditional_t<std::is_void_v<Result>, int, Result>> result;
