@@ -214,8 +214,8 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .an-strip .hint{flex:1}
 .s-anodised .seg{background:#121314;border-color:#2E3034}.s-anodised .seg button[aria-pressed="true"]{background:#2A2C30;color:#FFB547}
 .s-anodised .menu{left:190px;top:58px}
-.s-anodised .adv{position:absolute;left:28px;right:28px;top:492px;height:224px;background:#121314;border:1px solid #2E3034;border-radius:6px;padding:12px 18px;display:grid;grid-template-columns:repeat(4,1fr);gap:0 28px;align-content:start}
-.s-anodised .adv .row{height:24px}
+.s-anodised .adv{position:absolute;left:28px;right:28px;top:492px;height:224px;background:#121314;border:1px solid #2E3034;border-radius:6px;padding:12px 18px;display:grid;grid-template-columns:repeat(4,1fr);gap:0 28px;align-content:start;overflow-y:auto}
+.s-anodised .adv .row{height:22px}
 .adv .row{display:flex;justify-content:space-between;align-items:center;height:26px;font-size:12px;border-bottom:1px solid var(--ln)}
 .adv .row span{color:var(--tx2)}.adv .row .ro{height:22px;width:96px;text-align:right}.adv .row em{font:normal 12px var(--fnum);color:var(--num);padding-right:5px}
 .adv .ph{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
@@ -267,7 +267,7 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .se-strip .hint{flex:1;font:11px var(--fnum)}
 .s-section .menu{left:120px;top:64px}
 .s-section .adv{position:absolute;left:716px;top:76px;width:454px;height:620px;background:var(--g);border:1px solid var(--line);padding:12px 14px;display:flex;flex-direction:column;gap:0;z-index:2;overflow-y:auto}
-.s-section .adv .row{height:21px;flex:none}
+.s-section .adv .row{height:19px;flex:none}
 .pl-g1{stroke:var(--grid);stroke-width:.5}.pl-g2{stroke:var(--grid);stroke-width:1}
 .pl-w{fill:none;stroke:var(--line);stroke-width:1.5}.pl-w2{fill:none;stroke:var(--line);stroke-width:.75}.pl-f{fill:none;stroke:var(--line);stroke-width:.75;opacity:.75}.pl-fl{fill:var(--line);opacity:.7}
 .pl-ring{fill:none;stroke:var(--line);stroke-width:.75}.pl-ray{fill:none;stroke:var(--line);stroke-width:1;stroke-dasharray:3 3}.pl-dir{fill:none;stroke:var(--tx);stroke-width:1.25}
@@ -350,7 +350,7 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .s-field .seg{background:rgba(7,8,11,.6);border-color:rgba(255,255,255,.14)}
 .s-field .menu{left:60px;top:150px}
 .s-field .adv{position:absolute;right:28px;top:28px;bottom:28px;width:420px;overflow-y:auto;background:#0E1014;border:1px solid rgba(255,255,255,.14);padding:12px 14px;display:flex;flex-direction:column;z-index:3}
-.s-field .adv .row{height:24px;flex:none}
+.s-field .adv .row{height:22px;flex:none}
 
 /* ========== 5 Vitrine: the photograph ========== */
 .s-vitrine{--g:#121316;--p:#17191D;--r:#24272C;--ln:#2E3238;--tx:#EEF1F2;--tx2:#9AA3A8;--ac:#8FD3C8;--ac2:#8FD3C8;--onac:#0B1F1C;--warn:#FF6B5E;--focus:#CFF2EC;--num:#EEF1F2;--mtr:#8FD3C8;
@@ -392,7 +392,7 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .vi-strip .hint{flex:1;color:#B9C2C6;text-shadow:0 1px 8px rgba(0,0,0,.7)}
 .s-vitrine .menu{left:36px;top:222px}
 .s-vitrine .adv{position:absolute;right:28px;top:84px;bottom:28px;width:376px;border-radius:22px;background:#15171A;padding:18px 22px;display:flex;flex-direction:column;z-index:3;overflow-y:auto}
-.s-vitrine .adv .row{height:21px;flex:none}
+.s-vitrine .adv .row{height:20px;flex:none}
 
 /* ========== 6 Signal: the poster grid ========== */
 .s-signal{--g:#ECECE8;--p:#E1E1DC;--r:#D3D3CE;--ln:#C4C4BF;--tx:#111111;--tx2:#5E5E5A;--ac:#2448E0;--ac2:#2448E0;--wet:#C6F432;--onac:#FFFFFF;--warn:#D9302B;--focus:#111111;--num:#111111;--mtr:#111111;
@@ -438,7 +438,7 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .s-signal .mt .tr{border-radius:0}.s-signal .mt .tr i{background:repeating-linear-gradient(to top,var(--tx) 0 4px,transparent 4px 6px)}
 .s-signal .menu{left:40px;top:100px}
 .s-signal .adv{position:absolute;left:876px;right:40px;top:56px;height:660px;background:var(--p);border:1px solid var(--tx);padding:12px 14px;display:flex;flex-direction:column;z-index:2;overflow-y:auto}
-.s-signal .adv .row{height:22px;flex:none}
+.s-signal .adv .row{height:20px;flex:none}
 .s-signal .stg-top .seg{border-radius:0}
 
 /* ========== 7 Aperture: the light ========== */
@@ -477,8 +477,8 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .ap-strip{position:absolute;left:40px;right:40px;bottom:12px;height:22px;display:flex;align-items:center;gap:16px}
 .ap-strip .hint{flex:1;color:#B5B0A6}
 .s-aperture .menu{left:40px;top:196px}
-.s-aperture .adv{position:absolute;left:40px;right:40px;top:512px;height:198px;background:rgba(10,10,11,.92);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 20px;display:grid;grid-template-columns:repeat(4,1fr);gap:0 28px;align-content:start;z-index:3}
-.s-aperture .adv .row{height:22px}.s-aperture .adv .row .ro{font-size:13px;height:20px}
+.s-aperture .adv{position:absolute;left:40px;right:40px;top:504px;height:206px;background:rgba(10,10,11,.92);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 20px;display:grid;grid-template-columns:repeat(4,1fr);gap:0 28px;align-content:start;z-index:3;overflow-y:auto}
+.s-aperture .adv .row{height:20px}.s-aperture .adv .row .ro{font-size:13px;height:20px}
 
 /* ========== 8 Contact: the print ========== */
 .s-contact{--g:#F4F2ED;--p:#FFFFFF;--r:#E9E6DF;--ln:#D3CFC6;--tx:#1B1A18;--tx2:#6E6A62;--ac:#7A2E2A;--ac2:#1B1A18;--onac:#fff;--warn:#B3261E;--focus:#1B1A18;--num:#1B1A18;--mtr:#1B1A18;
@@ -518,7 +518,7 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .co-strip .hint{flex:1;font:11px var(--fnum)}
 .s-contact .menu{left:48px;top:60px}
 .s-contact .adv{position:absolute;left:644px;right:48px;top:68px;height:644px;background:var(--p);border:1px solid var(--ln);padding:14px 16px;display:flex;flex-direction:column;z-index:2;overflow-y:auto}
-.s-contact .adv .row{height:22px;flex:none}
+.s-contact .adv .row{height:20px;flex:none}
 
 /* ========== 9 Strata: the landscape ========== */
 .s-strata{--g:#111613;--p:#181F1A;--r:#222B25;--ln:#2F3A33;--tx:#EFEBE1;--tx2:#9FA99F;--ac:#DDB868;--ac2:#DDB868;--onac:#1A1406;--warn:#FF6B5E;--focus:#FFFFFF;--num:#EFEBE1;--mtr:#DDB868;
@@ -554,8 +554,8 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .st-strip{position:absolute;left:470px;right:40px;bottom:14px;height:20px;display:flex;align-items:center;gap:16px}
 .st-strip .hint{flex:1}
 .s-strata .menu{left:470px;top:60px}
-.s-strata .adv{position:absolute;left:470px;right:40px;top:492px;height:222px;background:var(--p);border:1px solid var(--ln);border-radius:10px;padding:8px 16px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 24px;align-content:start;z-index:2}
-.s-strata .adv .row{height:19px;font-size:11px}
+.s-strata .adv{position:absolute;left:470px;right:40px;top:492px;height:222px;background:var(--p);border:1px solid var(--ln);border-radius:10px;padding:8px 16px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 24px;align-content:start;z-index:2;overflow-y:auto}
+.s-strata .adv .row{height:18px;font-size:11px}
 
 /* ========== 10 Rotunda: the round ========== */
 .s-rotunda{--g:#0D1016;--p:#141924;--r:#1C2230;--ln:#2A3242;--tx:#E9ECF4;--tx2:#8F98AB;--ac:#C3B1FF;--ac2:#C3B1FF;--onac:#160F33;--warn:#FF6B6B;--focus:#FFFFFF;--num:#FFFFFF;--mtr:#C3B1FF;
@@ -595,7 +595,7 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .s-rotunda .seg{border-radius:999px}.s-rotunda .seg button{border-radius:999px}
 .s-rotunda .menu{left:700px;top:170px}
 .s-rotunda .adv{position:absolute;left:700px;right:40px;top:70px;height:620px;background:var(--p);border:1px solid var(--ln);border-radius:16px;padding:16px 18px;display:flex;flex-direction:column;z-index:2;overflow-y:auto}
-.s-rotunda .adv .row{height:21px;flex:none}.s-rotunda .adv .row .ro{height:18px}
+.s-rotunda .adv .row{height:19px;flex:none}.s-rotunda .adv .row .ro{height:18px}
 
 /* ========== 11 Material: the surface ========== */
 .s-material{--g:#2A1F17;--p:#33271E;--r:#3F3128;--ln:#574538;--tx:#F3E9DB;--tx2:#B9A48F;--ac:#E0A458;--ac2:#E0A458;--onac:#1C120A;--warn:#FF6B5E;--focus:#FFFFFF;--num:#F3E9DB;--mtr:#E0A458;
@@ -636,7 +636,7 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .ma-strip .hint{flex:1}
 .s-material .seg{background:rgba(0,0,0,.2);border-color:rgba(255,255,255,.12)}
 .s-material .menu{left:40px;top:160px}
-.s-material .adv{position:absolute;left:40px;right:40px;top:538px;height:172px;background:var(--p);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:6px 16px;display:grid;grid-template-columns:repeat(4,1fr);gap:0 24px;align-content:start;z-index:2}
+.s-material .adv{position:absolute;left:40px;right:40px;top:518px;height:192px;overflow-y:auto;background:var(--p);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:6px 16px;display:grid;grid-template-columns:repeat(4,1fr);gap:0 24px;align-content:start;z-index:2}
 .s-material .adv .row{height:19px;font-size:11px}.s-material .adv .row .ro{height:20px;font-size:12px}
 
 /* ========== 12 Folio: the spread ========== */

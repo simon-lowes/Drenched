@@ -53,6 +53,8 @@ DrenchedProcessor::DrenchedProcessor()
     params.directColour = raw (ParamIDs::directColour);
     params.crossFeed = raw (ParamIDs::crossFeed);
     params.cloudSize = raw (ParamIDs::cloudSize);
+    params.listenerX = raw (ParamIDs::listenerX);
+    params.sourceX = raw (ParamIDs::sourceX);
     params.lowCpu = raw (ParamIDs::lowCpu);
 
     // A new instance opens on the first recorded space, with the graph on its measured decay.
@@ -115,8 +117,6 @@ void DrenchedProcessor::cacheUiState()
         loadLibrarySpace (id, false);
 
     spaceIndex.store (index);
-    listenerX.store (juce::jlimit (0.0f, 1.0f, static_cast<float> (static_cast<double> (ui.getProperty (UiIDs::listenerX, 0.5)))));
-
     const auto speakers = juce::StringArray::fromTokens (ui.getProperty (UiIDs::speakers, "").toString(), ";", "");
 
     for (size_t k = 0; k < maxChannels; ++k)
@@ -158,7 +158,8 @@ std::optional<ImpulseResponseRequest> DrenchedProcessor::currentRequest (double 
         request.outputs = outputSpeakers;
     }
 
-    request.listenerX = listenerX.load();
+    request.listenerX = params.listenerX->load() / 100.0f;
+    request.sourceX = params.sourceX->load() / 100.0f;
     request.sizePercent = params.size->load();
     request.distancePercent = params.distance->load();
     request.earlyLatePercent = params.earlyLate->load();
@@ -836,10 +837,27 @@ void DrenchedProcessor::getStateInformation (juce::MemoryBlock& destData)
 
 void DrenchedProcessor::migrateState (juce::ValueTree& session) const
 {
-    // Nothing to change yet: sessions without a version (the betas) mean the same as
-    // version 1. Parameters a session doesn't mention, because they came later, are
-    // set to their defaults by the value tree state, and every default is how the
-    // versions before it played (tests/plugin/SessionTests.cpp checks both).
+    // Sessions without a version (the betas) mean the same as version 1. Parameters a
+    // session doesn't mention, because they came later, are set to their defaults by
+    // the value tree state, and every default is how the versions before it played
+    // (tests/plugin/SessionTests.cpp checks both).
+    const auto version = static_cast<int> (session.getProperty (stateVersionID, 1));
+
+    // Version 2 made the listener's place across the room a parameter, so it can be
+    // automated; before, the interface kept it as a fraction of the width.
+    if (auto ui = session.getChildWithName (UiIDs::tree); version < 2 && ui.hasProperty (UiIDs::listenerX))
+    {
+        if (! session.getChildWithProperty ("id", ParamIDs::listenerX).isValid())
+        {
+            juce::ValueTree param ("PARAM");
+            param.setProperty ("id", ParamIDs::listenerX, nullptr);
+            param.setProperty ("value", juce::jlimit (0.0, 100.0, static_cast<double> (ui.getProperty (UiIDs::listenerX)) * 100.0), nullptr);
+            session.appendChild (param, nullptr);
+        }
+
+        ui.removeProperty (UiIDs::listenerX, nullptr);
+    }
+
     session.setProperty (stateVersionID, stateVersion, nullptr);
 }
 

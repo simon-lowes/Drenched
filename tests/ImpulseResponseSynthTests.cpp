@@ -160,3 +160,36 @@ TEST_CASE ("Listener distance matches the interface's metres", "[irsynth]")
     REQUIRE (std::abs (listenerDistanceMetres (0, 100.0f, 100.0f) - 35.7f) < 1.0e-3f);
     REQUIRE (std::abs (listenerDistanceMetres (0, 100.0f, 40.0f) - 15.18f) < 1.0e-2f);
 }
+
+TEST_CASE ("Moving the source across the stage moves its direct sound and early reflections", "[irsynth]")
+{
+    // Early energy reaching each ear, from both sources, in the first 20 ms.
+    auto leftOverRight = [] (float sourceX)
+    {
+        auto request = requestFor (0);
+        request.sourceX = sourceX;
+        const auto ir = synthesiseImpulseResponse (request);
+        const auto early = static_cast<std::size_t> (0.02 * request.sampleRate);
+        const auto left = energy (ir.paths[ImpulseResponseSet::leftToLeft], 0, early) + energy (ir.paths[ImpulseResponseSet::rightToLeft], 0, early);
+        const auto right = energy (ir.paths[ImpulseResponseSet::leftToRight], 0, early) + energy (ir.paths[ImpulseResponseSet::rightToRight], 0, early);
+        return 10.0 * std::log10 (left / right);
+    };
+
+    const auto toLeft = leftOverRight (0.15f), centre = leftOverRight (0.5f), toRight = leftOverRight (0.85f);
+    INFO ("left over right: " << toLeft << " dB to the left, " << centre << " dB centred, " << toRight << " dB to the right");
+    CHECK (std::abs (centre) < 0.5);
+    CHECK (toLeft > centre + 1.0);
+    CHECK (toRight < centre - 1.0);
+
+    // The centre is where earlier versions put the source.
+    auto request = requestFor (0);
+    const auto before = synthesiseImpulseResponse (request);
+    request.sourceX = 0.5f;
+    CHECK (synthesiseImpulseResponse (request).paths == before.paths);
+
+    // Pushed against a wall, the source stays inside the room.
+    request.sourceX = 0.0f;
+    const auto atWall = synthesiseImpulseResponse (request);
+    for (const auto& path : atWall.paths)
+        CHECK (std::all_of (path.begin(), path.end(), [] (float v) { return std::isfinite (v); }));
+}

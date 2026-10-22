@@ -44,14 +44,21 @@ namespace
         return block;
     }
 
-    /** The PARAM values written in a session. */
+    /** The PARAM values written in a session, plus settings older versions kept
+        elsewhere that are parameters now (see DrenchedProcessor::migrateState()). */
     std::map<juce::String, float> savedValues (const juce::MemoryBlock& session)
     {
         std::map<juce::String, float> values;
 
         if (auto xml = juce::AudioProcessor::getXmlFromBinary (session.getData(), static_cast<int> (session.getSize())))
+        {
             for (auto* param : xml->getChildWithTagNameIterator ("PARAM"))
                 values[param->getStringAttribute ("id")] = static_cast<float> (param->getDoubleAttribute ("value"));
+
+            // Before version 2 the listener's place across the room was interface state.
+            if (auto* ui = xml->getChildByName ("ui"); ui != nullptr && ui->hasAttribute ("lx") && values.count ("listenerX") == 0)
+                values["listenerX"] = static_cast<float> (ui->getDoubleAttribute ("lx") * 100.0);
+        }
 
         return values;
     }
@@ -222,7 +229,7 @@ TEST_CASE ("Sessions from every released version load with the same settings", "
             auto* param = dynamic_cast<juce::RangedAudioParameter*> (plugin->getState().getParameter (id));
             const auto wanted = saved.count (id) > 0 ? param->convertFrom0to1 (param->convertTo0to1 (saved.at (id)))
                                                      : param->convertFrom0to1 (param->getDefaultValue());
-            INFO (id << (saved.count (id) > 0 ? " (saved)" : " (added later)"));
+            INFO (id << (saved.count (id) > 0 ? " (saved)" : " (added later)") << ": " << value << ", wanted " << wanted);
             CHECK (std::abs (value - wanted) <= 1.0e-3f * std::max (1.0f, std::abs (wanted)));
         }
     }
