@@ -14,6 +14,11 @@
 namespace drenched
 {
 
+namespace
+{
+    const juce::Identifier stateVersionID { "version" };
+}
+
 DrenchedProcessor::DrenchedProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput ("Input", juce::AudioChannelSet::stereo(), true)
@@ -820,15 +825,33 @@ juce::AudioProcessorEditor* DrenchedProcessor::createEditor()
 
 void DrenchedProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    if (auto xml = state.copyState().createXml())
+    auto session = state.copyState();
+    session.setProperty (stateVersionID, stateVersion, nullptr);
+
+    if (auto xml = session.createXml())
         copyXmlToBinary (*xml, destData);
+}
+
+void DrenchedProcessor::migrateState (juce::ValueTree& session) const
+{
+    // Nothing to change yet: sessions without a version (the betas) mean the same as
+    // version 1. Parameters a session doesn't mention, because they came later, are
+    // set to their defaults by the value tree state, and every default is how the
+    // versions before it played (tests/plugin/SessionTests.cpp checks both).
+    session.setProperty (stateVersionID, stateVersion, nullptr);
 }
 
 void DrenchedProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
+    {
         if (xml->hasTagName (state.state.getType()))
-            state.replaceState (juce::ValueTree::fromXml (*xml));
+        {
+            auto session = juce::ValueTree::fromXml (*xml);
+            migrateState (session);
+            state.replaceState (session);
+        }
+    }
 
     restoreImpulseResponse();
     loadLibrarySpace (chosenSpaceId(), true);

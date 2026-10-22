@@ -53,6 +53,15 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    /** The version written into every saved session. Raise it when the meaning of
+        saved state changes, and teach migrateState() to bring older sessions up to it.
+        1: the first versioned sessions (0.1); sessions without a version are from the
+        betas before it and need nothing else. */
+    static constexpr int stateVersion = 1;
+
+    /** Brings a loaded session up to date before it replaces the current state. */
+    void migrateState (juce::ValueTree& session) const;
+
     juce::AudioProcessorValueTreeState& getState() noexcept { return state; }
 
     /** The interface's session state (space, locks, view, skin), kept inside the plugin state. */
