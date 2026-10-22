@@ -266,7 +266,7 @@ function segMode(s){return '<div class="seg" role="group" aria-label="View"><but
 function segAB(s){return '<div class="seg" role="group" aria-label="Compare"><button data-act="slot" data-v="A" aria-pressed="'+(s.slot==='A')+'" aria-label="Snapshot A">A</button><button data-act="slot" data-v="B" aria-pressed="'+(s.slot==='B')+'" aria-label="Snapshot B">B</button></div>';}
 function hintText(s){var t;if(s.note)t=s.note;else if(s.hint){var k=s.hint,ov=isOver(s,k),nv=natV(s,k);t='<b>'+P[k].l+' '+esc(fmt(s,k))+'</b>, '+(nv==null?'':ov?'captured '+esc(fmt(s,k,nv))+'. ':'as captured. ')+P[k].l+' '+P[k].help;}
  else t='Drag any control or a point on the graph. Click a value to type it. Shift gives fine steps, and the arrow keys work everywhere.';
- if(s.freeze)t='<b>Frozen.</b> The tail holds until you release Freeze. '+t;return '<div class="hint">'+t+'</div>'+licChip(s);}
+ if(s.freeze)t='<b>Frozen.</b> The tail holds until you release Freeze. '+t;return '<div class="hint" title="'+t.replace(/<[^>]*>/g,'').replace(/"/g,'&quot;')+'">'+t+'</div>'+licChip(s);}
 function days(n){return n+' day'+(n===1?'':'s');}
 /* the trial, in the strip beside the hint until Drenched is activated */
 function licChip(s){var L=s.licence;if(!L||L.state==='licensed')return '';
@@ -325,7 +325,7 @@ var COMPOSE={
    '<div class="ca-fig"><div class="fh"><b>Fig. 1</b><span>Decay time by frequency</span></div>'+decaySVG('catalogue',s,488,176,{m:[36,14,12,24]})+'<p class="fc">Solid line as set, dashed as captured. Drag a point to change one band.</p></div>'+
    '<div class="ca-list">'+MAIN.map(row).join('')+'</div>'+
    '<div class="ca-mix">'+knobEl(s,'mix',56,'catalogue')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div><div class="ca-acts"><button class="ca-link" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="ca-link" data-act="match">Match a room</button><button class="ca-link" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button></div></div></div>';
-  return '<div class="ca-photo">'+photoEl(s,620,760)+'<div class="ca-lic">'+licChip(s)+'</div></div>'+wall;},
+  return '<div class="ca-photo">'+photoEl(s,620,760)+(s.note?'<div class="ca-note" role="status">'+s.note+'</div>':'')+'<div class="ca-lic">'+licChip(s)+'</div></div>'+wall;},
 
  field:function(s){var sp=spOf(s),e=eqp(s.el);
   var fr=function(k,cls){return '<div class="fr '+(cls||'')+'">'+knobEl(s,k,cls?44:34,'field')+'<div class="t"><span>'+P[k].l+ovrEl(s,k)+(k==='mix'?lockBtn(s,'mix','Mix'):'')+'</span>'+roEl(s,k)+'</div></div>';};
@@ -404,7 +404,7 @@ var COMPOSE={
  folio:function(s){var sp=spOf(s),e=eqp(s.el),parts=sp.name.split(' '),last=parts.pop();
   var row=function(k){return '<div class="fo-row"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+lockBtn(s,k,P[k].l)+'</div>';};
   var page=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="fo-page"><div class="fo-col"><span class="hd">'+esc(sp.no)+'</span><p><b>'+esc(sp.place)+'.</b> '+esc(sp.mat)+', '+vol(sp)+'. Captured '+esc(sp.date)+' with '+esc(sp.rec.toLowerCase())+'.</p><div class="dl"><span>Listener</span><span>'+esc(fmt(s,'dist'))+' from the source</span><span>Early</span><span>'+e.e+' dB</span><span>Tail</span><span>'+e.t+' dB</span><span>Pre-delay</span><span>'+esc(fmt(s,'pre'))+'</span></div></div>'+
-   '<div class="fo-col fo-fig"><span class="hd">Fig. 1, decay time by frequency</span>'+decaySVG('folio',s,468,236,{m:[36,14,12,24]})+'<p class="fc">Solid as set, dashed as captured. Drag a point to change one band.</p></div>'+
+   '<div class="fo-col fo-fig"><span class="hd">Fig. 1, decay time by frequency</span>'+decaySVG('folio',s,468,236,{m:[48,14,12,24]})+'<p class="fc">Solid as set, dashed as captured. Drag a point to change one band.</p></div>'+
    '<div class="fo-col"><span class="hd">Settings</span>'+MAIN.map(row).join('')+'<div class="fo-mix">'+knobEl(s,'mix',44,'folio')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div><div class="fo-acts"><button class="fo-btn" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="fo-btn" data-act="match">Match a room</button><button class="fo-btn" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button></div></div></div></div>';
   return '<div class="fo-hero">'+photoEl(s,0,0,'position:absolute;inset:0')+'<div class="fo-top">'+wordmark(s,'fo-wm','Drenched')+segMode(s)+segAB(s)+'</div><div class="fo-title"><div><span class="kick">'+esc(sp.place)+'</span><h3>'+esc(parts.join(' '))+(parts.length?' ':'')+'<em>'+esc(last)+'</em></h3></div><div class="nav">'+prevNext(s)+'<button class="fo-link" data-act="browse" aria-expanded="'+s.browse+'">All spaces</button></div></div></div>'+page+
    '<div class="fo-foot"><span class="no">DRENCHED, '+esc(sp.no.toUpperCase())+'</span>'+hintText(s)+meters()+'</div>';}

@@ -15,6 +15,7 @@ namespace
     const juce::Identifier eventMeters { "meters" };
     const juce::Identifier eventCapture { "capture" };
     const juce::Identifier eventLicence { "licence" };
+    const juce::Identifier eventMatched { "matched" };
 
     juce::String mimeTypeFor (const juce::String& path)
     {
@@ -96,6 +97,7 @@ juce::WebBrowserComponent::Options DrenchedEditor::makeOptions()
         .withEventListener ("gesture", [this] (const juce::var& v) { onGesture (v); })
         .withEventListener ("ui",      [this] (const juce::var& v) { onUi (v); })
         .withEventListener ("loadIr",  [this] (const juce::var& v) { onLoadIr (v); })
+        .withEventListener ("match",   [this] (const juce::var& v) { onMatch (v); })
         .withEventListener ("startCapture",  [this] (const juce::var& v) { processor.startCapture (v); sendCaptureStatus(); })
         .withEventListener ("cancelCapture", [this] (const juce::var&) { processor.cancelCapture(); sendCaptureStatus(); })
         .withEventListener ("licenceOpen",       [this] (const juce::var&) { processor.getLicence().open(); })
@@ -323,6 +325,42 @@ void DrenchedEditor::onLoadIr (const juce::var&)
 
                               settings::saveIrFolder (file.getParentDirectory());
                               processor.loadImpulseResponseAsync (file);
+                          });
+}
+
+void DrenchedEditor::onMatch (const juce::var&)
+{
+    if (choosing)
+        return;
+
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+
+    choosing = true;
+    chooser = std::make_unique<juce::FileChooser> ("Match a room: choose a recording made in it", settings::loadMatchFolder(),
+                                                   formats.getWildcardForAllFormats());
+
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              const auto file = fc.getResult();
+                              choosing = false;
+
+                              if (file == juce::File())
+                                  return; // cancelled
+
+                              settings::saveMatchFolder (file.getParentDirectory());
+
+                              auto listening = std::make_unique<juce::DynamicObject>();
+                              listening->setProperty ("listening", true);
+                              listening->setProperty ("file", file.getFileName());
+                              web.emitEventIfBrowserIsVisible (eventMatched, juce::var (listening.release()));
+
+                              processor.matchRoomAsync (file, [editor = juce::Component::SafePointer<DrenchedEditor> (this)] (const juce::var& result)
+                              {
+                                  if (editor != nullptr)
+                                      editor->web.emitEventIfBrowserIsVisible (eventMatched, result);
+                              });
                           });
 }
 

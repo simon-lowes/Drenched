@@ -2,7 +2,8 @@
 # and sound the same in this one.
 add_executable(drenched_plugin_tests
     Main.cpp
-    SessionTests.cpp)
+    SessionTests.cpp
+    MatchTests.cpp)
 
 target_link_libraries(drenched_plugin_tests PRIVATE Drenched Catch2::Catch2)
 target_include_directories(drenched_plugin_tests PRIVATE

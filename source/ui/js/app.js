@@ -50,6 +50,19 @@ function onMeters(m){if(!m)return;st.inL=+m.inL;st.inR=+m.inR;st.outL=+m.outL;st
  var txt=live.querySelectorAll('[data-mt]');for(var b=0;b<txt.length;b++){var v2=map[txt[b].getAttribute('data-mt')];if(v2!=null)txt[b].textContent=dbText(v2);}
  if(Array.isArray(m.spk)){st.spkM=m.spk.map(Number);var sb=live.querySelectorAll('[data-spm]');for(var c=0;c<sb.length;c++){var sv=st.spkM[+sb[c].getAttribute('data-spm')];if(sv!=null)sb[c].style.width=meterPct(sv).toFixed(0)+'%';}}}
 
+/* ---- Match a room: the plugin listens to a recording and reports the decay it heard ---- */
+var BAND_NAMES=['63 Hz','125 Hz','250 Hz','500 Hz','1 kHz','2 kHz','4 kHz','8 kHz'];
+function onMatched(m){if(!m)return;st.hint=null;
+ if(m.listening)st.note='<b>Listening to '+esc(m.file||'the recording')+'</b> for the room\u2019s decay.';
+ else if(m.error)st.note='<b>No match.</b> '+esc(m.error);
+ else if(Array.isArray(m.bands)&&m.bands.length===8){var si=spaceIndex(String(m.spaceId||''));if(si>=0)changeSpace(si);
+  st.bands=m.bands.map(function(b){return clamp(+b||1,0.1,20);});
+  var missed=(m.heard||[]).map(function(n,i){return +n>0?null:BAND_NAMES[i];}).filter(Boolean);
+  st.note='<b>Matched'+(si>=0?' to '+esc(SPACES[si].name):'')+'.</b> '+st.bands[4].toFixed(1)+' s at 1 kHz, as heard in '+esc(m.file||'the recording')+'.'+
+   (missed.length?' '+missed.join(', ')+(missed.length>1?' are':' is')+' estimated.':' Drag a band to adjust.');}
+ else return;
+ renderLive();sync();syncUi();}
+
 /* ---- the skin picker ---- */
 function pickerHTML(){var ts=Object.assign({},st,{browse:false,adv:false,skins:false,hint:null,note:null,licence:{state:'licensed'}});
  var thumb=function(x){return screenHTML(x.id,ts).replace(/ data-fid="[^"]*"/g,'').replace(/tabindex="0"/g,'tabindex="-1"');};
@@ -216,7 +229,7 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'freeze':st.freeze=!st.freeze;st.hint=null;st.note=null;break;
   case 'toggle':var tk=b.getAttribute('data-k');st[tk]=st[tk]>=0.5?0:1;st.hint=tk;st.note=null;break;
   case 'adv':st.adv=!st.adv;st.hint=null;st.note=st.adv?'<b>All parameters</b> opens in place, so the space and graph stay in view.':null;break;
-  case 'match':st.hint=null;st.note='<b>Match a room</b> listens to a recording and suggests the closest space and settings. It arrives with the room model.';break;
+  case 'match':st.hint=null;if(JUCE){JUCE.emitEvent('match',{});st.note='<b>Match a room.</b> Choose a recording made in the room you want to match: a voice, a band or a drum kit, with pauses where the sound stops and the room rings on.';}else st.note='<b>Match a room</b> listens to a recording made in a room and sets the decay to match it.';break;
   case 'lock':var lk=b.getAttribute('data-k');st.locks[lk]=!st.locks[lk];st.hint=null;st.note=(st.locks[lk]?'<b>Locked.</b> ':'<b>Unlocked.</b> ')+P[lk].l+(st.locks[lk]?' now holds when you change space.':' follows each space again.');break;
   case 'view':st.view=v;break;
   case 'browse':st.browse=!st.browse;break;
@@ -261,6 +274,6 @@ if(init){setLibrary(init.library);Object.assign(st,{sp:0,bands:SPACES[0].bands.s
 try{var hs=(location.hash||'').slice(1);if(SKINS.some(function(x){return x.id===hs;}))st.skin=hs;}catch(_){}
 Object.assign(lastSent,paramValues(st));Object.assign(lastUi,uiState(st));
 renderLive();
-if(JUCE){JUCE.addEventListener('state',applyFromHost);JUCE.addEventListener('meters',onMeters);JUCE.addEventListener('capture',onCapture);JUCE.addEventListener('licence',onLicence);JUCE.addEventListener('pasted',onPasted);JUCE.emitEvent('ready',{});}
+if(JUCE){JUCE.addEventListener('state',applyFromHost);JUCE.addEventListener('meters',onMeters);JUCE.addEventListener('capture',onCapture);JUCE.addEventListener('licence',onLicence);JUCE.addEventListener('pasted',onPasted);JUCE.addEventListener('matched',onMatched);JUCE.emitEvent('ready',{});}
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);
 })();

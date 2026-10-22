@@ -15,6 +15,7 @@
 
 #include <array>
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -83,6 +84,17 @@ public:
         path in the session. A file that can't be used leaves an error in the interface state
         instead. Message thread only. */
     void loadImpulseResponseAsync (const juce::File& file);
+
+    /** Match a room: listens to a recording on a background thread for how long the room it
+        was made in rings (see RoomListener), then calls `done` on the message thread with the
+        result for the interface: the decay per band (bands), how many decays each band was
+        heard in (heard), the closest space (spaceId, spaceName) and the seconds listened to;
+        or with error, saying why the recording could not be matched. Message thread only. */
+    void matchRoomAsync (const juce::File& file, std::function<void (const juce::var&)> done);
+
+    /** The same, at once: what matchRoomAsync hands back. Allocates and takes a while; any
+        thread but the audio thread. */
+    static juce::var matchRecording (const juce::File& file);
 
     /** The loaded impulse response for the interface: name, channels, rate, measured decay
         and room size, or whether its file is missing. Void when none is loaded. */
