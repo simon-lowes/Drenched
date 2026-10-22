@@ -4,6 +4,7 @@
 #include "drenched/ImpulseResponseSynth.h"
 #include "drenched/LivingTail.h"
 #include "drenched/PartitionedConvolver.h"
+#include "drenched/ReverbCloud.h"
 #include "drenched/SpeakerLayout.h"
 #include "drenched/SpeakerTrim.h"
 #include "drenched/SurroundResponse.h"
@@ -71,6 +72,7 @@ struct ReverbControls
     float lowCutHz = 20.0f;
     float highCutHz = 20000.0f;
     float widthPercent = 100.0f; // 0 mono .. 200 extra wide, across all the speakers
+    float cloudPercent = 100.0f; // how far the reverb spreads from where the sound is panned (see ReverbCloud)
     float monoBelowHz = 0.0f;    // 0 = off
     float ducking = 0.0f;        // 0 .. 1
     float outputGain = 1.0f;     // linear
@@ -225,6 +227,7 @@ private:
 
     // Each speaker's reverb level and delay.
     SpeakerTrim speakerTrim;
+    ReverbCloud cloud;
 
     // The dry sound's delay, matching the running kernel's latency: a line
     // per input, and a crossfade from the old tap when it changes.

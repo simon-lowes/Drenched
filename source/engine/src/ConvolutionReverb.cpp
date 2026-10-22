@@ -262,6 +262,7 @@ void ConvolutionReverb::prepare (double newSampleRate, const SpeakerLayout& inpu
 
     livingTail.prepare (sampleRate);
     speakerTrim.prepare (sampleRate, numOut);
+    cloud.prepare (sampleRate, inputLayout, outputLayout);
 
     if (current != nullptr)
         livingTail.setDesign (current->livingTail());
@@ -291,6 +292,7 @@ void ConvolutionReverb::reset() noexcept
     // A cleared room has nothing to hold; the next block re-freezes if asked.
     livingTail.reset();
     speakerTrim.reset();
+    cloud.reset();
     livingTail.setFrozen (false, crossover);
     frozen = false;
     convInputGain = tailInputGain = 1.0f;
@@ -606,8 +608,16 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
     {
         const auto n = std::min (chunkSize, numSamples - offset);
 
+        std::array<const float*, maxChannels> heard {};
+
         for (std::size_t i = 0; i < numIn; ++i)
+        {
             std::copy_n (channels[i] + offset, n, dry.data() + i * chunkSize);
+            heard[i] = dry.data() + i * chunkSize;
+        }
+
+        // Where the sound is panned, for Cloud size; a frozen room stays put.
+        cloud.listen (heard.data(), numIn, n, frozen);
 
         // The stage sources, through the pre-delay, with the delay time
         // gliding so moving it never clicks. The living tail reads the same
@@ -766,6 +776,7 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
             }
         }
 
+        cloud.process (wetPtr.data(), numOut, n, c.cloudPercent);
         speakerTrim.process (wetPtr.data(), numOut, n, c.speakerLevelDb.data(), c.speakerDelayMs.data());
 
         // Ducking follows the dry level; then the mix and output gain, with

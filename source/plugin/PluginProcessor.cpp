@@ -47,6 +47,7 @@ DrenchedProcessor::DrenchedProcessor()
     params.directDelay = raw (ParamIDs::directDelay);
     params.directColour = raw (ParamIDs::directColour);
     params.crossFeed = raw (ParamIDs::crossFeed);
+    params.cloudSize = raw (ParamIDs::cloudSize);
     params.lowCpu = raw (ParamIDs::lowCpu);
 
     // A new instance opens on the first recorded space, with the graph on its measured decay.
@@ -780,6 +781,7 @@ void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     controls.lowCutHz = params.wetLowCut->load();
     controls.highCutHz = params.wetHighCut->load();
     controls.widthPercent = params.width->load();
+    controls.cloudPercent = params.cloudSize->load();
     controls.ducking = params.ducking->load() / 100.0f;
     controls.monoBelowHz = params.monoBelow->load();
     controls.freeze = params.freeze->load() >= 0.5f;
