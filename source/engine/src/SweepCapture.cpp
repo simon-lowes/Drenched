@@ -196,6 +196,7 @@ void CaptureRecorder::prepare (std::shared_ptr<const SineSweep> sweep, int speak
 
     total = static_cast<std::size_t> (speakers) * sweep->segmentLength();
     takes.assign (static_cast<std::size_t> (microphones), std::vector<float> (total, 0.0f));
+    rate = sweep->settings().sampleRate;
     source = std::move (sweep);
     numSpeakers = speakers;
     position.store (0, std::memory_order_relaxed);
@@ -204,9 +205,25 @@ void CaptureRecorder::prepare (std::shared_ptr<const SineSweep> sweep, int speak
     status.store (State::idle, std::memory_order_release);
 }
 
+void CaptureRecorder::prepareListening (double seconds, double sampleRate, int microphones)
+{
+    if (! (seconds > 0.0 && seconds <= 60.0) || ! (sampleRate >= 8000.0) || microphones < 1 || microphones > 2)
+        throw std::invalid_argument ("Listening needs up to a minute, a sample rate and one or two microphones.");
+
+    total = static_cast<std::size_t> (std::ceil (seconds * sampleRate));
+    takes.assign (static_cast<std::size_t> (microphones), std::vector<float> (total, 0.0f));
+    source.reset();
+    numSpeakers = 0;
+    rate = sampleRate;
+    position.store (0, std::memory_order_relaxed);
+    peak.store (0.0f, std::memory_order_relaxed);
+    stopRequested.store (false, std::memory_order_relaxed);
+    status.store (State::idle, std::memory_order_release);
+}
+
 void CaptureRecorder::start() noexcept
 {
-    if (source == nullptr || state() == State::running)
+    if (total == 0 || state() == State::running)
         return;
 
     position.store (0, std::memory_order_relaxed);
@@ -269,19 +286,28 @@ bool CaptureRecorder::process (const float* const* inputs, int numInputs, float*
 
     peak.store (loudest, std::memory_order_relaxed);
 
-    const auto& signal = source->signal();
-    const auto segment = source->segmentLength();
-
-    for (int channel = 0; channel < numOutputs; ++channel)
+    if (source == nullptr)
     {
-        auto* out = outputs[channel];
+        // Listening for a clap: the speakers stay silent.
+        for (int channel = 0; channel < numOutputs; ++channel)
+            std::fill_n (outputs[channel], numSamples, 0.0f);
+    }
+    else
+    {
+        const auto& signal = source->signal();
+        const auto segment = source->segmentLength();
 
-        for (std::size_t i = 0; i < numSamples; ++i)
+        for (int channel = 0; channel < numOutputs; ++channel)
         {
-            const auto at = start + i;
-            const auto playing = i < count && static_cast<std::size_t> (channel) == at / segment;
-            const auto offset = at % segment;
-            out[i] = playing && offset < signal.size() ? signal[offset] : 0.0f;
+            auto* out = outputs[channel];
+
+            for (std::size_t i = 0; i < numSamples; ++i)
+            {
+                const auto at = start + i;
+                const auto playing = i < count && static_cast<std::size_t> (channel) == at / segment;
+                const auto offset = at % segment;
+                out[i] = playing && offset < signal.size() ? signal[offset] : 0.0f;
+            }
         }
     }
 

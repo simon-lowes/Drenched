@@ -86,7 +86,9 @@ public:
     /** Measures a space: plays a sine sweep from the outputs (the left one, or left then
         right) while recording the inputs, then works out the impulse response, saves it as a
         WAV file in the captures folder and loads it like any other file. options: speakers
-        (1 or 2), sweepSeconds, tailSeconds and levelDb. Message thread only. */
+        (1 or 2), sweepSeconds, tailSeconds and levelDb. With method "clap" it instead
+        listens for listenSeconds and keeps the best hand clap it heard (see extractClap).
+        Message thread only. */
     void startCapture (const juce::var& options);
 
     /** Stops a capture that is playing. Message thread only. */

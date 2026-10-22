@@ -3,6 +3,7 @@
 #include "Settings.h"
 #include "ChannelLayouts.h"
 
+#include <drenched/ClapCapture.h>
 #include <drenched/Mix.h>
 #include <drenched/Spaces.h>
 
@@ -369,6 +370,28 @@ void DrenchedProcessor::startCapture (const juce::var& options)
         return;
     }
 
+    if (options.getProperty ("method", "sweep").toString() == "clap")
+    {
+        const auto seconds = juce::jlimit (3.0, 30.0, static_cast<double> (options.getProperty ("listenSeconds", 10.0)));
+
+        try
+        {
+            capture.prepareListening (seconds, rate, std::min (inputs, 2));
+        }
+        catch (const std::exception&)
+        {
+            captureStage = CaptureStage::failed;
+            captureMessage = "There isn't enough memory to listen this long. Try a shorter time.";
+            return;
+        }
+
+        captureInterrupted.store (false);
+        captureStage = CaptureStage::playing;
+        captureMessage = "Listening. Clap once, sharply, where the sound would come from, then stay quiet while it dies away.";
+        capture.start();
+        return;
+    }
+
     SweepSettings settings;
     settings.sampleRate = rate;
     settings.sweepSeconds = juce::jlimit (2.0, 30.0, static_cast<double> (options.getProperty ("sweepSeconds", 10.0)));
@@ -450,20 +473,35 @@ void DrenchedProcessor::pollCapture()
         juce::String error;
         juce::File file;
 
-        if (peak >= 0.999f)
-            error = "The microphone clipped. Turn the speaker or the mic gain down and capture again.";
-        else if (peak < 1.0e-4f)
+        const auto clap = capture.sweep() == nullptr;
+
+        // A clap capture picks its own clean clap, so a clipped one is only a problem if
+        // every clap clipped; extractClap says so.
+        if (peak < 1.0e-4f)
             error = "The microphone heard almost nothing. Check this track's input, then turn the speaker or mic gain up.";
+        else if (peak >= 0.999f && ! clap)
+            error = "The microphone clipped. Turn the speaker or the mic gain down and capture again.";
 
         if (error.isEmpty())
         {
             try
             {
-                const auto& sweep = *capture.sweep();
-                file = writeCapture (deconvolveCapture (sweep, capture.recordings(), capture.speakers()), sweep.settings().sampleRate);
+                if (clap)
+                {
+                    file = writeCapture (extractClap (capture.recordings(), capture.sampleRate()), capture.sampleRate());
+                }
+                else
+                {
+                    const auto& sweep = *capture.sweep();
+                    file = writeCapture (deconvolveCapture (sweep, capture.recordings(), capture.speakers()), sweep.settings().sampleRate);
+                }
 
                 if (file == juce::File())
                     error = "The capture couldn't be saved in " + settings::capturesFolder().getFullPathName() + ".";
+            }
+            catch (const ClapProblem& problem)
+            {
+                error = problem.what();
             }
             catch (const std::exception&)
             {
