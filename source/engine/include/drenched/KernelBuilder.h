@@ -2,6 +2,7 @@
 
 #include "drenched/ImpulseResponseSynth.h"
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -23,8 +24,18 @@ class ConvolutionReverb;
 class KernelBuilder
 {
 public:
+    /** The most convolution a kernel may hold, as impulse response samples
+        summed over its paths (a stereo kernel has four paths, a surround one
+        two per speaker), or 0 for no limit. A 32-bit process has 2 to 4 GB to
+        share with the host and every other plug-in, so there a long surround
+        response at a high sample rate is shortened to fit (32 M samples peaks
+        near 600 MB while building: 9.1.6 at 96 kHz keeps 10 s). Stereo is never
+        shortened. 64-bit builds have no limit. */
+    static constexpr std::size_t defaultSampleBudget = sizeof (void*) < 8 ? 32'000'000 : 0;
+
     explicit KernelBuilder (ConvolutionReverb& target,
-                            std::chrono::milliseconds debounce = std::chrono::milliseconds (80));
+                            std::chrono::milliseconds debounce = std::chrono::milliseconds (80),
+                            std::size_t sampleBudget = defaultSampleBudget);
     ~KernelBuilder();
 
     KernelBuilder (const KernelBuilder&) = delete;
@@ -40,6 +51,10 @@ public:
     /** The request the newest submitted kernel was built from, if any. */
     std::optional<ImpulseResponseRequest> lastBuilt() const;
 
+    /** The length in seconds the newest kernel was shortened to by the
+        sample budget, or 0 if it plays in full. From any thread. */
+    double shortenedTo() const noexcept { return shortened.load (std::memory_order_relaxed); }
+
 private:
     void run();
     void build (const ImpulseResponseRequest& wanted);
@@ -47,6 +62,8 @@ private:
 
     ConvolutionReverb& reverb;
     const std::chrono::milliseconds debounceTime;
+    const std::size_t budget;
+    std::atomic<double> shortened { 0.0 };
 
     mutable std::mutex mutex;
     std::condition_variable wake;

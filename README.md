@@ -58,6 +58,9 @@ nuget install Microsoft.Web.WebView2 -Version 1.0.2903.40 -OutputDirectory packa
 cmake -S . -B build -DJUCE_WEBVIEW2_PACKAGE_LOCATION=%cd%/packages
 ```
 
+For 32-bit Windows, configure with `-A Win32`. 32-bit Linux builds inside
+an i386 Debian container; see `.github/scripts/linux-i686.sh`.
+
 ## Layout
 
 | Path | Contents |
@@ -96,9 +99,13 @@ To preview the interface in a browser without the plugin, serve
 
 ## Downloads
 
-Every push builds the plugin on macOS (Universal), Windows and Linux in
-GitHub Actions. Open the latest run under **Actions** and download the
-artifact for your platform. Builds are unsigned for now: on macOS, clear the
+Every push builds the plugin on macOS (Universal), Windows (32 and 64-bit)
+and Linux (32 and 64-bit) in GitHub Actions. Open the latest run under
+**Actions** and download the artifact for your platform: `Drenched-macOS`,
+`Drenched-Windows` (one VST3 for 32 and 64-bit hosts, plus both CLAPs and
+apps), `Drenched-Linux-x64` or `Drenched-Linux-i686`. See
+[32-bit and 64-bit](docs/32-bit-and-64-bit.md) for where to install each,
+what 32-bit can't do, and bridging. Builds are unsigned for now: on macOS, clear the
 quarantine flag with `xattr -dr com.apple.quarantine <plugin>` before
 loading.
 

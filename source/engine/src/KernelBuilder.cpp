@@ -3,13 +3,37 @@
 #include "drenched/ConvolutionReverb.h"
 #include "drenched/RecordedResponse.h"
 
+#include <algorithm>
+#include <cmath>
 #include <exception>
+#include <numbers>
 
 namespace drenched
 {
 
-KernelBuilder::KernelBuilder (ConvolutionReverb& target, std::chrono::milliseconds debounce)
-    : reverb (target), debounceTime (debounce), worker ([this] { run(); })
+namespace
+{
+    /** Cuts every path to length, fading out over its last quarter so the
+        tail ends smoothly rather than stopping dead. */
+    void shorten (ImpulseResponseSet& responses, std::size_t length)
+    {
+        const auto fade = std::max<std::size_t> (1, length / 4);
+
+        for (auto& path : responses.paths)
+        {
+            path.resize (length);
+
+            for (std::size_t i = 0; i < fade; ++i)
+            {
+                const auto x = static_cast<double> (i + 1) / static_cast<double> (fade);
+                path[length - 1 - i] *= static_cast<float> (0.5 - 0.5 * std::cos (std::numbers::pi * x));
+            }
+        }
+    }
+}
+
+KernelBuilder::KernelBuilder (ConvolutionReverb& target, std::chrono::milliseconds debounce, std::size_t sampleBudget)
+    : reverb (target), debounceTime (debounce), budget (sampleBudget), worker ([this] { run(); })
 {
 }
 
@@ -86,11 +110,23 @@ void KernelBuilder::build (const ImpulseResponseRequest& wanted)
 
     const auto tail = designLivingTail (wanted, responses);
     const auto living = applyLivingBlend (responses, wanted.livingPercent, mixingTimeSeconds (wanted));
-    auto kernel = wanted.outputs == layouts::stereo()
+
+    const auto stereo = wanted.outputs == layouts::stereo();
+    const auto paths = stereo ? responses.paths.size() : 2 * wanted.outputs.size();
+    auto shortenedSeconds = 0.0;
+
+    if (budget > 0 && responses.length() * paths > budget)
+    {
+        shorten (responses, budget / paths);
+        shortenedSeconds = static_cast<double> (responses.length()) / responses.sampleRate;
+    }
+
+    auto kernel = stereo
                     ? std::make_unique<ReverbKernel> (responses, tail)
                     : std::make_unique<ReverbKernel> (spreadResponses (responses, wanted.outputs, mixingTimeSeconds (wanted)), tail);
     kernel->setLivingLevel (living);
     reverb.submit (std::move (kernel));
+    shortened.store (shortenedSeconds, std::memory_order_relaxed);
 
     const std::lock_guard lock (mutex);
     built = wanted;

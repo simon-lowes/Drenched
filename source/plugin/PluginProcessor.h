@@ -79,6 +79,10 @@ public:
         and room size, or whether its file is missing. Void when none is loaded. */
     juce::var impulseResponseInfo();
 
+    /** The length in seconds the playing response was shortened to so it fits in a
+        32-bit process, or 0 when it plays in full (see KernelBuilder). From any thread. */
+    double shortenedSeconds() const noexcept { return builder->shortenedTo(); }
+
     /** Measures a space: plays a sine sweep from the outputs (the left one, or left then
         right) while recording the inputs, then works out the impulse response, saves it as a
         WAV file in the captures folder and loads it like any other file. options: speakers

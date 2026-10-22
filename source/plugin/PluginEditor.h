@@ -72,6 +72,7 @@ private:
     std::set<juce::String> activeGestures;
     std::array<float, 4> meterDb { -60.0f, -60.0f, -60.0f, -60.0f };
     bool metersWereLive = false;
+    double sentShortened = 0.0;
     juce::String lastCaptureStatus;
 
     std::unique_ptr<juce::FileChooser> chooser;

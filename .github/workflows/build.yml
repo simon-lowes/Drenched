@@ -32,18 +32,33 @@ jobs:
         include:
           - name: macOS (Universal)
             os: macos-14
+            artifact: Drenched-macOS
             pluginval: pluginval_macOS.zip
             pluginval_bin: pluginval.app/Contents/MacOS/pluginval
             cmake_args: -G Ninja -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
           - name: Windows (x64)
             os: windows-2022
+            artifact: Drenched-Windows-x64
             pluginval: pluginval_Windows.zip
             pluginval_bin: pluginval.exe
             cmake_args: -G "Visual Studio 17 2022" -A x64
+          # 32-bit, for older hosts and 32-bit installs of Windows. pluginval only ships
+          # 64-bit, and a 64-bit validator can't load a 32-bit plug-in, so a 32-bit copy is
+          # built from source (GPL, used as a test tool only; never shipped). The Linux
+          # build is also built from source, with patch-pluginval.py's run loop fix.
+          - name: Windows (x86, 32-bit)
+            os: windows-2022
+            artifact: Drenched-Windows-x86
+            pluginval: source
+            pluginval_bin: pluginval-build/pluginval_artefacts/Release/pluginval.exe
+            pluginval_cmake_args: -G "Visual Studio 17 2022" -A Win32
+            cmake_args: -G "Visual Studio 17 2022" -A Win32
           - name: Linux (x64)
             os: ubuntu-24.04
-            pluginval: pluginval_Linux.zip
-            pluginval_bin: pluginval
+            artifact: Drenched-Linux-x64
+            pluginval: source
+            pluginval_bin: pluginval-build/pluginval_artefacts/Release/pluginval
+            pluginval_cmake_args: -G Ninja -DCMAKE_BUILD_TYPE=Release
             cmake_args: -G Ninja
 
     steps:
@@ -56,7 +71,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends ninja-build libasound2-dev \
             libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxcomposite-dev \
             libfreetype-dev libfontconfig1-dev libcurl4-openssl-dev libgtk-3-dev \
-            libwebkit2gtk-4.1-dev xvfb
+            libwebkit2gtk-4.1-dev ladspa-sdk xvfb
 
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
@@ -73,7 +88,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/_deps
-          key: deps-${{ matrix.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+          key: deps-${{ matrix.artifact }}-${{ hashFiles('cmake/Dependencies.cmake') }}
 
       - name: Configure
         shell: bash
@@ -92,11 +107,33 @@ jobs:
         shell: bash
         run: ctest --test-dir build -C Release --output-on-failure
 
+      - name: Cache pluginval
+        if: matrix.pluginval == 'source'
+        uses: actions/cache@v4
+        with:
+          path: pluginval-build/pluginval_artefacts
+          key: pluginval-v1.0.4-${{ matrix.artifact }}-${{ hashFiles('.github/scripts/patch-pluginval.py') }}
+
+      - name: Build pluginval
+        if: matrix.pluginval == 'source'
+        shell: bash
+        run: |
+          [ -f "${{ matrix.pluginval_bin }}" ] && exit 0
+          git clone --depth 1 --branch v1.0.4 --recurse-submodules --shallow-submodules \
+            https://github.com/Tracktion/pluginval.git pluginval-src
+          if [ "$RUNNER_OS" = "Windows" ]; then PY=python; else PY=python3; fi
+          $PY .github/scripts/patch-pluginval.py pluginval-src
+          cmake -S pluginval-src -B pluginval-build ${{ matrix.pluginval_cmake_args }}
+          cmake --build pluginval-build --config Release --parallel
+
       - name: Validate plugin (pluginval)
         shell: bash
         run: |
-          curl -fsSL -o pluginval.zip "https://github.com/Tracktion/pluginval/releases/latest/download/${{ matrix.pluginval }}"
-          unzip -q pluginval.zip
+          if [ "${{ matrix.pluginval }}" != "source" ]; then
+            curl -fsSL -o pluginval.zip "https://github.com/Tracktion/pluginval/releases/latest/download/${{ matrix.pluginval }}"
+            unzip -q pluginval.zip
+          fi
+          file "${{ matrix.pluginval_bin }}" 2>/dev/null || true
           VST3=$(find build -type d -name "Drenched.vst3" -path "*Release*" | head -n 1)
           [ -n "$VST3" ] || VST3=$(find build -type d -name "Drenched.vst3" | head -n 1)
           echo "Validating $VST3"
@@ -116,6 +153,74 @@ jobs:
       - name: Upload plugins
         uses: actions/upload-artifact@v4
         with:
-          name: Drenched-${{ runner.os }}
+          name: ${{ matrix.artifact }}
           path: dist
           if-no-files-found: warn
+
+  linux-i686:
+    name: Linux (i686, 32-bit)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Ubuntu no longer has 32-bit GTK and WebKit, so this builds inside an i386
+      # Debian container, which has every library JUCE needs.
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            build-i686/_deps
+            pluginval-i686/build/pluginval_artefacts
+          key: deps-linux-i686-${{ hashFiles('cmake/Dependencies.cmake', '.github/scripts/linux-i686.sh', '.github/scripts/patch-pluginval.py') }}
+
+      - name: Build, test and validate
+        run: |
+          docker run --rm --platform linux/386 -v "$PWD:/src" -w /src debian:bookworm \
+            bash .github/scripts/linux-i686.sh build-i686
+          sudo chown -R "$(id -u):$(id -g)" build-i686 pluginval-i686
+
+      - name: Collect plugins
+        run: |
+          mkdir -p dist
+          A=build-i686/source/plugin/Drenched_artefacts/Release
+          cp -R "$A/VST3/Drenched.vst3" "$A/CLAP/Drenched.clap" "$A/Standalone/Drenched" dist/
+          ls -la dist
+
+      - name: Upload plugins
+        uses: actions/upload-artifact@v4
+        with:
+          name: Drenched-Linux-i686
+          path: dist
+
+  windows-bundle:
+    # One download for Windows: a VST3 bundle holding both the 32-bit and 64-bit
+    # plug-in (hosts pick the one that matches them), plus both CLAPs and apps.
+    name: Windows (32 and 64-bit bundle)
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Drenched-Windows-x64
+          path: x64
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Drenched-Windows-x86
+          path: x86
+
+      - name: Merge
+        run: |
+          mkdir -p dist/CLAP/64-bit dist/CLAP/32-bit
+          cp -R x64/Drenched.vst3 dist/
+          cp -R x86/Drenched.vst3/Contents/*-win dist/Drenched.vst3/Contents/
+          cp x64/Drenched.clap dist/CLAP/64-bit/
+          cp x86/Drenched.clap dist/CLAP/32-bit/
+          cp x64/Drenched.exe "dist/Drenched.exe"
+          cp x86/Drenched.exe "dist/Drenched (32-bit).exe"
+          find dist -maxdepth 4 | sort
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Drenched-Windows
+          path: dist
