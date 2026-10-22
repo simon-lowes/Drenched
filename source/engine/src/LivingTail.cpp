@@ -507,15 +507,16 @@ LivingTailDesign designLivingTail (const ImpulseResponseRequest& request, const 
 
     if (request.recorded != nullptr)
     {
-        // A loaded response: the shoebox its analysis estimated.
+        // A loaded response: the shoebox its analysis estimated, resized.
         const auto& room = request.recorded->room;
-        W = room.width, D = room.depth, H = room.height;
+        const auto scale = sizeScale (request);
+        W = room.width * scale, D = room.depth * scale, H = room.height * scale;
     }
     else
     {
         const auto spaceIndex = std::clamp (request.space, 0, static_cast<int> (bundledSpaces.size()) - 1);
         const auto& room = bundledSpaces[static_cast<std::size_t> (spaceIndex)];
-        const auto scale = std::clamp (static_cast<double> (request.sizePercent), 50.0, 150.0) / 100.0;
+        const auto scale = sizeScale (request);
         W = room.width * scale, D = room.depth * scale, H = room.height * scale;
     }
 

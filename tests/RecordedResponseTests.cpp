@@ -4,9 +4,11 @@
 #include <drenched/LivingTail.h>
 #include <drenched/RecordedResponse.h>
 #include <drenched/Spaces.h>
+#include <drenched/SurroundResponse.h>
 
 #include "TestHelpers.h"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
@@ -270,6 +272,99 @@ TEST_CASE ("Early/late balance works on a loaded response", "[recorded]")
 
     CHECK (early < 0.5 * normal);
     CHECK (moreLate > normal);
+}
+
+TEST_CASE ("Size moves a loaded room's reflections later or sooner", "[recorded][size]")
+{
+    // A direct sound, one strong reflection 20 ms later, then a diffuse tail.
+    constexpr double sr = 48000.0;
+    const auto at = [] (double seconds) { return static_cast<std::size_t> (seconds * sr); };
+    std::vector<std::vector<float>> file;
+
+    for (unsigned c = 0; c < 2; ++c)
+    {
+        auto x = testing::noise (at (2.0), 5u + c);
+
+        for (std::size_t n = 0; n < x.size(); ++n)
+            x[n] *= n < at (0.06) ? 0.0f : 0.05f * static_cast<float> (std::exp (-6.9 * static_cast<double> (n) / sr));
+
+        x[at (0.01)] = 1.0f;
+        x[at (0.03)] = 0.6f;
+        file.push_back (std::move (x));
+    }
+
+    const auto recorded = prepareRecordedResponse (file, sr, "two clicks");
+    auto request = requestForRecorded (recorded, sr);
+
+    const auto peakIn = [&] (const ImpulseResponseSet& set, double from, double to)
+    {
+        const auto& p = set.paths[ImpulseResponseSet::leftToLeft];
+        const auto first = p.begin() + static_cast<std::ptrdiff_t> (at (from));
+        const auto last = p.begin() + static_cast<std::ptrdiff_t> (std::min (p.size(), at (to)));
+        return static_cast<double> (std::max_element (first, last, [] (float a, float b) { return std::abs (a) < std::abs (b); }) - p.begin()) / sr;
+    };
+
+    const auto original = renderImpulseResponse (request);
+    const auto direct = peakIn (original, 0.0, 0.005);
+    const auto reflection = peakIn (original, 0.01, 0.045) - direct;
+    REQUIRE (reflection == Catch::Approx (0.02).margin (0.0002));
+
+    for (const auto size : { 50.0f, 150.0f })
+    {
+        request.sizePercent = size;
+        const auto out = renderImpulseResponse (request);
+        INFO ("size " << size << "%");
+
+        CHECK (peakIn (out, 0.0, 0.005) == Catch::Approx (direct).margin (0.0001));
+        CHECK (peakIn (out, 0.005, 0.045) - direct == Catch::Approx (0.02 * size / 100.0).margin (0.0003));
+        CHECK (mixingTimeSeconds (request) == Catch::Approx (recorded->room.mixingTimeSeconds * size / 100.0));
+        CHECK (std::abs (totalEnergy (out) - 1.0) < 1.0e-3);
+    }
+}
+
+TEST_CASE ("Size keeps a loaded room's decay and colour", "[recorded][size]")
+{
+    const auto recorded = prepareRecordedResponse (fileOf (synthesiseImpulseResponse (requestFor (0))), 48000.0, "hall");
+    auto request = requestForRecorded (recorded, 48000.0);
+
+    // Each band's share of the first 100 ms.
+    const auto colour = [] (const ImpulseResponseSet& set, double seconds)
+    {
+        std::array<double, 8> share {};
+        auto total = 0.0;
+
+        for (std::size_t b = 0; b < 8; ++b)
+        {
+            const auto band = testing::octaveBand ({ set.paths[0].begin(), set.paths[0].begin() + static_cast<std::ptrdiff_t> (seconds * set.sampleRate) },
+                                                   set.sampleRate, decayBandCentres[b]);
+            share[b] = energy (band);
+            total += share[b];
+        }
+
+        for (auto& v : share)
+            v /= total;
+
+        return share;
+    };
+
+    const auto before = colour (renderImpulseResponse (request), 0.1);
+
+    for (const auto size : { 60.0f, 140.0f })
+    {
+        request.sizePercent = size;
+        const auto out = renderImpulseResponse (request);
+        const auto measured = measureDecay (out.paths, 48000.0);
+        const auto after = colour (out, 0.1 * size / 100.0);
+
+        for (std::size_t b = 1; b < 7; ++b)
+        {
+            const auto wanted = static_cast<double> (request.decaySeconds[b]);
+            INFO ("size " << size << "%, band " << decayBandCentres[b] << " Hz: wanted " << wanted << " s, measured " << measured[b]
+                          << " s; level " << 10.0 * std::log10 (after[b] / before[b]) << " dB");
+            CHECK (std::abs (measured[b] - wanted) / wanted < 0.15);
+            CHECK (std::abs (10.0 * std::log10 (after[b] / before[b])) < 2.0);
+        }
+    }
 }
 
 TEST_CASE ("The living tail fits a loaded room", "[recorded][livingtail]")

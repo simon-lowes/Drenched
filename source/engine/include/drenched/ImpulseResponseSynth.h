@@ -38,8 +38,9 @@ struct ImpulseResponseRequest
     float directDelayMs = 0.0f;            // later than the room, 0 .. 50
     float directColourDb = 0.0f;           // tilt, darker below 0, brighter above
 
-    // A loaded impulse response to play instead of the bundled space. Size,
-    // distance and listener position only shape synthesised spaces.
+    // A loaded impulse response to play instead of the bundled space. Size
+    // stretches it in time; distance and listener position only shape
+    // synthesised spaces.
     std::shared_ptr<const RecordedResponse> recorded {};
 
     // The speakers the kernel feeds. The response itself is always true
@@ -81,5 +82,8 @@ ImpulseResponseSet synthesiseImpulseResponse (const ImpulseResponseRequest& requ
 /** The listener's distance from the front wall in metres, as the interface
     shows it: from near the source to most of the way down the room. */
 float listenerDistanceMetres (int space, float sizePercent, float distancePercent) noexcept;
+
+/** The request's Size as a factor on the room's dimensions, 0.5 .. 1.5. */
+double sizeScale (const ImpulseResponseRequest& request) noexcept;
 
 } // namespace drenched

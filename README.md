@@ -18,8 +18,9 @@ backwards, Gate cuts it off after a set time, and Attack fades it in.
 The direct sound (the first arrival, before any reflection) has its own
 level, delay and colour. You can load your own impulse response (WAV, AIFF
 or FLAC; mono, stereo or four-channel true stereo): it is resampled to the
-session rate, its decay is measured into the graph, and dragging the graph
-reshapes it. Or capture a space yourself: Capture a space plays a sine
+session rate, its decay is measured into the graph, dragging the graph
+reshapes it, and Size makes the room bigger or smaller by moving its
+reflections later or sooner while keeping its decay and tone. Or capture a space yourself: Capture a space plays a sine
 sweep from the left speaker (or left, then right, for true stereo) while
 recording the track's input, deconvolves it with the speaker's distortion
 removed, saves the result in Documents/Drenched/Captures and loads it.

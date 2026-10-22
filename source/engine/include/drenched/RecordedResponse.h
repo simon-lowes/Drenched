@@ -55,9 +55,10 @@ std::shared_ptr<const RecordedResponse> prepareRecordedResponse (const std::vect
 ImpulseResponseSet resampleResponses (const ImpulseResponseSet& responses, double newRate);
 
 /** Shapes a recorded response (already at the request's rate) by the
-    request: each band's decay is stretched or shortened from the measured
-    RT60 to the requested one, and early reflections are balanced against
-    the tail. With the measured decay and the default balance the response
+    request: Size plays it back slower or faster, so reflections arrive
+    later or sooner as in a bigger or smaller room, with each band's level
+    put back; each band's decay is then stretched or shortened to the
+    requested RT60, and early reflections are balanced against the tail. With the measured decay and the default balance the response
     comes back unchanged. */
 ImpulseResponseSet shapeRecordedResponse (ImpulseResponseSet atRate, const RecordedResponse& recorded,
                                           const ImpulseResponseRequest& request);
