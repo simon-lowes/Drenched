@@ -13,7 +13,9 @@ that powers Freeze (Crossover sets where the frozen room stops holding, so
 the bass keeps fading). Living tail hands the late reverberation over to it
 at the same level, keeping the early reflections, and Movement lets it
 drift slowly so it breathes and never repeats. Reverse plays the room
-backwards, Gate cuts it off after a set time, and Attack fades it in. You can load your own impulse response (WAV, AIFF
+backwards, Gate cuts it off after a set time, and Attack fades it in.
+The direct sound (the first arrival, before any reflection) has its own
+level, delay and colour. You can load your own impulse response (WAV, AIFF
 or FLAC; mono, stereo or four-channel true stereo): it is resampled to the
 session rate, its decay is measured into the graph, and dragging the graph
 reshapes it. Or capture a space yourself: Capture a space plays a sine

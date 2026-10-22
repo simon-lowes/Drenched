@@ -157,6 +157,9 @@ private:
         std::atomic<float>* reverse = nullptr;
         std::atomic<float>* gate = nullptr;
         std::atomic<float>* attack = nullptr;
+        std::atomic<float>* directLevel = nullptr;
+        std::atomic<float>* directDelay = nullptr;
+        std::atomic<float>* directColour = nullptr;
         std::array<std::atomic<float>*, 8> decay {};
     } params;
 

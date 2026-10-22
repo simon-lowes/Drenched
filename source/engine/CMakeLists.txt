@@ -3,6 +3,7 @@
 
 add_library(drenched_engine STATIC
     src/DirectConvolver.cpp
+    src/DirectSound.cpp
     src/PartitionedConvolver.cpp
     src/ImpulseResponseSynth.cpp
     src/ConvolutionReverb.cpp

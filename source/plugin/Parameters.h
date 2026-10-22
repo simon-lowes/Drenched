@@ -33,6 +33,9 @@ namespace ParamIDs
     inline constexpr auto reverse = "reverse";
     inline constexpr auto gate = "gate";
     inline constexpr auto attack = "attack";
+    inline constexpr auto directLevel = "directLevel";
+    inline constexpr auto directDelay = "directDelay";
+    inline constexpr auto directColour = "directColour";
 
     inline constexpr std::array<const char*, 8> decay { "decay63",  "decay125", "decay250", "decay500",
                                                         "decay1k",  "decay2k",  "decay4k",  "decay8k" };
@@ -50,7 +53,7 @@ namespace ParamIDs
             for (auto* id : decay)
                 list.add (id);
 
-            list.addArray ({ living, movement, movementRate, reverse, gate, attack });
+            list.addArray ({ living, movement, movementRate, reverse, gate, attack, directLevel, directDelay, directColour });
 
             return list;
         }();
@@ -163,6 +166,14 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
                                          skewed (2000.0f, 250.0f), 0.0f, millis));
     layout.add (std::make_unique<Float> (ParameterID { ParamIDs::attack, 1 }, "Attack",
                                          skewed (500.0f, 60.0f), 0.0f, millis));
+
+    // The direct sound in the room: its own level (-60 dB removes it), delay and colour.
+    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::directLevel, 1 }, "Direct level",
+                                         NormalisableRange<float> (-60.0f, 6.0f, 0.1f), 0.0f, decibels));
+    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::directDelay, 1 }, "Direct delay",
+                                         NormalisableRange<float> (0.0f, 50.0f, 0.1f), 0.0f, millis));
+    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::directColour, 1 }, "Direct colour",
+                                         NormalisableRange<float> (-12.0f, 12.0f, 0.5f), 0.0f, decibels));
 
     return layout;
 }

@@ -2,6 +2,7 @@ add_executable(drenched_tests
     AllocationCounter.cpp
     MixTests.cpp
     DirectConvolverTests.cpp
+    DirectSoundTests.cpp
     PartitionedConvolverTests.cpp
     ImpulseResponseSynthTests.cpp
     ConvolutionReverbTests.cpp

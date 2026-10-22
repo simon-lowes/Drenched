@@ -33,6 +33,11 @@ struct ImpulseResponseRequest
     float gateMs = 0.0f;                   // cut the response after this long, 0 = off
     float attackMs = 0.0f;                 // fade the response in over this long
 
+    // The direct sound, the first arrival from each source (see applyDirect()).
+    float directLevelDb = 0.0f;            // -60 = removed
+    float directDelayMs = 0.0f;            // later than the room, 0 .. 50
+    float directColourDb = 0.0f;           // tilt, darker below 0, brighter above
+
     // A loaded impulse response to play instead of the bundled space. Size,
     // distance and listener position only shape synthesised spaces.
     std::shared_ptr<const RecordedResponse> recorded {};
