@@ -53,6 +53,7 @@ private:
     void onLoadIr (const juce::var&);
     void onMatch (const juce::var&);
     void onScene (const juce::String& action, const juce::var&);
+    void sendDisplays();
     void sendCaptureStatus();
     void sendLicenceStatus();
 
@@ -77,6 +78,12 @@ private:
     std::array<float, 4> meterDb { -60.0f, -60.0f, -60.0f, -60.0f };
     std::array<float, maxChannels> speakerDb = [] { std::array<float, maxChannels> a {}; a.fill (-60.0f); return a; }();
     bool metersWereLive = false;
+
+    // The decay displays, while the page has one open: the live spectrum every tick, and
+    // the response's analysis whenever a new response plays.
+    bool displaysOpen = false, analysing = false;
+    std::uint64_t analysedVersion = 0;
+    bool analysedAny = false;
     double sentShortened = 0.0;
     juce::String lastCaptureStatus;
 

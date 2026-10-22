@@ -7,6 +7,7 @@
 #include <drenched/ConvolutionReverb.h>
 #include <drenched/KernelBuilder.h>
 #include <drenched/RecordedResponse.h>
+#include <drenched/ResponseAnalysis.h>
 #include <drenched/Spaces.h>
 #include <drenched/SweepCapture.h>
 
@@ -128,6 +129,22 @@ public:
     /** The length in seconds the playing response was shortened to so it fits in a
         32-bit process, or 0 when it plays in full (see KernelBuilder). From any thread. */
     double shortenedSeconds() const noexcept { return builder->shortenedTo(); }
+
+    /** Changes whenever a new response starts playing. From any thread. */
+    std::uint64_t responseVersion() const noexcept { return builder->buildCount(); }
+
+    /** The decay displays: analyses the playing response on a background thread (see
+        analyseResponse), then calls `done` on the message thread with the result for the
+        interface (analysisToVar), or with void when nothing has been built. Message thread. */
+    void analyseResponseAsync (std::function<void (const juce::var&)> done);
+
+    /** An analysis as the interface takes it: seconds, the band centres (bands), the
+        waterfall (rows of dB, sliceSeconds apart), the decay curve (decay, decayStep) and
+        the measured rt60 per octave band, in tenths of a dB or millisecond. */
+    static juce::var analysisToVar (const ResponseAnalysis& analysis);
+
+    /** The live spectrum of the reverb alone, third-octave levels in dB. Message thread only. */
+    SpectrumTap::Levels wetSpectrum();
 
     /** Measures a space: plays a sine sweep from the outputs (the left one, or left then
         right) while recording the inputs, then works out the impulse response, saves it as a
@@ -257,7 +274,8 @@ private:
     juce::String libraryLoadedId, libraryWanted;
 
     juce::ThreadPool loader { juce::ThreadPoolOptions{}.withThreadName ("Drenched IR loader").withNumberOfThreads (1) };
-    std::shared_ptr<int> lifetime = std::make_shared<int> (0); // guards callbacks posted by the loader
+    juce::ThreadPool analyser { juce::ThreadPoolOptions{}.withThreadName ("Drenched analysis").withNumberOfThreads (1) };
+    std::shared_ptr<int> lifetime = std::make_shared<int> (0); // guards callbacks posted by the loader and analyser
 
     // Capturing a space. The recorder runs in the audio callback; the stage and message
     // are the message thread's. While working, the loader thread reads the recordings, so

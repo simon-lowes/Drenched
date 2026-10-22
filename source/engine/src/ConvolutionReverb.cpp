@@ -785,6 +785,17 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
         cloud.process (wetPtr.data(), numOut, n, c.cloudPercent);
         speakerTrim.process (wetPtr.data(), numOut, n, c.speakerLevelDb.data(), c.speakerDelayMs.data());
 
+        {
+            std::array<const float*, maxChannels> wetChannels {};
+            std::size_t numWet = 0;
+
+            for (std::size_t k = 0; k < numOut; ++k)
+                if (wetOutput[k])
+                    wetChannels[numWet++] = wetPtr[k];
+
+            wetTap.push (wetChannels.data(), numWet, n);
+        }
+
         // Ducking follows the dry level; then the mix and output gain, with
         // the per-sample gains kept in tmp for every output to share.
         auto* dryGains = tmpPtr[0];

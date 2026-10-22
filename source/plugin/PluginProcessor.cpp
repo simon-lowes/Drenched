@@ -477,6 +477,64 @@ void DrenchedProcessor::matchRoomAsync (const juce::File& file, std::function<vo
     });
 }
 
+void DrenchedProcessor::analyseResponseAsync (std::function<void (const juce::var&)> done)
+{
+    std::weak_ptr<int> alive = lifetime;
+    auto responses = builder->lastResponses();
+
+    analyser.addJob ([responses = std::move (responses), alive, done = std::move (done)]() mutable
+    {
+        auto result = responses != nullptr ? analysisToVar (analyseResponse (*responses)) : juce::var();
+
+        juce::MessageManager::callAsync ([alive, done = std::move (done), result = std::move (result)]
+        {
+            if (! alive.expired())
+                done (result);
+        });
+    });
+}
+
+juce::var DrenchedProcessor::analysisToVar (const ResponseAnalysis& analysis)
+{
+    const auto tenths = [] (double v) { return std::round (v * 10.0) / 10.0; };
+    const auto list = [&tenths] (const auto& values)
+    {
+        juce::Array<juce::var> out;
+
+        for (const auto v : values)
+            out.add (tenths (static_cast<double> (v)));
+
+        return juce::var (out);
+    };
+
+    juce::Array<juce::var> waterfall;
+
+    for (const auto& slice : analysis.waterfall)
+        waterfall.add (list (slice));
+
+    auto object = std::make_unique<juce::DynamicObject>();
+    object->setProperty ("seconds", std::round (analysis.seconds * 1000.0) / 1000.0);
+    object->setProperty ("bands", list (analysisBands));
+    object->setProperty ("waterfall", waterfall);
+    object->setProperty ("sliceSeconds", analysis.sliceSeconds);
+    object->setProperty ("decay", list (analysis.decayDb));
+    object->setProperty ("decayStep", analysis.decayStepSeconds);
+
+    juce::Array<juce::var> rt60;
+
+    for (const auto v : analysis.rt60)
+        rt60.add (std::round (static_cast<double> (v) * 1000.0) / 1000.0);
+
+    object->setProperty ("rt60", rt60);
+    return juce::var (object.release());
+}
+
+SpectrumTap::Levels DrenchedProcessor::wetSpectrum()
+{
+    const auto rate = getSampleRate();
+    return reverb.wetSpectrum().read (rate > 0.0 ? rate : 48000.0);
+}
+
 void DrenchedProcessor::applyLoadedImpulseResponse (const juce::File& file, std::shared_ptr<const RecordedResponse> loaded,
                                                     const juce::String& error, bool measuredDecay)
 {

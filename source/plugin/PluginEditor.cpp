@@ -16,6 +16,8 @@ namespace
     const juce::Identifier eventCapture { "capture" };
     const juce::Identifier eventLicence { "licence" };
     const juce::Identifier eventMatched { "matched" };
+    const juce::Identifier eventAnalysis { "analysis" };
+    const juce::Identifier eventSpectrum { "spectrum" };
 
     juce::String mimeTypeFor (const juce::String& path)
     {
@@ -96,6 +98,11 @@ juce::WebBrowserComponent::Options DrenchedEditor::makeOptions()
         .withEventListener ("ui",      [this] (const juce::var& v) { onUi (v); })
         .withEventListener ("loadIr",  [this] (const juce::var& v) { onLoadIr (v); })
         .withEventListener ("match",   [this] (const juce::var& v) { onMatch (v); })
+        .withEventListener ("displays", [this] (const juce::var& v)
+        {
+            displaysOpen = static_cast<bool> (v.getProperty ("open", false));
+            analysedAny = analysedAny && displaysOpen; // reopening sends the analysis again
+        })
         .withEventListener ("sceneStore",  [this] (const juce::var& v) { onScene ("store", v); })
         .withEventListener ("sceneRename", [this] (const juce::var& v) { onScene ("rename", v); })
         .withEventListener ("sceneDelete", [this] (const juce::var& v) { onScene ("delete", v); })
@@ -493,6 +500,7 @@ void DrenchedEditor::timerCallback()
         return;
 
     sendCaptureStatus();
+    sendDisplays();
 
     if (processor.shortenedSeconds() != sentShortened)
     {
@@ -534,6 +542,41 @@ void DrenchedEditor::timerCallback()
 
     object->setProperty ("spk", speakers);
     web.emitEventIfBrowserIsVisible (eventMeters, juce::var (object.release()));
+}
+
+void DrenchedEditor::sendDisplays()
+{
+    if (! displaysOpen)
+        return;
+
+    juce::Array<juce::var> levels;
+
+    for (const auto level : processor.wetSpectrum())
+        levels.add (std::round (static_cast<double> (level) * 10.0) / 10.0);
+
+    auto spectrum = std::make_unique<juce::DynamicObject>();
+    spectrum->setProperty ("levels", levels);
+    web.emitEventIfBrowserIsVisible (eventSpectrum, juce::var (spectrum.release()));
+
+    const auto version = processor.responseVersion();
+
+    if (analysing || (analysedAny && version == analysedVersion))
+        return;
+
+    analysing = true;
+    analysedVersion = version;
+
+    processor.analyseResponseAsync ([editor = juce::Component::SafePointer<DrenchedEditor> (this)] (const juce::var& result)
+    {
+        if (editor == nullptr)
+            return;
+
+        editor->analysing = false;
+        editor->analysedAny = ! result.isVoid();
+
+        if (editor->analysedAny)
+            editor->web.emitEventIfBrowserIsVisible (eventAnalysis, result);
+    });
 }
 
 //==============================================================================
