@@ -241,13 +241,18 @@ std::shared_ptr<const RecordedResponse> DrenchedProcessor::readImpulseResponse (
     formats.registerBasicFormats();
     std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
 
+    // .amb files are WAV files under another name.
+    if (reader == nullptr)
+        reader.reset (formats.createReaderFor (file.createInputStream()));
+
     if (reader == nullptr)
     {
         error = file.getFileName() + " isn't an audio file Drenched can read. Use WAV, AIFF or FLAC.";
         return nullptr;
     }
 
-    return prepareFromReader (*reader, file.getFileNameWithoutExtension(), file.getFileName(), error);
+    return prepareFromReader (*reader, file.getFileNameWithoutExtension(), file.getFileName(), error,
+                              channelLayouts::bFormatOf (file, reader->metadataValues, static_cast<int> (reader->numChannels)));
 }
 
 void DrenchedProcessor::loadLibrarySpace (const juce::String& id, bool now)
@@ -762,7 +767,9 @@ juce::var DrenchedProcessor::impulseResponseInfo()
     {
         object->setProperty ("ch", current->channels);
 
-        if (current->isSurround())
+        if (current->ambisonic)
+            object->setProperty ("bformat", true);
+        else if (current->isSurround())
             object->setProperty ("layout", channelLayouts::nameOf (current->layout));
         object->setProperty ("rate", current->responses.sampleRate);
         object->setProperty ("W", static_cast<double> (current->room.width));

@@ -196,10 +196,19 @@ void KernelBuilder::build (const ImpulseResponseRequest& wanted)
     if (stereo)
         kernel = std::make_unique<ReverbKernel> (responses, tail, wanted.latencySamples);
     else if (native)
-        kernel = std::make_unique<ReverbKernel> (placeSpeakerResponses (outOfSets (std::move (speakerSets), wanted.recorded->speakers.size()),
-                                                                        wanted.recorded->layout, responses, wanted.outputs,
+    {
+        // A B-format recording is decoded to the speakers it plays on, so each
+        // has its own channel to play.
+        auto channels = outOfSets (std::move (speakerSets), wanted.recorded->speakers.size());
+        const auto& from = wanted.recorded->ambisonic ? wanted.outputs : wanted.recorded->layout;
+
+        if (wanted.recorded->ambisonic)
+            channels = decodeAmbisonic (channels, wanted.outputs);
+
+        kernel = std::make_unique<ReverbKernel> (placeSpeakerResponses (channels, from, responses, wanted.outputs,
                                                                         mixingTimeSeconds (wanted), wanted.crossFeedPercent),
                                                  tail, wanted.latencySamples);
+    }
     else
         kernel = std::make_unique<ReverbKernel> (spreadResponses (responses, wanted.outputs, mixingTimeSeconds (wanted)), tail,
                                                  wanted.latencySamples);

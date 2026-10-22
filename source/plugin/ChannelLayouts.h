@@ -1,5 +1,6 @@
 #pragma once
 
+#include <drenched/Ambisonics.h>
 #include <drenched/SpeakerLayout.h>
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -140,6 +141,83 @@ namespace channelLayouts
     inline bool isSupported (const juce::AudioChannelSet& set)
     {
         return ! speakersOf (set).empty();
+    }
+
+    /** Whether an extensible WAV file says it holds B-format (the type .amb
+        files use, always in FuMa order). */
+    inline bool hasBFormatType (const juce::File& file)
+    {
+        juce::FileInputStream in (file);
+
+        if (! in.openedOk() || in.readInt() != (int) juce::ByteOrder::littleEndianInt ("RIFF"))
+            return false;
+
+        in.readInt();
+
+        if (in.readInt() != (int) juce::ByteOrder::littleEndianInt ("WAVE"))
+            return false;
+
+        // Chunks until "fmt ", which comes early.
+        for (int chunk = 0; chunk < 16 && ! in.isExhausted(); ++chunk)
+        {
+            const auto id = in.readInt();
+            const auto size = static_cast<juce::uint32> (in.readInt());
+            const auto next = in.getPosition() + static_cast<juce::int64> (size + (size & 1));
+
+            if (id == (int) juce::ByteOrder::littleEndianInt ("fmt "))
+            {
+                if (size < 40 || static_cast<juce::uint16> (in.readShort()) != 0xfffe)
+                    return false;
+
+                in.skipNextBytes (22);
+                const auto data1 = static_cast<juce::uint32> (in.readInt());
+                const auto data2 = static_cast<juce::uint16> (in.readShort());
+                const auto data3 = static_cast<juce::uint16> (in.readShort());
+                return data1 == 0x00000001 && data2 == 0x0721 && data3 == 0x11d3;
+            }
+
+            if (! in.setPosition (next))
+                return false;
+        }
+
+        return false;
+    }
+
+    /** Whether a file is a B-format (ambisonic) recording, and in which
+        convention: from its ASWG ambisonic metadata, then the B-format type of
+        an extensible WAV or an .amb extension (both FuMa), then its name
+        ("AmbiX", or "B-format" and "FuMa" for FuMa, the order most libraries
+        publish). Only files with a whole ambisonic order of channels (4, 9 or
+        16) can be; a four-channel file is otherwise true stereo. */
+    inline std::optional<AmbisonicFormat> bFormatOf (const juce::File& file, const juce::StringPairArray& metadata, int numChannels)
+    {
+        if (numChannels != 4 && numChannels != 9 && numChannels != 16)
+            return {};
+
+        const auto format = metadata.getValue ("ambisonicFormat", {}) + " " + metadata.getValue ("ambisonicChnOrder", {});
+        const auto norm = metadata.getValue ("ambisonicNorm", {});
+
+        if (format.trim().isNotEmpty() || norm.isNotEmpty())
+        {
+            if (format.containsIgnoreCase ("fuma") || norm.containsIgnoreCase ("fuma"))
+                return AmbisonicFormat::fuMa;
+
+            return norm.containsIgnoreCase ("n3d") && ! norm.containsIgnoreCase ("sn3d") ? AmbisonicFormat::ambiXN3D : AmbisonicFormat::ambiX;
+        }
+
+        if (hasBFormatType (file) || file.hasFileExtension ("amb"))
+            return AmbisonicFormat::fuMa;
+
+        const auto name = file.getFileNameWithoutExtension().toLowerCase();
+
+        if (name.contains ("ambix"))
+            return AmbisonicFormat::ambiX;
+
+        for (const auto* hint : { "fuma", "b-format", "bformat", "b_format", "b format" })
+            if (name.contains (hint))
+                return AmbisonicFormat::fuMa;
+
+        return {};
     }
 }
 
