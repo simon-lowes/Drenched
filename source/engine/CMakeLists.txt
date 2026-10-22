@@ -2,6 +2,7 @@
 # tested, benchmarked and reused outside the plugin.
 
 add_library(drenched_engine STATIC
+    src/Ambisonics.cpp
     src/DirectConvolver.cpp
     src/DirectSound.cpp
     src/PartitionedConvolver.cpp

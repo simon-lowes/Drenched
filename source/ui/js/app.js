@@ -297,7 +297,7 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'lock':var lk=b.getAttribute('data-k');st.locks[lk]=!st.locks[lk];st.hint=null;st.note=(st.locks[lk]?'<b>Locked.</b> ':'<b>Unlocked.</b> ')+P[lk].l+(st.locks[lk]?' now holds when you change space.':' follows each space again.');break;
   case 'view':st.view=v;break;
   case 'browse':st.browse=!st.browse;break;
-  case 'loadir':st.browse=false;st.hint=null;if(JUCE){JUCE.emitEvent('loadIr',{});st.note='Choose a WAV, AIFF or FLAC impulse response: mono, stereo, four-channel true stereo, or surround up to 9.1.6.';}else st.note='<b>Load your own IR</b> opens a file chooser in the plugin.';break;
+  case 'loadir':st.browse=false;st.hint=null;if(JUCE){JUCE.emitEvent('loadIr',{});st.note='Choose a WAV, AIFF or FLAC impulse response: mono, stereo, true stereo, surround up to 9.1.6, or B-format.';}else st.note='<b>Load your own IR</b> opens a file chooser in the plugin.';break;
   case 'credits':st.credits=!st.credits;st.browse=false;st.hint=null;break;
   case 'speakers':st.spk=!st.spk;st.browse=false;st.hint=null;break;
   case 'spkreset':st.speakers=[];break;

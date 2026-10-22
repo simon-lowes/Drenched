@@ -5,6 +5,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <cstring>
+
 using namespace drenched;
 
 namespace
@@ -99,4 +102,63 @@ TEST_CASE ("A six-channel WAV file without a mask loads as 5.1", "[layouts]")
 
     CHECK (loaded->isSurround());
     CHECK (loaded->layout == layouts::fivePointOne());
+}
+
+TEST_CASE ("B-format files are known by their metadata, type or name", "[layouts][ambisonic]")
+{
+    const auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory);
+    const auto plain = surroundWav (temp.getChildFile ("drenched-hall.wav"), 4, nullptr);
+    const juce::StringPairArray none;
+
+    // Four channels with nothing to say otherwise are true stereo.
+    CHECK (! channelLayouts::bFormatOf (plain, none, 4).has_value());
+
+    CHECK (channelLayouts::bFormatOf (temp.getChildFile ("Hall B-format.wav"), none, 4) == AmbisonicFormat::fuMa);
+    CHECK (channelLayouts::bFormatOf (temp.getChildFile ("hall_bformat_seat3.wav"), none, 4) == AmbisonicFormat::fuMa);
+    CHECK (channelLayouts::bFormatOf (temp.getChildFile ("Hall AmbiX.wav"), none, 4) == AmbisonicFormat::ambiX);
+    CHECK (channelLayouts::bFormatOf (temp.getChildFile ("Hall AmbiX 2nd order.wav"), none, 9) == AmbisonicFormat::ambiX);
+    CHECK (! channelLayouts::bFormatOf (temp.getChildFile ("Hall B-format.wav"), none, 6).has_value());
+
+    juce::StringPairArray acn, n3d, fuMa;
+    acn.set ("ambisonicChnOrder", "ACN");
+    acn.set ("ambisonicNorm", "SN3D");
+    n3d.set ("ambisonicChnOrder", "ACN");
+    n3d.set ("ambisonicNorm", "N3D");
+    fuMa.set ("ambisonicFormat", "FuMa");
+    CHECK (channelLayouts::bFormatOf (plain, acn, 4) == AmbisonicFormat::ambiX);
+    CHECK (channelLayouts::bFormatOf (plain, n3d, 4) == AmbisonicFormat::ambiXN3D);
+    CHECK (channelLayouts::bFormatOf (plain, fuMa, 4) == AmbisonicFormat::fuMa);
+
+    // An extensible WAV of the B-format type, as .amb files are.
+    juce::MemoryBlock bytes;
+    REQUIRE (plain.loadFileAsData (bytes));
+    auto* data = static_cast<juce::uint8*> (bytes.getData());
+    const char tag[] = "fmt ";
+    const auto fmt = std::search (data, data + bytes.getSize(), tag, tag + 4) - data;
+    REQUIRE (fmt + 48 < static_cast<std::ptrdiff_t> (bytes.getSize()));
+    REQUIRE (juce::ByteOrder::littleEndianShort (data + fmt + 8) == 0xfffe);
+    const juce::uint8 bFormatType[] { 0x01, 0x00, 0x00, 0x00, 0x21, 0x07, 0xd3, 0x11, 0x86, 0x44, 0xC8, 0xC1, 0xCA, 0x00, 0x00, 0x00 };
+    std::memcpy (data + fmt + 8 + 24, bFormatType, sizeof (bFormatType));
+    const auto amb = temp.getChildFile ("drenched-hall.amb");
+    REQUIRE (amb.replaceWithData (bytes.getData(), bytes.getSize()));
+
+    CHECK (channelLayouts::hasBFormatType (amb));
+    CHECK (! channelLayouts::hasBFormatType (plain));
+    CHECK (channelLayouts::bFormatOf (amb, none, 4) == AmbisonicFormat::fuMa);
+
+    // JUCE reads it once handed the stream, as the plugin does for .amb files.
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (amb.createInputStream()));
+    REQUIRE (reader != nullptr);
+    juce::String error;
+    const auto loaded = prepareFromReader (*reader, "Hall", amb.getFileName(), error, channelLayouts::bFormatOf (amb, reader->metadataValues, 4));
+    INFO (error);
+    REQUIRE (loaded != nullptr);
+    CHECK (loaded->ambisonic);
+    CHECK (loaded->speakers.size() == 4);
+    CHECK (loaded->channels == 4);
+
+    plain.deleteFile();
+    amb.deleteFile();
 }

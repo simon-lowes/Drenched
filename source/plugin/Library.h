@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <drenched/RecordedResponse.h>
 
 #include <juce_audio_formats/juce_audio_formats.h>
@@ -38,8 +40,10 @@ namespace library
 }
 
 /** Reads an impulse response from an audio reader and prepares it, up to 31 seconds of
-    it. `displayName` names it in error messages. On failure returns null and says why. */
+    it, as B-format when `bFormat` says so. `displayName` names it in error messages. On
+    failure returns null and says why. */
 std::shared_ptr<const RecordedResponse> prepareFromReader (juce::AudioFormatReader& reader, const juce::String& name,
-                                                           const juce::String& displayName, juce::String& error);
+                                                           const juce::String& displayName, juce::String& error,
+                                                           std::optional<AmbisonicFormat> bFormat = std::nullopt);
 
 } // namespace drenched

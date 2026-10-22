@@ -484,13 +484,15 @@ std::array<float, 2> foldDownGains (const Speaker& speaker) noexcept
     return { level * std::cos (angle), level * std::sin (angle) };
 }
 
-std::shared_ptr<const RecordedResponse> prepareRecordedResponse (const std::vector<std::vector<float>>& channels,
-                                                                 double sampleRate,
-                                                                 std::string name,
-                                                                 const SpeakerLayout& layout)
+namespace
+{
+
+/** prepareRecordedResponse(), or with `ambisonic` the same for four AmbiX channels. */
+std::shared_ptr<RecordedResponse> prepare (const std::vector<std::vector<float>>& channels, double sampleRate, std::string name,
+                                           const SpeakerLayout& layout, bool ambisonic)
 {
     const auto count = channels.size();
-    const auto surround = count != 1 && count != 2 && count != 4;
+    const auto surround = ! ambisonic && count != 1 && count != 2 && count != 4;
 
     if (count == 0 || count > maxChannels || (surround && layout.size() != count))
         throw std::invalid_argument ("Drenched loads mono, stereo, four-channel (true stereo) and surround impulse responses "
@@ -537,7 +539,23 @@ std::shared_ptr<const RecordedResponse> prepareRecordedResponse (const std::vect
     using P = ImpulseResponseSet::Path;
     const auto source = [&] (std::size_t c) { return std::vector<float> (channels[c].begin(), channels[c].begin() + static_cast<std::ptrdiff_t> (length)); };
 
-    if (surround)
+    if (ambisonic)
+    {
+        auto left = virtualMicrophone (channels, Speaker { -ambisonicStereoAzimuth, 0.0f }, ambisonicPattern);
+        auto right = virtualMicrophone (channels, Speaker { ambisonicStereoAzimuth, 0.0f }, ambisonicPattern);
+        left.resize (length);
+        right.resize (length);
+
+        for (std::size_t c = 0; c < 4; ++c)
+            recorded->speakers.push_back (source (c));
+
+        recorded->ambisonic = true;
+        set.paths[P::leftToLeft] = left;
+        set.paths[P::rightToLeft] = std::move (left);
+        set.paths[P::leftToRight] = right;
+        set.paths[P::rightToRight] = std::move (right);
+    }
+    else if (surround)
     {
         std::vector<float> left (length, 0.0f), right (length, 0.0f);
 
@@ -630,6 +648,29 @@ std::shared_ptr<const RecordedResponse> prepareRecordedResponse (const std::vect
     recorded->room.mixingTimeSeconds = static_cast<float> (mixingTime (set));
     estimateRoom (recorded->room);
 
+    return recorded;
+}
+
+} // namespace
+
+std::shared_ptr<const RecordedResponse> prepareRecordedResponse (const std::vector<std::vector<float>>& channels,
+                                                                 double sampleRate,
+                                                                 std::string name,
+                                                                 const SpeakerLayout& layout)
+{
+    return prepare (channels, sampleRate, std::move (name), layout, false);
+}
+
+std::shared_ptr<const RecordedResponse> prepareAmbisonicResponse (const std::vector<std::vector<float>>& channels,
+                                                                  double sampleRate,
+                                                                  std::string name,
+                                                                  AmbisonicFormat format)
+{
+    if (channels.size() > maxChannels)
+        throw std::invalid_argument ("Drenched loads B-format impulse responses with up to 16 channels.");
+
+    auto recorded = prepare (toAmbiX (channels, format), sampleRate, std::move (name), {}, true);
+    recorded->channels = static_cast<int> (channels.size());
     return recorded;
 }
 

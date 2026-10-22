@@ -313,7 +313,7 @@ void DrenchedEditor::onLoadIr (const juce::var&)
 
     choosing = true;
     chooser = std::make_unique<juce::FileChooser> ("Load an impulse response", settings::loadIrFolder(),
-                                                   "*.wav;*.wave;*.aif;*.aiff;*.flac");
+                                                   "*.wav;*.wave;*.amb;*.aif;*.aiff;*.flac");
 
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                           [this] (const juce::FileChooser& fc)

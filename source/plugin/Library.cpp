@@ -9,7 +9,8 @@ namespace drenched
 {
 
 std::shared_ptr<const RecordedResponse> prepareFromReader (juce::AudioFormatReader& reader, const juce::String& name,
-                                                           const juce::String& displayName, juce::String& error)
+                                                           const juce::String& displayName, juce::String& error,
+                                                           std::optional<AmbisonicFormat> bFormat)
 {
     constexpr double maxSeconds = 31.0; // the engine keeps 30 s once the silence is trimmed
 
@@ -38,6 +39,9 @@ std::shared_ptr<const RecordedResponse> prepareFromReader (juce::AudioFormatRead
 
     try
     {
+        if (bFormat.has_value())
+            return prepareAmbisonicResponse (audio, reader.sampleRate, name.toStdString(), *bFormat);
+
         const auto layout = channels == 1 || channels == 2 || channels == 4 ? SpeakerLayout {}
                                                                             : channelLayouts::fileLayout (reader.getChannelLayout(), channels);
         return prepareRecordedResponse (audio, reader.sampleRate, name.toStdString(), layout);
