@@ -32,6 +32,10 @@ recording the track's input, deconvolves it with the speaker's distortion
 removed, saves the result in Documents/Drenched/Captures and loads it.
 With no speakers to hand, choose Hand clap: Drenched listens while you clap,
 keeps the loudest clap that didn't clip, and uses the room's ring-out after it.
+To match a room you only have a recording of, choose Match a room and pick
+the recording (a voice, a band, a drum kit, anything with pauses in it):
+Drenched hears how fast the room dies away each time the sound stops, sets
+the decay graph to match, and switches to the closest space.
 The space list starts with recorded spaces bundled in the plugin
 (`library/`, licence-checked recordings published by others), followed by
 modelled spaces whose responses are synthesised from their dimensions and

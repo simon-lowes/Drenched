@@ -51,6 +51,21 @@ namespace settings
         file.saveIfNeeded();
     }
 
+    /** The folder recordings were last matched from (Match a room). */
+    inline juce::File loadMatchFolder()
+    {
+        juce::PropertiesFile file (options());
+        const juce::File folder (file.getValue ("matchFolder"));
+        return folder.isDirectory() ? folder : juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+    }
+
+    inline void saveMatchFolder (const juce::File& folder)
+    {
+        juce::PropertiesFile file (options());
+        file.setValue ("matchFolder", folder.getFullPathName());
+        file.saveIfNeeded();
+    }
+
     /** Where captured spaces are saved: Documents/Drenched/Captures. */
     inline juce::File capturesFolder()
     {

@@ -51,6 +51,7 @@ private:
     void onGesture (const juce::var&);
     void onUi (const juce::var&);
     void onLoadIr (const juce::var&);
+    void onMatch (const juce::var&);
     void sendCaptureStatus();
     void sendLicenceStatus();
 

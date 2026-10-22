@@ -5,10 +5,12 @@
 
 #include <drenched/ClapCapture.h>
 #include <drenched/Mix.h>
+#include <drenched/RoomMatch.h>
 #include <drenched/Spaces.h>
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace drenched
@@ -316,6 +318,130 @@ void DrenchedProcessor::loadImpulseResponseAsync (const juce::File& file)
         {
             if (! alive.expired())
                 applyLoadedImpulseResponse (file, std::move (loaded), error);
+        });
+    });
+}
+
+//==============================================================================
+juce::var DrenchedProcessor::matchRecording (const juce::File& file)
+{
+    constexpr double longestSeconds = 600.0; // enough to find the pauses in; more only takes longer
+    constexpr double shortestSeconds = 5.0;
+    constexpr int block = 65536;
+
+    auto result = std::make_unique<juce::DynamicObject>();
+    const auto failed = [&result] (const juce::String& why)
+    {
+        result->setProperty ("error", why);
+        return juce::var (result.release());
+    };
+
+    if (! file.existsAsFile())
+        return failed ("Drenched can't find " + file.getFileName() + ".");
+
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
+
+    if (reader == nullptr || reader->sampleRate <= 0.0 || reader->numChannels < 1)
+        return failed (file.getFileName() + " isn't an audio file Drenched can read. Use WAV, AIFF or FLAC.");
+
+    const auto channels = static_cast<int> (std::min (reader->numChannels, 64u));
+    const auto length = std::min (reader->lengthInSamples, static_cast<juce::int64> (longestSeconds * reader->sampleRate));
+
+    if (static_cast<double> (length) < shortestSeconds * reader->sampleRate)
+        return failed (file.getFileName() + " is too short. Choose a recording at least ten seconds long.");
+
+    RoomListener listener (reader->sampleRate);
+    juce::AudioBuffer<float> buffer (channels, block);
+    std::vector<float> mono (static_cast<size_t> (block));
+
+    for (juce::int64 pos = 0; pos < length; pos += block)
+    {
+        const auto n = static_cast<int> (std::min<juce::int64> (block, length - pos));
+
+        if (! reader->read (&buffer, 0, n, pos, true, true))
+            return failed (file.getFileName() + " couldn't be read to the end.");
+
+        std::fill (mono.begin(), mono.end(), 0.0f);
+
+        for (int ch = 0; ch < channels; ++ch)
+            for (int i = 0; i < n; ++i)
+                mono[static_cast<size_t> (i)] += buffer.getSample (ch, i) / static_cast<float> (channels);
+
+        listener.listen (mono.data(), static_cast<size_t> (n));
+    }
+
+    RoomEstimate heard;
+
+    try
+    {
+        heard = listener.estimate();
+    }
+    catch (const RoomMatchProblem& problem)
+    {
+        return failed (problem.what());
+    }
+
+    // The closest space: a recorded one, or a modelled one.
+    juce::String closestId, closestName;
+    auto closest = std::numeric_limits<float>::max();
+
+    const auto consider = [&] (const juce::String& id, const juce::String& name, const std::array<float, 8>& decay)
+    {
+        if (const auto distance = decayDistance (heard.decaySeconds, decay); distance < closest)
+        {
+            closest = distance;
+            closestId = id;
+            closestName = name;
+        }
+    };
+
+    for (const auto& space : library::spaces())
+    {
+        if (const auto* bands = space.info["bands"].getArray(); bands != nullptr && bands->size() == 8)
+        {
+            std::array<float, 8> decay {};
+
+            for (size_t b = 0; b < 8; ++b)
+                decay[b] = static_cast<float> (static_cast<double> ((*bands)[static_cast<int> (b)]));
+
+            consider (space.id, space.info["name"].toString(), decay);
+        }
+    }
+
+    for (const auto& space : bundledSpaces)
+        consider (space.id, space.name, space.decaySeconds);
+
+    juce::Array<juce::var> bands, counts;
+
+    for (size_t b = 0; b < 8; ++b)
+    {
+        bands.add (static_cast<double> (heard.decaySeconds[b]));
+        counts.add (heard.decaysHeard[b]);
+    }
+
+    result->setProperty ("bands", bands);
+    result->setProperty ("heard", counts);
+    result->setProperty ("spaceId", closestId);
+    result->setProperty ("spaceName", closestName);
+    result->setProperty ("file", file.getFileName());
+    result->setProperty ("seconds", listener.secondsHeard());
+    return juce::var (result.release());
+}
+
+void DrenchedProcessor::matchRoomAsync (const juce::File& file, std::function<void (const juce::var&)> done)
+{
+    std::weak_ptr<int> alive = lifetime;
+
+    loader.addJob ([file, alive, done = std::move (done)]() mutable
+    {
+        auto result = matchRecording (file);
+
+        juce::MessageManager::callAsync ([alive, done = std::move (done), result = std::move (result)]
+        {
+            if (! alive.expired())
+                done (result);
         });
     });
 }

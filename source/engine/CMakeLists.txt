@@ -12,6 +12,7 @@ add_library(drenched_engine STATIC
     src/RecordedResponse.cpp
     src/ResponseEnvelope.cpp
     src/ReverbCloud.cpp
+    src/RoomMatch.cpp
     src/SpeakerTrim.cpp
     src/ClapCapture.cpp
     src/SweepCapture.cpp

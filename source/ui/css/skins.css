@@ -286,6 +286,9 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .ca-photo .phi{filter:url(#duo-cat) contrast(1.02)}
 .s-catalogue.stage .ca-photo .phi{filter:url(#duo-cat-n)}
 .ca-lic{position:absolute;left:24px;bottom:22px;z-index:2}.ca-lic .licchip{margin:0}
+/* The plate has no hint line; notes (a loaded file, a matched room) sit on the photograph like a caption. */
+.ca-note{position:absolute;left:24px;right:24px;bottom:64px;z-index:2;padding:12px 16px;background:rgba(24,14,12,.78);color:#f3ece6;font:13px/1.5 var(--fui);border-radius:2px}
+.ca-note b{font-weight:600;color:#fff}
 .ca-photo::after{content:"";position:absolute;top:0;bottom:0;right:0;width:1px;background:var(--ln)}
 .ca-wall{position:absolute;left:620px;top:0;width:580px;height:760px;padding:30px 44px 26px 48px;display:flex;flex-direction:column}
 .ca-top{display:flex;align-items:center;gap:14px;height:28px}
@@ -552,7 +555,8 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .st-btn{height:32px;padding:0 14px;border-radius:999px;border:1px solid var(--ln);background:var(--p);color:var(--tx);font-size:12px;display:inline-flex;align-items:center;gap:7px}
 .st-btn[aria-pressed="true"],.st-btn[aria-expanded="true"]{background:var(--ac);color:var(--onac);border-color:var(--ac)}
 .st-strip{position:absolute;left:470px;right:40px;bottom:14px;height:20px;display:flex;align-items:center;gap:16px}
-.st-strip .hint{flex:1}
+.st-strip .hint{flex:1;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:16px}
+.st-strip{height:auto;min-height:20px}
 .s-strata .menu{left:470px;top:60px}
 .s-strata .adv{position:absolute;left:470px;right:40px;top:492px;height:222px;background:var(--p);border:1px solid var(--ln);border-radius:10px;padding:8px 16px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 24px;align-content:start;z-index:2;overflow-y:auto}
 .s-strata .adv .row{height:18px;font-size:11px}
