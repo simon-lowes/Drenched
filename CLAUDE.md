@@ -11,6 +11,8 @@
 - `source/engine/` must stay JUCE-free and real-time safe: no allocation,
   locks or I/O on the audio path. Every engine component gets Catch2 tests,
   and fast convolution paths are null-tested against `DirectConvolver`.
+- Old sessions must load and sound the same: a new parameter's default is how
+  the plugin played before it; see `tests/sessions/README.md`.
 - Licences: only MIT, BSD, zlib, ISC, Apache, BSL or bought licences. Never
   GPL, LGPL (unless dynamically linked and approved), or non-commercial
   code. Record each new dependency in `NOTICE.md`.
