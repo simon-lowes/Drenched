@@ -63,7 +63,7 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .menu button:hover,.menu button[aria-current="true"]{background:var(--r)}
 .menu small{color:var(--tx2);font:11px var(--fnum)}
 .menu .mload{margin-top:4px;border-top:1px solid var(--ln);border-radius:0 0 var(--rad) var(--rad);color:var(--ac)}
-.menu .mcap,.menu .mlic,.menu .mcred,.menu .mspk,.menu .mscn,.menu .meq{color:var(--ac)}
+.menu .mcap,.menu .mlic,.menu .mcred,.menu .mspk,.menu .mscn,.menu .meq,.menu .mwf{color:var(--ac)}
 .crl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px;max-height:360px;overflow:auto}
 .crl li{display:flex;flex-direction:column;gap:2px;font-size:13px}
 .crl span,.crl small{color:var(--tx2)}.crl small{font-size:12px}
@@ -142,8 +142,37 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .eqd .eqt em{font:12px var(--fnum,var(--fui));color:var(--tx2);text-align:center;opacity:.6}
 .eqd .cft{margin-top:14px}
 .eqd .ct{max-width:60ch}
+/* the live spectrum sits faintly behind the EQ curve, on the curve's own plot */
+.eqd .eqw{position:relative;margin-top:14px}
+.eqd .eqw .eqg{margin-top:0;position:relative}
+.eqd .eqs{position:absolute;left:36px;top:14px;width:678px;height:200px;pointer-events:none}
 /* the way in: a diamond on the button while the EQ is in use */
 button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
+/* The waterfall: the playing response analysed, with the live spectrum of the reverb. The
+   waterfall and the spectrum are canvases, drawn in the skin's tokens by app.js. */
+.wfd .cbox{width:900px}
+.wfd p{max-width:none}
+.wfd .wfg{display:grid;grid-template-columns:1fr 292px;grid-template-rows:auto auto auto;gap:14px 18px;margin-top:14px}
+.wfd .wfp{display:flex;flex-direction:column;gap:6px;min-width:0}
+.wfd .wfw{grid-column:1;grid-row:1/3}
+.wfd .wfs{grid-column:1/3;padding-top:10px;border-top:1px solid var(--ln)}
+.wfd .wfh{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:12px;color:var(--tx2);white-space:nowrap}
+.wfd .wfh b{font-weight:500;color:var(--tx)}
+.wfd .wfh span{overflow:hidden;text-overflow:ellipsis}
+.wfd canvas{display:block;transition:opacity .3s}
+.wfd .dcv{display:block}
+.wfd .dcv text{font:10px var(--fnum,var(--fui));fill:var(--tx2)}
+.wfd .dcv .gr{stroke:var(--ln);stroke-width:1;fill:none}
+.wfd .dcv .fill{fill:var(--ac);opacity:.12;stroke:none}
+.wfd .dcv .cur{fill:none;stroke:var(--tx);stroke-width:1.5;stroke-linejoin:round}
+.wfd .wfn{display:grid;grid-template-columns:repeat(4,1fr);gap:8px 10px;padding-top:4px}
+.wfd .wfn div{display:flex;flex-direction:column;gap:1px;min-width:0}
+.wfd .wfn b{font:500 19px/1.15 var(--fnum,var(--fui));color:var(--num);letter-spacing:-.01em;white-space:nowrap}
+.wfd .wfn span{font-size:10.5px;color:var(--tx2);white-space:nowrap}
+.wfd .wfn .na b{color:var(--tx2);font-weight:400}
+.wfd .cft{margin-top:12px;padding-top:10px;border-top:1px solid var(--ln)}
+.wfd .ct{max-width:none}
+@media (prefers-reduced-motion:reduce){.wfd canvas{transition:none}}
 /* The licence: the trial notice and the activation dialog, which reuses the capture dialog's frame. */
 .licchip{flex:none;margin:0 6px 0 12px;border:1px solid var(--ln);border-radius:999px;background:var(--p);color:var(--tx2);padding:3px 11px;font:11.5px/1.4 var(--fui);white-space:nowrap}
 .licchip u{text-decoration:none;color:var(--ac);font-weight:600;margin-left:2px}
@@ -428,8 +457,9 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .vi-ctl{display:flex;flex-direction:column;align-items:center;gap:2px}
 .vi-ctl .nm{font-size:12px;color:var(--tx2);display:flex;gap:6px;align-items:center}
 .vi-ctl .ro{font-size:14px;height:24px;width:100px}
-.vi-acts{display:flex;gap:8px}
-.vi-btn{flex:1;height:38px;border-radius:999px;border:0;background:#24272C;color:#EEF1F2;font-size:12px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;gap:7px}
+/* two rows: what the sound does, then the windows */
+.vi-acts{display:flex;flex-wrap:wrap;gap:8px}
+.vi-btn{flex:1 1 30%;height:38px;border-radius:999px;border:0;background:#24272C;color:#EEF1F2;font-size:12px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;gap:7px}
 .vi-btn[aria-pressed="true"],.vi-btn[aria-expanded="true"]{background:#2E6F6A;color:#EEF1F2}
 .vi-strip{position:absolute;left:28px;right:420px;bottom:8px;height:18px;display:flex;align-items:center;gap:14px}
 .vi-strip .hint{flex:1;color:#B9C2C6;text-shadow:0 1px 8px rgba(0,0,0,.7)}
@@ -673,7 +703,8 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .ma-c .ro{width:100%;height:24px;font-size:15px}
 .ma-c.mix .ro{color:var(--ac)}
 .ma-c .nm{font-size:11px;color:var(--tx2);letter-spacing:.06em;text-transform:uppercase;display:flex;align-items:center;gap:6px;white-space:nowrap}
-.ma-acts{width:170px;display:flex;flex-direction:column;gap:6px}
+.ma-acts{width:300px;display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.ma-acts .ma-btn:last-child:nth-child(odd){grid-column:1/3}
 .ma-btn{height:34px;border-radius:3px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.18);color:var(--tx);font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px;padding:0 12px}
 .ma-btn[aria-pressed="true"],.ma-btn[aria-expanded="true"]{background:var(--ac);color:var(--onac);border-color:var(--ac)}
 .ma-strip{position:absolute;left:40px;right:40px;bottom:14px;height:22px;display:flex;align-items:center;gap:16px}
@@ -715,7 +746,7 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .fo-row{display:grid;grid-template-columns:78px 1fr 66px 24px;align-items:center;gap:8px;height:26px;border-bottom:1px solid var(--ln);font-size:12px}
 .fo-row .nm{display:flex;align-items:center;gap:6px}.fo-row .ro{text-align:right;width:66px;height:22px;padding:0}
 .fo-mix{display:flex;align-items:center;gap:10px;margin-top:auto}
-.fo-mix .fo-acts{margin-left:auto;margin-top:0;flex-direction:column;gap:2px;align-items:flex-end}
+.fo-mix .fo-acts{margin-left:auto;margin-top:0;flex-direction:column;gap:2px;align-items:flex-end;line-height:1.15}
 .fo-mix .ro{font-size:30px;width:96px;text-align:left;height:36px;padding:0;font-weight:300;letter-spacing:-.02em}
 .fo-mix .ml{display:flex;flex-direction:column}.fo-mix .ml span{font-size:11px;color:var(--tx2);display:flex;align-items:center;gap:6px}
 .fo-acts{display:flex;gap:14px;margin-top:6px}

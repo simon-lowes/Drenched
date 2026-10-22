@@ -49,6 +49,10 @@ changes the space. Scene Off leaves the settings alone.
 Wet EQ (next to Freeze, or in the space menu) shapes the reverb alone with
 six bands: a low shelf, four bells and a high shelf, after the wet cuts. It
 starts flat, and a band at 0 dB does nothing.
+Waterfall (beside Wet EQ, or in the space menu) shows the response you are
+hearing: energy over time in third-octave bands, the broadband decay with
+the RT60 measured per octave, and a live spectrum of the reverb, which also
+sits behind the curve in the Wet EQ window.
 The space list starts with recorded spaces bundled in the plugin
 (`library/`, licence-checked recordings published by others), followed by
 modelled spaces whose responses are synthesised from their dimensions and
