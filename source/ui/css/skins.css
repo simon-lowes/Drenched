@@ -63,7 +63,7 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .menu button:hover,.menu button[aria-current="true"]{background:var(--r)}
 .menu small{color:var(--tx2);font:11px var(--fnum)}
 .menu .mload{margin-top:4px;border-top:1px solid var(--ln);border-radius:0 0 var(--rad) var(--rad);color:var(--ac)}
-.menu .mcap,.menu .mlic,.menu .mcred,.menu .mspk{color:var(--ac)}
+.menu .mcap,.menu .mlic,.menu .mcred,.menu .mspk,.menu .mscn{color:var(--ac)}
 .crl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px;max-height:360px;overflow:auto}
 .crl li{display:flex;flex-direction:column;gap:2px;font-size:13px}
 .crl span,.crl small{color:var(--tx2)}.crl small{font-size:12px}
@@ -104,6 +104,18 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .spkd input{width:100%;box-sizing:border-box;border:1px solid var(--ln);border-radius:var(--rad,6px);background:transparent;color:var(--tx);padding:5px 8px;font:12px var(--fnum,var(--fui));text-align:right}
 .spkd input:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
 .spkd .spn{grid-column:3/5;color:var(--tx2);font-size:12px}
+.scn .scl{max-height:352px;overflow:auto;margin-top:14px;padding:0 2px 10px;border-top:1px solid var(--ln)}
+.scn .scr{display:grid;grid-template-columns:28px 1fr 150px auto auto auto;column-gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--ln)}
+.scn .scr[aria-current="true"] b{color:var(--ac)}
+.scn .scr b{font:600 13px var(--fnum,var(--fui));text-align:right}
+.scn .scr input{width:100%;box-sizing:border-box;border:1px solid transparent;border-radius:var(--rad,6px);background:transparent;color:var(--tx);padding:5px 8px;font:13px var(--fui)}
+.scn .scr input:hover{border-color:var(--ln)}
+.scn .scr input:focus-visible{outline:2px solid var(--ac);outline-offset:1px;border-color:var(--ln)}
+.scn .scs{color:var(--tx2);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scn .lsm{border:1px solid var(--ln);border-radius:var(--rad,6px);background:transparent;color:var(--tx);padding:4px 10px;font:12px var(--fui)}
+.scn .scr[aria-current="true"] .lsm[data-act="screcall"]{border-color:var(--ac);color:var(--ac)}
+.scn .lsm:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+.scn .sce{color:var(--tx2);margin:14px 0 4px}
 /* The licence: the trial notice and the activation dialog, which reuses the capture dialog's frame. */
 .licchip{flex:none;margin:0 6px 0 12px;border:1px solid var(--ln);border-radius:999px;background:var(--p);color:var(--tx2);padding:3px 11px;font:11.5px/1.4 var(--fui);white-space:nowrap}
 .licchip u{text-decoration:none;color:var(--ac);font-weight:600;margin-left:2px}

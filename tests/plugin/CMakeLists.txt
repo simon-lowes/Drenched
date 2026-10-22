@@ -1,9 +1,10 @@
 # Tests that load the whole plugin: saved sessions from every released version must load
-# and sound the same in this one.
+# and sound the same in this one, and features that live in the plugin rather than the engine.
 add_executable(drenched_plugin_tests
     Main.cpp
     SessionTests.cpp
-    MatchTests.cpp)
+    MatchTests.cpp
+    SceneTests.cpp)
 
 target_link_libraries(drenched_plugin_tests PRIVATE Drenched Catch2::Catch2)
 target_include_directories(drenched_plugin_tests PRIVATE

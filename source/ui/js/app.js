@@ -23,12 +23,14 @@ function gesture(ids,begin){if(JUCE)JUCE.emitEvent('gesture',{ids:ids,begin:!!be
 
 /* state pushed by the plugin: parameter values (host automation, preset recall) and the
    saved interface state (space, locks, view, skin) */
-var irEvent=null,shortened=0;
+var irEvent=null,shortened=0,sceneSeen=false;
 function applyFromHost(msg){if(!msg)return;var p=msg.params||{},u=msg.ui||{};
  if(u.shortened!=null){var sh=+u.shortened||0;if(sh>0&&sh!==shortened){st.hint=null;
    st.note='<b>Shortened to '+sh.toFixed(1)+' s.</b> The 32-bit version only has memory for this much of a surround reverb at this sample rate. The 64-bit version plays it in full.';}
   shortened=sh;}
  if('ir' in u)setUserSpace(u.ir);
+ if('scenes' in u)setScenes(u.scenes);
+ if(p.scene!=null){var sn=Math.round(+p.scene);if(sceneSeen&&sn!==st.scene&&sn>0&&sceneOf(sn)){st.hint=null;st.note='<b>'+esc(sceneOf(sn).name)+'</b> recalled: scene '+sn+', '+esc(sceneOf(sn).space)+'.';}st.scene=isFinite(sn)?sn:0;sceneSeen=true;}
  if(u.irEvent!=null){var ev=+u.irEvent;if(irEvent!==null&&ev!==irEvent){st.hint=null;
    st.note=u.irError?'<b>That file didn\u2019t load.</b> '+esc(u.irError):'<b>'+esc(SPACES[USER]?SPACES[USER].name:'Your IR')+'</b> loaded. The graph shows its measured decay; drag a band to reshape it.';}
   irEvent=ev;}
@@ -123,6 +125,28 @@ function speakersHTML(){var rows=st.outputs.map(function(o,i){var v=speakerOf(st
   '<div class="sph"><span>Speaker</span><span>Output</span><span>Level</span><span>Delay</span></div><div class="spl">'+rows+'</div>'+
   '<div class="cft"><button class="cgo stop" data-act="spkreset">Reset all</button><span class="ct">Levels from Off to +12 dB, delays up to 100 ms. Saved with the session.</span></div></div></div>';}
 
+/* ---- scenes: every setting and the space under a name, recalled here or by automating Scene ---- */
+st.scn=false;st.scenes=[];st.scene=0;st.scnLocal={};
+var MAX_SCENES=32;
+function sceneOf(n){for(var i=0;i<st.scenes.length;i++)if(st.scenes[i].number===n)return st.scenes[i];return null;}
+function freeScene(){for(var n=1;n<=MAX_SCENES;n++)if(!sceneOf(n))return n;return 0;}
+function setScenes(list){st.scenes=(Array.isArray(list)?list:[]).map(function(x){return {number:+x.number,name:String(x.name||''),space:String(x.space||'')};}).filter(function(x){return x.number>0;});}
+/* Without the plugin (a browser preview) scenes are kept on the page. */
+function sceneLocal(act,n,name){if(act==='store'){var k=n||freeScene();if(!k)return;var old=sceneOf(k);st.scnLocal[k]=snap(st);
+  if(old){old.space=SPACES[st.sp].name;if(name)old.name=name;}else st.scenes.push({number:k,name:name||'Scene '+k,space:SPACES[st.sp].name});st.scenes.sort(function(a,b){return a.number-b.number;});if(!n)st.scene=k;}
+ else if(act==='rename'){var r=sceneOf(n);if(r&&name)r.name=name;}
+ else if(act==='delete'){st.scenes=st.scenes.filter(function(x){return x.number!==n;});delete st.scnLocal[n];}
+ else if(act==='recall'&&st.scnLocal[n]){var v=st.scnLocal[n];Object.keys(v).forEach(function(k){if(k!=='cpu')st[k]=Array.isArray(v[k])?v[k].slice():v[k];});st.scene=n;}}
+function sceneAct(act,n,name){var msg={number:n||0,name:name||''};if(JUCE)JUCE.emitEvent('scene'+act.charAt(0).toUpperCase()+act.slice(1),msg);else sceneLocal(act,n,name);}
+function scenesHTML(){var rows=st.scenes.map(function(x){var cur=x.number===st.scene,nm=esc(x.name);
+  return '<div class="scr" aria-current="'+cur+'"><b>'+x.number+'</b><input data-fid="scn-'+x.number+'" data-scn="'+x.number+'" aria-label="Scene '+x.number+' name" maxlength="64" value="'+nm+'"><span class="scs" title="'+esc(x.space)+'">'+esc(x.space)+'</span>'+
+   '<button class="lsm" data-act="screcall" data-v="'+x.number+'" aria-label="Recall '+nm+'">Recall</button><button class="lsm" data-act="scupdate" data-v="'+x.number+'" aria-label="Update '+nm+' to the current settings">Update</button><button class="lsm scx" data-act="scdelete" data-v="'+x.number+'" aria-label="Delete '+nm+'">Delete</button></div>';}).join('');
+ var next=freeScene();
+ return '<div class="cap scn" role="dialog" aria-modal="true" aria-labelledby="scn-h"><div class="cbox"><div class="chd"><h2 id="scn-h">Scenes</h2><button class="cx" data-act="scenes" aria-label="Close">Close</button></div>'+
+  '<p>A scene keeps every setting and the space. Store one for each shot or location, then recall it here, or automate the Scene parameter in your DAW to change rooms on the cut. Freeze and Low CPU stay as they are.</p>'+
+  (rows?'<div class="scl">'+rows+'</div>':'<p class="sce">No scenes yet. Set up the room for a shot, then store it.</p>')+
+  '<div class="cft"><button class="cgo" data-act="scstore"'+(next?'':' disabled')+'>'+(next?'Store as scene '+next:'All 32 scenes are used')+'</button><span class="ct">Saved with the session. Scene Off leaves the settings alone.</span></div></div></div>';}
+
 /* ---- the licence: a trial, then activation online or with a code made on another device ---- */
 st.lic=false;st.licOff=false;st.licKey='';st.licCode='';
 st.licence={state:'trial',daysLeft:14,name:'',licence:'',machine:'',page:'',busy:false,message:'',error:false,testKey:false};
@@ -155,11 +179,11 @@ function fit(){var w=live.clientWidth,h=live.clientHeight,sc=Math.min(w/W,h/H),e
  el.style.transform='translate('+((w-W*sc)/2).toFixed(2)+'px,'+((h-H*sc)/2).toFixed(2)+'px) scale('+sc.toFixed(5)+')';
  var frs=live.querySelectorAll('.skins .fr');for(var i=0;i<frs.length;i++){var s2=frs[i].firstElementChild;if(s2)s2.style.transform='scale('+(frs[i].clientWidth/W).toFixed(5)+')';}}
 function renderLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAttribute('data-fid'):null;
- var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';
+ var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';
  live.innerHTML=html;fit();
  if(fid){var n=live.querySelector('[data-fid="'+fid+'"]');if(n){n.focus({preventScroll:true});if(n.matches('input,textarea'))n.selectionStart=n.selectionEnd=n.value.length;}}
  // A dialog keeps the keyboard even when the control that had it is redrawn away.
- if((st.lic||st.capture||st.credits||st.spk)&&!live.contains(document.activeElement)){var d=live.querySelector('.cap .cgo:not([disabled])')||live.querySelector('.cap .cx');if(d)d.focus({preventScroll:true});}}
+ if((st.lic||st.capture||st.credits||st.spk||st.scn)&&!live.contains(document.activeElement)){var d=live.querySelector('.cap .cgo:not([disabled])')||live.querySelector('.cap .cx');if(d)d.focus({preventScroll:true});}}
 var raf=0;function schedule(){if(!raf)raf=requestAnimationFrame(function(){raf=0;renderLive();sync();syncUi();});}
 window.schedule=schedule;
 window.addEventListener('resize',fit);
@@ -197,8 +221,9 @@ live.addEventListener('pointermove',function(e){if(!drag)return;
 function endDrag(){if(drag){var ids=drag.ids;drag=null;schedule();gesture(ids,false);}}
 live.addEventListener('pointerup',endDrag);live.addEventListener('pointercancel',endDrag);
 live.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1,PageUp:10,PageDown:-10};
- if(e.key==='Escape'&&(st.skins||st.browse||st.capture||st.lic||st.credits||st.spk)){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
+ if(e.key==='Escape'&&(st.skins||st.browse||st.capture||st.lic||st.credits||st.spk||st.scn)){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.scn)st.scn=false;else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
  if(e.key==='Enter'&&t.id==='lic-key'){e.preventDefault();licActivate();renderLive();return;}
+ if(e.key==='Enter'&&t.matches('input[data-scn]')){e.preventDefault();t.blur();return;}
  if(t.matches('.sk')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.click();return;}
  if(t.matches('[data-knob]')){var k=t.getAttribute('data-knob'),p=P[k];if(e.key==='Home')setParam(st,k,p.min);else if(e.key==='End')setParam(st,k,p.max);else if(keys[e.key])setParam(st,k,from01(k,to01(k,getV(st,k))+keys[e.key]*(e.shiftKey?0.002:0.02)));else return;e.preventDefault();schedule();}
  else if(t.matches('[data-node]')){var i=+t.getAttribute('data-node');if(e.key==='ArrowLeft'||e.key==='ArrowRight'){var ni=clamp(i+(e.key==='ArrowRight'?1:-1),0,7);st.lastBand=ni;e.preventDefault();renderLive();var n2=live.querySelector('[data-fid="nd-'+ni+'"]');if(n2)n2.focus({preventScroll:true});return;}
@@ -209,6 +234,7 @@ live.addEventListener('change',function(e){var t=e.target;
  if(t.matches('input[data-spk]')){var si=+t.getAttribute('data-spk'),lv=t.getAttribute('data-f')==='l',sr=t.value.replace(/\u2212/g,'-'),sn=sr.match(/-?\d+(\.\d+)?/),cur=speakerOf(st,si).slice();
   if(lv)cur[0]=/off/i.test(sr)?SPK_LEVEL.min:sn?clamp(Math.round(parseFloat(sn[0])*10)/10,SPK_LEVEL.min,SPK_LEVEL.max):cur[0];else if(sn)cur[1]=clamp(Math.round(parseFloat(sn[0])*10)/10,SPK_DELAY.min,SPK_DELAY.max);
   while(st.speakers.length<=si)st.speakers.push([0,0]);st.speakers[si]=cur;renderLive();syncUi();return;}
+ if(t.matches('input[data-scn]')){var rn=+t.getAttribute('data-scn'),nv=t.value.trim();if(nv)sceneAct('rename',rn,nv.slice(0,64));renderLive();return;}
  if(!t.matches('input[data-type]'))return;var ty=t.getAttribute('data-type'),raw=t.value.replace(/\u2212/g,'-'),nums=raw.match(/-?\d+(\.\d+)?/g);
  if((ty==='lx'||ty==='sx')&&/cent/i.test(raw)){setParam(st,ty,50);st.note=null;renderLive();sync();return;}
  if(!nums){if(/off/i.test(raw)&&P[ty]&&(P[ty].min===0||ty==='dLvl'))setParam(st,ty,P[ty].min);st.note=null;renderLive();sync();return;}var v=parseFloat(nums[nums.length-1]);
@@ -237,6 +263,11 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'credits':st.credits=!st.credits;st.browse=false;st.hint=null;break;
   case 'speakers':st.spk=!st.spk;st.browse=false;st.hint=null;break;
   case 'spkreset':st.speakers=[];break;
+  case 'scenes':st.scn=!st.scn;st.browse=false;st.hint=null;break;
+  case 'scstore':sceneAct('store',0,'');st.hint=null;st.note='<b>Stored.</b> Automate Scene to recall it on the cut.';break;
+  case 'scupdate':sceneAct('store',+v,'');st.hint=null;st.note='<b>'+esc((sceneOf(+v)||{}).name||'Scene '+v)+'</b> now holds the current settings.';break;
+  case 'screcall':sceneAct('recall',+v,'');break;
+  case 'scdelete':sceneAct('delete',+v,'');st.hint=null;st.note='<b>Scene '+v+' deleted.</b> The others keep their numbers, so their automation still works.';break;
   case 'capture':st.capture=!st.capture;st.hint=null;if(st.capture&&!capBusy()&&st.capStatus.stage!=='failed')st.capStatus.message='';break;
   case 'capopt':var ck=b.getAttribute('data-k');if(CAP_OPTS[ck]&&!capBusy())st.cap[ck]=ck==='method'?v:+v;break;
   case 'capstart':if(JUCE){st.capStatus={stage:'playing',progress:0,peakDb:-100,message:''};JUCE.emitEvent('startCapture',{method:st.cap.method,listenSeconds:st.cap.listen,speakers:st.cap.speakers,sweepSeconds:st.cap.sweep,tailSeconds:st.cap.tail,levelDb:st.cap.level});}

@@ -85,6 +85,10 @@ public:
         instead. Message thread only. */
     void loadImpulseResponseAsync (const juce::File& file);
 
+    /** The same for a scene's file: plays it without changing the decay graph, and only if
+        the session still wants that file when it has loaded. */
+    void loadSceneImpulseResponseAsync (const juce::File& file);
+
     /** Match a room: listens to a recording on a background thread for how long the room it
         was made in rings (see RoomListener), then calls `done` on the message thread with the
         result for the interface: the decay per band (bands), how many decays each band was
@@ -95,6 +99,27 @@ public:
     /** The same, at once: what matchRoomAsync hands back. Allocates and takes a while; any
         thread but the audio thread. */
     static juce::var matchRecording (const juce::File& file);
+
+    /** The stored scenes for the interface, by number: number, name and the space's name.
+        Message thread only. */
+    juce::var sceneList();
+
+    /** Stores every setting and the space as scene `number` (replacing what it held), or
+        with 0 as the lowest free number. Returns the number, or 0 when all are taken. An
+        empty name keeps the scene's old name, or names a new one "Scene n". Message thread. */
+    int storeScene (int number, const juce::String& name);
+
+    void renameScene (int number, const juce::String& name);
+    void deleteScene (int number);
+
+    /** Sets every setting and the space to scene `number`'s and moves the scene parameter
+        to it, telling the host. Automating the scene parameter does the same within a
+        timer tick (see followSceneParameter). Does nothing for an empty number. Message thread. */
+    void recallScene (int number);
+
+    /** Recalls the scene the scene parameter has moved to, if it has moved since the last
+        recall or session load. Called by the timer; public for tests. Message thread. */
+    void followSceneParameter();
 
     /** The loaded impulse response for the interface: name, channels, rate, measured decay
         and room size, or whether its file is missing. Void when none is loaded. */
@@ -157,7 +182,13 @@ private:
         session loading before playback), otherwise on the loader thread. */
     void loadLibrarySpace (const juce::String& id, bool now);
 
-    void applyLoadedImpulseResponse (const juce::File& file, std::shared_ptr<const RecordedResponse> loaded, const juce::String& error);
+    void applyLoadedImpulseResponse (const juce::File& file, std::shared_ptr<const RecordedResponse> loaded, const juce::String& error,
+                                     bool measuredDecay = true);
+
+    juce::ValueTree scenes();
+    juce::ValueTree findScene (int number);
+    juce::String spaceName (const juce::String& id, const juce::String& irName) const;
+    int followedScene = 0; // the scene parameter's value at the last recall or session load
 
     /** Notices a capture that has finished playing, then deconvolves and saves it on the
         loader thread. Message thread. */
@@ -199,6 +230,7 @@ private:
         std::atomic<float>* listenerX = nullptr;
         std::atomic<float>* sourceX = nullptr;
         std::atomic<float>* lowCpu = nullptr;
+        std::atomic<float>* scene = nullptr;
         std::array<std::atomic<float>*, 8> decay {};
     } params;
 

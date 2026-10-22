@@ -41,6 +41,7 @@ namespace ParamIDs
     inline constexpr auto cloudSize = "cloudSize";
     inline constexpr auto listenerX = "listenerX";
     inline constexpr auto sourceX = "sourceX";
+    inline constexpr auto scene = "scene";
 
     inline constexpr std::array<const char*, 8> decay { "decay63",  "decay125", "decay250", "decay500",
                                                         "decay1k",  "decay2k",  "decay4k",  "decay8k" };
@@ -48,11 +49,11 @@ namespace ParamIDs
                                                              "Decay 1 kHz",  "Decay 2 kHz",  "Decay 4 kHz",  "Decay 8 kHz" };
 
     /** Every id, in a fixed order, for code that keeps per-parameter state. */
-    inline constexpr std::array<const char*, 37> ordered { mix, output, predelay, size, brightness, earlyLate, distance, freeze,
+    inline constexpr std::array<const char*, 38> ordered { mix, output, predelay, size, brightness, earlyLate, distance, freeze,
                                                            predelaySync, crossover, wetLowCut, wetHighCut, width, ducking, monoBelow,
                                                            decay[0], decay[1], decay[2], decay[3], decay[4], decay[5], decay[6], decay[7],
                                                            living, movement, movementRate, reverse, gate, attack, directLevel, directDelay,
-                                                           directColour, crossFeed, lowCpu, cloudSize, listenerX, sourceX };
+                                                           directColour, crossFeed, lowCpu, cloudSize, listenerX, sourceX, scene };
 
     /** The same, as strings. */
     inline const juce::StringArray& all()
@@ -88,6 +89,31 @@ namespace UiIDs
     inline const juce::Identifier irName { "irName" };
     inline const juce::Identifier irError { "irError" };
     inline const juce::Identifier irEvent { "irEvent" };
+}
+
+/** Scenes: named sets of every setting and the space, recalled from the interface or by
+    automating the scene parameter (see DrenchedProcessor::recallScene). They live in a
+    child of the plugin's state tree, one child per scene, each holding its parameter
+    values as properties named by parameter id. */
+namespace SceneIDs
+{
+    inline constexpr int maxScenes = 32;
+
+    inline const juce::Identifier tree { "scenes" };
+    inline const juce::Identifier scene { "scene" };
+    inline const juce::Identifier number { "number" };     // 1 to maxScenes, the scene parameter's value
+    inline const juce::Identifier name { "name" };
+    inline const juce::Identifier spaceId { "spaceId" };
+    inline const juce::Identifier irPath { "irPath" };     // when spaceId is "user"
+    inline const juce::Identifier irName { "irName" };
+    inline const juce::Identifier speakers { "speakers" };
+
+    /** Parameters a scene leaves alone: the scene itself, Freeze (a performance control,
+        like the A/B compare leaves it) and Low CPU (a setting for the computer, not the room). */
+    inline bool isStored (const juce::String& id)
+    {
+        return id != ParamIDs::scene && id != ParamIDs::freeze && id != ParamIDs::lowCpu;
+    }
 }
 
 /** The default decay-by-frequency curve of the first bundled space (Grand Hall), in seconds. */
@@ -217,6 +243,13 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     // room as captured (how every earlier version played).
     layout.add (std::make_unique<Float> (ParameterID { ParamIDs::cloudSize, 1 }, "Cloud size",
                                          NormalisableRange<float> (0.0f, 100.0f, 1.0f), 100.0f, percent));
+
+    // The scene to recall: automating it changes every setting and the space at once.
+    // Off (0, how every earlier version played) leaves the settings alone.
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { ParamIDs::scene, 1 }, "Scene", 0, SceneIDs::maxScenes, 0,
+        AudioParameterIntAttributes()
+            .withStringFromValueFunction ([] (int v, int) { return v == 0 ? String ("Off") : "Scene " + String (v); })
+            .withValueFromStringFunction ([] (const String& text) { return text.retainCharacters ("0123456789").getIntValue(); })));
 
     return layout;
 }
