@@ -9,6 +9,7 @@ add_library(drenched_engine STATIC
     src/KernelBuilder.cpp
     src/LivingTail.cpp
     src/RecordedResponse.cpp
+    src/ResponseEnvelope.cpp
     src/SweepCapture.cpp
     src/SurroundResponse.cpp)
 

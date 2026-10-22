@@ -154,6 +154,9 @@ private:
         std::atomic<float>* living = nullptr;
         std::atomic<float>* movement = nullptr;
         std::atomic<float>* movementRate = nullptr;
+        std::atomic<float>* reverse = nullptr;
+        std::atomic<float>* gate = nullptr;
+        std::atomic<float>* attack = nullptr;
         std::array<std::atomic<float>*, 8> decay {};
     } params;
 
