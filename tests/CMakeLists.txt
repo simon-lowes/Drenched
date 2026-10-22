@@ -10,6 +10,7 @@ add_executable(drenched_tests
     RecordedResponseTests.cpp
     ResponseEnvelopeTests.cpp
     SpeakerTrimTests.cpp
+    ClapCaptureTests.cpp
     SweepCaptureTests.cpp
     SurroundTests.cpp
     LicenceTests.cpp)

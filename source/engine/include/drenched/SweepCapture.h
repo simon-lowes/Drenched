@@ -68,7 +68,8 @@ private:
 };
 
 /** Plays a sweep from each speaker in turn while recording every microphone,
-    inside the audio callback.
+    inside the audio callback; or, for a clap, records with the speakers
+    silent.
 
     prepare() allocates and must not overlap process(): call it before
     start(), or when state() is not running. Everything else is real-time
@@ -81,6 +82,10 @@ public:
     /** Readies a take: speakers (1 or 2) play the sweep one after the other,
         microphones (1 or 2) are recorded throughout. */
     void prepare (std::shared_ptr<const SineSweep> sweep, int speakers, int microphones);
+
+    /** Readies a take that only listens: `seconds` of the microphones (1 or
+        2) with every speaker silent, for a clap (see extractClap()). */
+    void prepareListening (double seconds, double sampleRate, int microphones);
 
     /** Starts the prepared take. */
     void start() noexcept;
@@ -109,7 +114,10 @@ public:
 
     int speakers() const noexcept { return numSpeakers; }
 
+    /** The sweep that played, or null for a take that only listened. */
     const std::shared_ptr<const SineSweep>& sweep() const noexcept { return source; }
+
+    double sampleRate() const noexcept { return rate; }
 
     /** One recording per microphone; read only once state() is finished. */
     const std::vector<std::vector<float>>& recordings() const noexcept { return takes; }
@@ -118,6 +126,7 @@ private:
     std::shared_ptr<const SineSweep> source;
     std::vector<std::vector<float>> takes;
     int numSpeakers = 1;
+    double rate = 48000.0;
     std::size_t total = 0;
     std::atomic<std::size_t> position { 0 };
     std::atomic<State> status { State::idle };

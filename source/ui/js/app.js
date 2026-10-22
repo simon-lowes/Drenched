@@ -59,13 +59,14 @@ function pickerHTML(){var ts=Object.assign({},st,{browse:false,adv:false,skins:f
   '<div class="ft">Click the Drenched name in any look to come back here. The look is saved with this instance and becomes the default for new ones.</div></div>';}
 
 /* ---- capturing a space: the plugin plays a sweep and records the room ---- */
-st.capture=false;st.cap={speakers:1,sweep:10,tail:6,level:-12};st.capStatus={stage:'idle',progress:0,peakDb:-100,message:''};
-var CAP_OPTS={speakers:[[1,'Left only'],[2,'Left, then right']],sweep:[[5,'5 s'],[10,'10 s'],[20,'20 s']],tail:[[3,'3 s'],[6,'6 s'],[12,'12 s']],level:[[-24,'\u221224 dB'],[-18,'\u221218 dB'],[-12,'\u221212 dB'],[-6,'\u22126 dB']]};
-var CAP_ROWS=[['speakers','Speakers','Left, then right gives true stereo when you record with two microphones.'],['sweep','Sweep length','A longer sweep rises further above background noise.'],['tail','Ring-out','Make it longer than the room takes to fall silent.'],['level','Sweep level','Start low. Aim for a mic peak around \u221212 dB.']];
+st.capture=false;st.cap={method:'sweep',speakers:1,sweep:10,tail:6,level:-12,listen:10};st.capStatus={stage:'idle',progress:0,peakDb:-100,message:''};
+var CAP_OPTS={method:[['sweep','Sine sweep'],['clap','Hand clap']],listen:[[5,'5 s'],[10,'10 s'],[20,'20 s']],speakers:[[1,'Left only'],[2,'Left, then right']],sweep:[[5,'5 s'],[10,'10 s'],[20,'20 s']],tail:[[3,'3 s'],[6,'6 s'],[12,'12 s']],level:[[-24,'\u221224 dB'],[-18,'\u221218 dB'],[-12,'\u221212 dB'],[-6,'\u22126 dB']]};
+var CAP_ROWS=[['method','Method','A sweep gives the cleanest result. A clap needs no speakers and is quick to try.'],['listen','Listen for','Long enough to clap and let the room fall silent. Clap again if one goes wrong; the best clap is kept.'],['speakers','Speakers','Left, then right gives true stereo when you record with two microphones.'],['sweep','Sweep length','A longer sweep rises further above background noise.'],['tail','Ring-out','Make it longer than the room takes to fall silent.'],['level','Sweep level','Start low. Aim for a mic peak around \u221212 dB.']];
 function capBusy(){var g=st.capStatus.stage;return g==='playing'||g==='working';}
 function capPeak(){var p=+st.capStatus.peakDb;return p<=-99?'Mic peak: nothing yet':'Mic peak '+dbText(p)+' dB';}
-function captureHTML(){var c=st.cap,cs=st.capStatus,busy=capBusy(),secs=c.speakers*(c.sweep+c.tail);
- var rows=CAP_ROWS.map(function(r){return '<div class="cr"><span class="cl" id="cl-'+r[0]+'">'+r[1]+'</span><span class="seg" role="radiogroup" aria-labelledby="cl-'+r[0]+'">'+CAP_OPTS[r[0]].map(function(o){return '<button role="radio" data-act="capopt" data-k="'+r[0]+'" data-v="'+o[0]+'" aria-checked="'+(c[r[0]]===o[0])+'"'+(busy?' disabled':'')+'>'+o[1]+'</button>';}).join('')+'</span><small>'+r[2]+'</small></div>';}).join('');
+function capRows(){return CAP_ROWS.filter(function(r){return r[0]==='method'||(st.cap.method==='clap')===(r[0]==='listen');});}
+function captureHTML(){var c=st.cap,cs=st.capStatus,busy=capBusy(),clap=c.method==='clap',secs=clap?c.listen:c.speakers*(c.sweep+c.tail);
+ var rows=capRows().map(function(r){return '<div class="cr"><span class="cl" id="cl-'+r[0]+'">'+r[1]+'</span><span class="seg" role="radiogroup" aria-labelledby="cl-'+r[0]+'">'+CAP_OPTS[r[0]].map(function(o){return '<button role="radio" data-act="capopt" data-k="'+r[0]+'" data-v="'+o[0]+'" aria-checked="'+(c[r[0]]===o[0])+'"'+(busy?' disabled':'')+'>'+o[1]+'</button>';}).join('')+'</span><small>'+r[2]+'</small></div>';}).join('');
  var status=cs.stage==='playing'?'<div class="cpr"><span class="bar"><i data-cap="p" style="width:'+(clamp(+cs.progress||0,0,1)*100).toFixed(1)+'%"></i></span><em data-cap="pk">'+capPeak()+'</em></div><span>'+esc(cs.message)+'</span>'
   :cs.stage==='working'?'<span>Working out the impulse response.</span>'
   :cs.message?'<span class="'+(cs.stage==='failed'?'err':'')+'">'+esc(cs.message)+'</span>':'';
@@ -73,8 +74,10 @@ function captureHTML(){var c=st.cap,cs=st.capStatus,busy=capBusy(),secs=c.speake
   :cs.stage==='working'?'<button class="cgo" disabled>Working\u2026</button>'
   :'<button class="cgo" data-act="capstart">Start capture</button><span class="ct">Takes '+secs+' seconds. Captures are saved in Documents, Drenched, Captures.</span>';
  return '<div class="cap" role="dialog" aria-modal="true" aria-labelledby="cap-h"><div class="cbox"><div class="chd"><h2 id="cap-h">Capture a space</h2><button class="cx" data-act="capture" aria-label="Close">Close</button></div>'+
-  '<p>Drenched plays a sweep through your speakers, records it with your microphone and turns the recording into an impulse response for this instance.</p>'+
-  '<p>Put Drenched on a track whose input is the room microphone, turn input monitoring on, and set your speakers to a comfortable level.</p>'+
+  (clap?'<p>Drenched listens through your microphone while you clap once where the sound should come from, then turns the best clap into an impulse response for this instance.</p>'+
+  '<p>Put Drenched on a track whose input is the room microphone. Clap sharply, keep still and quiet while the room rings out.</p>'
+  :'<p>Drenched plays a sweep through your speakers, records it with your microphone and turns the recording into an impulse response for this instance.</p>'+
+  '<p>Put Drenched on a track whose input is the room microphone, turn input monitoring on, and set your speakers to a comfortable level.</p>')+
   rows+'<div class="cst" aria-live="polite">'+status+'</div><div class="cft">'+action+'</div></div></div>';}
 /* capture progress arrives often; it updates in place unless the stage changes */
 function onCapture(m){if(!m)return;var was=st.capStatus.stage,msgWas=st.capStatus.message;st.capStatus={stage:String(m.stage||'idle'),progress:+m.progress||0,peakDb:m.peakDb==null?-100:+m.peakDb,message:String(m.message||'')};
@@ -219,8 +222,8 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'speakers':st.spk=!st.spk;st.browse=false;st.hint=null;break;
   case 'spkreset':st.speakers=[];break;
   case 'capture':st.capture=!st.capture;st.hint=null;if(st.capture&&!capBusy()&&st.capStatus.stage!=='failed')st.capStatus.message='';break;
-  case 'capopt':var ck=b.getAttribute('data-k');if(CAP_OPTS[ck]&&!capBusy())st.cap[ck]=+v;break;
-  case 'capstart':if(JUCE){st.capStatus={stage:'playing',progress:0,peakDb:-100,message:''};JUCE.emitEvent('startCapture',{speakers:st.cap.speakers,sweepSeconds:st.cap.sweep,tailSeconds:st.cap.tail,levelDb:st.cap.level});}
+  case 'capopt':var ck=b.getAttribute('data-k');if(CAP_OPTS[ck]&&!capBusy())st.cap[ck]=ck==='method'?v:+v;break;
+  case 'capstart':if(JUCE){st.capStatus={stage:'playing',progress:0,peakDb:-100,message:''};JUCE.emitEvent('startCapture',{method:st.cap.method,listenSeconds:st.cap.listen,speakers:st.cap.speakers,sweepSeconds:st.cap.sweep,tailSeconds:st.cap.tail,levelDb:st.cap.level});}
    else st.capStatus={stage:'failed',progress:0,peakDb:-100,message:'Capturing works inside the plugin, where Drenched can reach your speakers and microphone.'};break;
   case 'capstop':if(JUCE)JUCE.emitEvent('cancelCapture',{});break;
   case 'licence':st.lic=!st.lic;st.hint=null;if(st.lic){st.licence.message='';if(JUCE)JUCE.emitEvent('licenceOpen',{});}break;

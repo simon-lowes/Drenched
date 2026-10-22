@@ -24,6 +24,8 @@ reflections later or sooner while keeping its decay and tone. Or capture a space
 sweep from the left speaker (or left, then right, for true stereo) while
 recording the track's input, deconvolves it with the speaker's distortion
 removed, saves the result in Documents/Drenched/Captures and loads it.
+With no speakers to hand, choose Hand clap: Drenched listens while you clap,
+keeps the loudest clap that didn't clip, and uses the room's ring-out after it.
 The space list starts with recorded spaces bundled in the plugin
 (`library/`, licence-checked recordings published by others), followed by
 modelled spaces whose responses are synthesised from their dimensions and
