@@ -29,4 +29,13 @@ bool cutsTail (const ImpulseResponseRequest& request) noexcept;
     nothing but may shorten the paths; run it on the builder thread. */
 void applyEnvelope (ImpulseResponseSet& responses, const ImpulseResponseRequest& request);
 
+/** Turns the cross paths (left input to right output, right to left) down
+    to crossFeedPercent, so at 0 the response becomes two separate reverbs,
+    one per side. All four paths are then raised together, by a gain that
+    follows the response in 10 ms steps, so a centred sound keeps its level
+    moment by moment: the correlated direct sound and early reflections need
+    less make-up than a decorrelated tail. At 100 the response is left
+    exactly as it was. */
+void applyCrossFeed (ImpulseResponseSet& responses, float crossFeedPercent);
+
 } // namespace drenched

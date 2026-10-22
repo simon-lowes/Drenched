@@ -36,6 +36,7 @@ namespace ParamIDs
     inline constexpr auto directLevel = "directLevel";
     inline constexpr auto directDelay = "directDelay";
     inline constexpr auto directColour = "directColour";
+    inline constexpr auto crossFeed = "crossFeed";
 
     inline constexpr std::array<const char*, 8> decay { "decay63",  "decay125", "decay250", "decay500",
                                                         "decay1k",  "decay2k",  "decay4k",  "decay8k" };
@@ -53,7 +54,7 @@ namespace ParamIDs
             for (auto* id : decay)
                 list.add (id);
 
-            list.addArray ({ living, movement, movementRate, reverse, gate, attack, directLevel, directDelay, directColour });
+            list.addArray ({ living, movement, movementRate, reverse, gate, attack, directLevel, directDelay, directColour, crossFeed });
 
             return list;
         }();
@@ -178,6 +179,10 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
                                          NormalisableRange<float> (0.0f, 50.0f, 0.1f), 0.0f, millis));
     layout.add (std::make_unique<Float> (ParameterID { ParamIDs::directColour, 1 }, "Direct colour",
                                          NormalisableRange<float> (-12.0f, 12.0f, 0.5f), 0.0f, decibels));
+
+    // How much each input feeds the opposite side: 0 makes two separate reverbs.
+    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::crossFeed, 1 }, "Cross-feed",
+                                         NormalisableRange<float> (0.0f, 100.0f, 1.0f), 100.0f, percent));
 
     return layout;
 }

@@ -167,6 +167,7 @@ private:
         std::atomic<float>* directLevel = nullptr;
         std::atomic<float>* directDelay = nullptr;
         std::atomic<float>* directColour = nullptr;
+        std::atomic<float>* crossFeed = nullptr;
         std::array<std::atomic<float>*, 8> decay {};
     } params;
 

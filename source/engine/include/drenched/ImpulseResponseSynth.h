@@ -38,6 +38,9 @@ struct ImpulseResponseRequest
     float directDelayMs = 0.0f;            // later than the room, 0 .. 50
     float directColourDb = 0.0f;           // tilt, darker below 0, brighter above
 
+    // How much each input feeds the opposite output (see applyCrossFeed()).
+    float crossFeedPercent = 100.0f;       // 0 = two separate reverbs, 100 = as captured
+
     // A loaded impulse response to play instead of the bundled space. Size
     // stretches it in time; distance and listener position only shape
     // synthesised spaces.
