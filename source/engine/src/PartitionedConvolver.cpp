@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstring>
 #include <new>
+#include <stdexcept>
 #include <utility>
 
 namespace drenched
@@ -205,32 +206,46 @@ struct PartitionedConvolver::Stage
     std::size_t fill = 0, macDone = 0, newest = 0;
 };
 
-PartitionedConvolver::PartitionedConvolver (const std::vector<std::span<const float>>& impulseResponses)
+PartitionedConvolver::PartitionedConvolver (const std::vector<std::span<const float>>& impulseResponses,
+                                            std::size_t latency)
+    : outputs (impulseResponses.size()), delay (latency)
 {
     assert (! impulseResponses.empty());
+
+    if (latency != 0 && (latency < headLength || (latency & (latency - 1)) != 0))
+        throw std::invalid_argument ("A convolution latency must be 0 or a power of two from 64 samples.");
 
     for (const auto& ir : impulseResponses)
         irLength = std::max (irLength, ir.size());
 
-    heads.resize (impulseResponses.size());
-
-    for (std::size_t k = 0; k < heads.size(); ++k)
+    // With a latency the response is treated as delayed by that much: its
+    // first latency taps are silent, so neither the head nor the stages
+    // smaller than the latency are needed, and each stage reads the real
+    // response latency taps earlier.
+    if (latency == 0)
     {
-        const auto ir = impulseResponses[k];
-        heads[k].setImpulseResponse (ir.first (std::min (headLength, ir.size())));
+        heads.resize (impulseResponses.size());
+
+        for (std::size_t k = 0; k < heads.size(); ++k)
+        {
+            const auto ir = impulseResponses[k];
+            heads[k].setImpulseResponse (ir.first (std::min (headLength, ir.size())));
+        }
     }
 
-    for (std::size_t block = headLength; block < irLength; block *= growthFactor)
+    const auto total = irLength + latency;
+
+    for (std::size_t block = latency == 0 ? headLength : latency; block < total; block *= growthFactor)
     {
         // A larger stage only pays for itself when the rest fills at least one
         // of its blocks; otherwise this stage takes up to 15 partitions to the
         // end. Rounding a short remainder up to one huge block per output cost
         // 2 GB for a long 9.1.6 response.
         const auto next = block * growthFactor;
-        const auto last = irLength < 2 * next;
-        const auto partitions = last ? (irLength - block + block - 1) / block : growthFactor - 1;
+        const auto last = total < 2 * next;
+        const auto partitions = last ? (total - block + block - 1) / block : growthFactor - 1;
 
-        stages.push_back (std::make_unique<Stage> (block, partitions, impulseResponses, block));
+        stages.push_back (std::make_unique<Stage> (block, partitions, impulseResponses, block - latency));
 
         if (last)
             break;
@@ -250,6 +265,10 @@ void PartitionedConvolver::reset() noexcept
 
 void PartitionedConvolver::process (const float* input, float* const* outputs, std::size_t numSamples) noexcept
 {
+    if (heads.empty())
+        for (std::size_t k = 0; k < numOutputs(); ++k)
+            std::fill_n (outputs[k], numSamples, 0.0f);
+
     for (std::size_t k = 0; k < heads.size(); ++k)
         heads[k].process ({ input, numSamples }, { outputs[k], numSamples });
 

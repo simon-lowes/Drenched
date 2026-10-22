@@ -40,6 +40,7 @@ struct ImpulseResponseRequest
 
     // How much each input feeds the opposite output (see applyCrossFeed()).
     float crossFeedPercent = 100.0f;       // 0 = two separate reverbs, 100 = as captured
+    std::size_t latencySamples = 0;        // the kernel's convolution latency (low-CPU mode), 0 = none
 
     // A loaded impulse response to play instead of the bundled space. Size
     // stretches it in time; distance and listener position only shape

@@ -37,6 +37,7 @@ namespace ParamIDs
     inline constexpr auto directDelay = "directDelay";
     inline constexpr auto directColour = "directColour";
     inline constexpr auto crossFeed = "crossFeed";
+    inline constexpr auto lowCpu = "lowCpu";
 
     inline constexpr std::array<const char*, 8> decay { "decay63",  "decay125", "decay250", "decay500",
                                                         "decay1k",  "decay2k",  "decay4k",  "decay8k" };
@@ -54,7 +55,7 @@ namespace ParamIDs
             for (auto* id : decay)
                 list.add (id);
 
-            list.addArray ({ living, movement, movementRate, reverse, gate, attack, directLevel, directDelay, directColour, crossFeed });
+            list.addArray ({ living, movement, movementRate, reverse, gate, attack, directLevel, directDelay, directColour, crossFeed, lowCpu });
 
             return list;
         }();
@@ -183,6 +184,12 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     // How much each input feeds the opposite side: 0 makes two separate reverbs.
     layout.add (std::make_unique<Float> (ParameterID { ParamIDs::crossFeed, 1 }, "Cross-feed",
                                          NormalisableRange<float> (0.0f, 100.0f, 1.0f), 100.0f, percent));
+
+    // Low-CPU mode trades about 21 ms of latency, which the host makes up, for a
+    // third of the convolution's cost. Changing latency mid-song is no use to
+    // automate, so hosts don't offer it.
+    layout.add (std::make_unique<Bool> (ParameterID { ParamIDs::lowCpu, 1 }, "Low CPU", false,
+                                        AudioParameterBoolAttributes().withAutomatable (false)));
 
     return layout;
 }

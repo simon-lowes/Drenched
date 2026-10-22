@@ -7,6 +7,8 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
+#include <chrono>
+#include <stdexcept>
 #include <cmath>
 #include <random>
 #include <span>
@@ -179,4 +181,77 @@ TEST_CASE ("Processing never allocates", "[partitioned][realtime]")
     }
 
     REQUIRE (counter.count() == 0);
+}
+
+TEST_CASE ("With a latency the output is the same response, exactly that many samples late", "[partitioned][latency]")
+{
+    const auto latency = GENERATE (std::size_t (64), std::size_t (512), std::size_t (1024), std::size_t (2048));
+    const auto length = GENERATE (std::size_t (1), std::size_t (700), std::size_t (2048), std::size_t (2049), std::size_t (30000));
+
+    const auto ir = testing::noise (length, static_cast<unsigned> (length + latency));
+    const auto input = testing::noise (length + 3 * latency + 5000, 31);
+
+    // The reference is the response with latency silent taps in front.
+    std::vector<float> delayed (latency, 0.0f);
+    delayed.insert (delayed.end(), ir.begin(), ir.end());
+    DirectConvolver reference;
+    reference.setImpulseResponse (delayed);
+    std::vector<float> expected (input.size());
+    reference.process (input, expected);
+
+    PartitionedConvolver conv ({ std::span<const float> (ir), std::span<const float> (ir) }, latency);
+    REQUIRE (conv.latency() == latency);
+    REQUIRE (conv.numOutputs() == 2);
+
+    const auto actual = runInRandomBlocks (conv, input, 11);
+
+    INFO ("latency " << latency << ", IR length " << length);
+    REQUIRE (maxDifference (actual[0], expected) <= 1.0e-4f * std::max (1.0f, peak (expected)));
+    REQUIRE (actual[1] == actual[0]);
+}
+
+TEST_CASE ("A latency that is not a power of two from 64 is refused", "[partitioned][latency]")
+{
+    const std::vector<float> ir (100, 0.5f);
+    CHECK_THROWS_AS (PartitionedConvolver ({ std::span<const float> (ir) }, 32), std::invalid_argument);
+    CHECK_THROWS_AS (PartitionedConvolver ({ std::span<const float> (ir) }, 1000), std::invalid_argument);
+    CHECK_NOTHROW (PartitionedConvolver ({ std::span<const float> (ir) }, 0));
+}
+
+TEST_CASE ("A latency runs the same response on less CPU and never allocates", "[partitioned][latency][realtime]")
+{
+    // Five seconds of stereo room at 48 kHz, as one input feeding two outputs.
+    const auto left = testing::noise (240000, 41), right = testing::noise (240000, 42);
+    const auto input = testing::noise (48000 * 4, 43);
+    std::vector<float> a (input.size()), b (input.size());
+
+    const auto timeIt = [&] (std::size_t latency)
+    {
+        PartitionedConvolver conv ({ std::span<const float> (left), std::span<const float> (right) }, latency);
+        float* outputs[] { a.data(), b.data() };
+        const auto start = std::chrono::steady_clock::now();
+        testing::AllocationCounter counter;
+
+        for (std::size_t pos = 0; pos + 256 <= input.size(); pos += 256)
+        {
+            outputs[0] = a.data() + pos;
+            outputs[1] = b.data() + pos;
+            conv.process (input.data() + pos, outputs, 256);
+        }
+
+        REQUIRE (counter.count() == 0);
+        return std::chrono::duration<double> (std::chrono::steady_clock::now() - start).count();
+    };
+
+    // Best of three, so a busy test machine doesn't decide it.
+    auto zero = 1.0e9, low = 1.0e9;
+
+    for (int i = 0; i < 3; ++i)
+    {
+        zero = std::min (zero, timeIt (0));
+        low = std::min (low, timeIt (1024));
+    }
+
+    INFO ("zero latency " << zero << " s, 1024 samples " << low << " s for 4 s of audio");
+    CHECK (low < zero * 0.8);
 }

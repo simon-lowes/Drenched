@@ -8,11 +8,13 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cmath>
+#include <numbers>
 #include <thread>
 #include <vector>
 
@@ -297,6 +299,125 @@ TEST_CASE ("The audio path never allocates, including kernel swaps", "[reverb][r
     }
 
     REQUIRE (counter.count() == 0);
+}
+
+TEST_CASE ("Low-CPU mode plays the same sound, dry and wet, exactly its latency later", "[reverb][latency]")
+{
+    constexpr double sr = 48000.0;
+    const auto latency = ConvolutionReverb::lowCpuLatency (sr);
+    REQUIRE (latency == 1024);
+    REQUIRE (ConvolutionReverb::lowCpuLatency (96000.0) == 2048);
+
+    ReverbControls c;
+    c.mix = 0.5f;
+    c.predelayMs = 12.0f;
+
+    const auto play = [&] (std::size_t samples, float living)
+    {
+        auto request = hall (sr);
+        request.livingPercent = living;
+        request.latencySamples = samples;
+
+        ConvolutionReverb reverb;
+        reverb.prepare (sr);
+        KernelBuilder builder (reverb);
+        builder.buildNow (request);
+
+        auto l = testing::noise (static_cast<std::size_t> (1.2 * sr), 3), r = testing::noise (l.size(), 4);
+        std::fill (l.begin() + 4800, l.end(), 0.0f);
+        std::fill (r.begin() + 4800, r.end(), 0.0f);
+        run (reverb, l, r, c, 300);
+        CHECK (reverb.latency() == samples);
+        return std::make_pair (l, r);
+    };
+
+    // The convolution matches to rounding. The living tail reads its input
+    // further back in a delay line whose fractional read rounds a little
+    // differently, so with it up the match is to about -70 dB.
+    const auto living = GENERATE (0.0f, 50.0f);
+    const auto [zeroL, zeroR] = play (0, living);
+    const auto [lowL, lowR] = play (latency, living);
+
+    for (std::size_t n = 0; n < latency; ++n)
+        REQUIRE (lowL[n] == 0.0f);
+
+    double error = 0.0, total = 0.0;
+
+    for (std::size_t n = 0; n + latency < zeroL.size(); ++n)
+    {
+        for (const auto& [low, zero] : { std::pair (&lowL, &zeroL), std::pair (&lowR, &zeroR) })
+        {
+            const auto d = static_cast<double> ((*low)[n + latency] - (*zero)[n]);
+            error += d * d;
+            total += static_cast<double> ((*zero)[n]) * (*zero)[n];
+        }
+    }
+
+    INFO ("living " << living << "%: difference " << 10.0 * std::log10 (error / total) << " dB");
+    CHECK (error / total < (living > 0.0f ? 1.0e-6 : 1.0e-12));
+}
+
+TEST_CASE ("Switching to low-CPU mode while sound plays moves the dry sound without a click", "[reverb][latency]")
+{
+    constexpr double sr = 48000.0;
+    ConvolutionReverb reverb;
+    reverb.prepare (sr);
+    reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (sr))));
+
+    // A 300 Hz sine, fully dry, so only the dry delay is heard.
+    std::vector<float> l (static_cast<std::size_t> (sr)), r;
+
+    for (std::size_t n = 0; n < l.size(); ++n)
+        l[n] = static_cast<float> (0.5 * std::sin (2.0 * std::numbers::pi * 300.0 * static_cast<double> (n) / sr));
+
+    r = l;
+    const auto original = l;
+    ReverbControls c;
+    c.mix = 0.0f;
+
+    for (std::size_t pos = 0; pos < l.size(); pos += 480)
+    {
+        if (pos == 24000)
+            reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (sr)), LivingTailDesign {}, 1024));
+
+        reverb.process (l.data() + pos, r.data() + pos, std::min<std::size_t> (480, l.size() - pos), c);
+    }
+
+    // Untouched before, 1024 samples late once the 20 ms crossfade is over.
+    for (std::size_t n = 0; n < 24000; ++n)
+        REQUIRE (l[n] == Catch::Approx (original[n]).margin (1.0e-6));
+
+    for (std::size_t n = 24000 + 960 + 480; n < l.size(); ++n)
+        REQUIRE (l[n] == Catch::Approx (original[n - 1024]).margin (1.0e-6));
+
+    auto biggest = 0.0f;
+
+    for (std::size_t n = 2; n < l.size(); ++n)
+        biggest = std::max (biggest, std::abs (l[n] - 2.0f * l[n - 1] + l[n - 2]));
+
+    CHECK (biggest < 0.02f); // the sine's own bend is 0.0019
+}
+
+TEST_CASE ("Low-CPU mode never allocates on the audio thread, including switching to it", "[reverb][latency][realtime]")
+{
+    ConvolutionReverb reverb;
+    reverb.prepare (48000.0);
+    reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (48000.0))));
+    auto low = std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (48000.0)), LivingTailDesign {}, 1024);
+
+    auto l = testing::noise (48000, 19), r = testing::noise (48000, 20);
+    ReverbControls c;
+    c.mix = 0.5f;
+    reverb.process (l.data(), r.data(), 512, c);
+    reverb.submit (std::move (low));
+
+    testing::AllocationCounter counter;
+
+    for (std::size_t pos = 512; pos + 517 <= l.size(); pos += 517)
+        reverb.process (l.data() + pos, r.data() + pos, 517, c);
+
+    REQUIRE (counter.count() == 0);
+    REQUIRE (reverb.latency() == 1024);
 }
 
 TEST_CASE ("The builder builds once the request settles and frees retired kernels", "[reverb][builder]")

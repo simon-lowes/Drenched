@@ -47,20 +47,20 @@ bool differs (float a, float b) noexcept { return std::abs (a - b) > 1.0e-4f; }
 } // namespace
 
 //==============================================================================
-ReverbKernel::ReverbKernel (const ImpulseResponseSet& responses, const LivingTailDesign& tail)
+ReverbKernel::ReverbKernel (const ImpulseResponseSet& responses, const LivingTailDesign& tail, std::size_t latency)
     : rate (responses.sampleRate),
       irLength (responses.length()),
-      fromLeft (pathsFrom (responses, ImpulseResponseSet::leftToLeft, ImpulseResponseSet::leftToRight)),
-      fromRight (pathsFrom (responses, ImpulseResponseSet::rightToLeft, ImpulseResponseSet::rightToRight)),
+      fromLeft (pathsFrom (responses, ImpulseResponseSet::leftToLeft, ImpulseResponseSet::leftToRight), latency),
+      fromRight (pathsFrom (responses, ImpulseResponseSet::rightToLeft, ImpulseResponseSet::rightToRight), latency),
       tailDesign (tail)
 {
 }
 
-ReverbKernel::ReverbKernel (const SpatialResponseSet& responses, const LivingTailDesign& tail)
+ReverbKernel::ReverbKernel (const SpatialResponseSet& responses, const LivingTailDesign& tail, std::size_t latency)
     : rate (responses.sampleRate),
       irLength (responses.length()),
-      fromLeft (pathsFrom (responses.paths[0])),
-      fromRight (pathsFrom (responses.paths[1])),
+      fromLeft (pathsFrom (responses.paths[0]), latency),
+      fromRight (pathsFrom (responses.paths[1]), latency),
       tailDesign (tail)
 {
 }
@@ -83,6 +83,11 @@ void ReverbKernel::process (const float* inL, const float* inR, float* const* ou
 }
 
 //==============================================================================
+std::size_t ConvolutionReverb::lowCpuLatency (double sampleRate) noexcept
+{
+    return sampleRate <= 50000.0 ? 1024 : sampleRate <= 100000.0 ? 2048 : 4096;
+}
+
 ConvolutionReverb::ConvolutionReverb()
 {
     for (auto* buffer : { &wetInL, &wetInR, &tailInL, &tailInR, &zeros, &monoCopy })
@@ -234,10 +239,15 @@ void ConvolutionReverb::prepare (double newSampleRate, const SpeakerLayout& inpu
     tail.store (current != nullptr ? static_cast<double> (current->length()) / sampleRate : 0.0);
 
     const auto longest = maxPredelaySeconds + LivingTail::maxInputDelaySeconds;
-    const auto capacity = nextPowerOfTwo (static_cast<std::size_t> (longest * sampleRate) + chunkSize + 4);
+    const auto capacity = nextPowerOfTwo (static_cast<std::size_t> (longest * sampleRate) + maxLatency + chunkSize + 4);
     delayL.assign (capacity, 0.0f);
     delayR.assign (capacity, 0.0f);
     delayMask = capacity - 1;
+
+    const auto dryCapacity = nextPowerOfTwo (maxLatency + chunkSize + 1);
+    dryLines.assign (dryCapacity * maxChannels, 0.0f);
+    dryMask = dryCapacity - 1;
+    dryFadeLength = static_cast<std::size_t> (0.02 * sampleRate);
 
     delayCoef = onePole (sampleRate, 0.05);
     gainCoef = onePole (sampleRate, 0.02);
@@ -269,6 +279,11 @@ void ConvolutionReverb::reset() noexcept
     duckEnvelope = 0.0f;
     firstBlock = true;
 
+    std::fill (dryLines.begin(), dryLines.end(), 0.0f);
+    dryWrite = 0;
+    dryTap = current != nullptr ? current->latency() : 0;
+    dryFade = 0;
+
     for (auto* k : { current, ringing, fading })
         if (k != nullptr)
             k->reset();
@@ -282,7 +297,7 @@ void ConvolutionReverb::reset() noexcept
     convPosition = 1.0f;
     tailPosition = 0.0f;
     livingGain = current != nullptr ? current->livingLevel() : 0.0f;
-    tailDelaySamples = static_cast<float> (livingTail.inputDelaySeconds() * sampleRate);
+    tailDelaySamples = static_cast<float> (livingTail.inputDelaySeconds() * sampleRate + static_cast<double> (dryTap));
 
     if (tailDesignPending && current != nullptr)
         livingTail.setDesign (current->livingTail());
@@ -497,6 +512,51 @@ void ConvolutionReverb::runKernels (std::size_t n) noexcept
     }
 }
 
+void ConvolutionReverb::delayDry (std::size_t wanted, std::size_t n) noexcept
+{
+    // Every input is written to its line, so a new delay always has history.
+    if (wanted != dryTap && dryFade == 0)
+    {
+        dryFrom = dryTap;
+        dryTap = wanted;
+        dryFade = dryFadeLength;
+    }
+
+    const auto lineLength = dryMask + 1;
+    constexpr auto quarter = static_cast<float> (std::numbers::pi / 2.0);
+    const auto step = 1.0f / static_cast<float> (std::max<std::size_t> (dryFadeLength, 1));
+
+    for (std::size_t in = 0; in < numIn; ++in)
+    {
+        auto* line = dryLines.data() + in * lineLength;
+        auto* x = dry.data() + in * chunkSize;
+        auto w = dryWrite;
+        auto fade = dryFade;
+
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            line[w] = x[i];
+            const auto now = line[(w - dryTap) & dryMask];
+
+            if (fade > 0)
+            {
+                const auto g = static_cast<float> (dryFadeLength - fade) * step;
+                x[i] = line[(w - dryFrom) & dryMask] * std::cos (g * quarter) + now * std::sin (g * quarter);
+                --fade;
+            }
+            else
+            {
+                x[i] = now;
+            }
+
+            w = (w + 1) & dryMask;
+        }
+    }
+
+    dryWrite = (dryWrite + n) & dryMask;
+    dryFade = dryFade > n ? dryFade - n : 0;
+}
+
 void ConvolutionReverb::process (float* left, float* right, std::size_t numSamples, const ReverbControls& c) noexcept
 {
     if (right != left)
@@ -537,7 +597,8 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
         wetGain = mix.wet;
         outGain = c.outputGain;
         delaySamples = targetDelay;
-        tailDelaySamples = static_cast<float> (livingTail.inputDelaySeconds() * sampleRate);
+        dryTap = current != nullptr ? current->latency() : 0;
+        tailDelaySamples = static_cast<float> (livingTail.inputDelaySeconds() * sampleRate + static_cast<double> (dryTap));
         firstBlock = false;
     }
 
@@ -550,8 +611,10 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
 
         // The stage sources, through the pre-delay, with the delay time
         // gliding so moving it never clicks. The living tail reads the same
-        // lines a little further back.
-        const auto targetTailDelay = static_cast<float> (livingTail.inputDelaySeconds() * sampleRate);
+        // lines a little further back, and later still by the kernel's
+        // latency so it stays in time with the convolution.
+        const auto kernelLatency = current != nullptr ? current->latency() : dryTap;
+        const auto targetTailDelay = static_cast<float> (livingTail.inputDelaySeconds() * sampleRate + static_cast<double> (kernelLatency));
 
         for (std::size_t s = 0; s < n; ++s)
         {
@@ -739,6 +802,8 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
             wetGains[i] = wetGain * duckGain * outGain;
             outGains[i] = outGain;
         }
+
+        delayDry (kernelLatency, n);
 
         for (std::size_t k = 0; k < numOut; ++k)
         {

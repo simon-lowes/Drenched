@@ -18,7 +18,8 @@ backwards, Gate cuts it off after a set time, and Attack fades it in.
 The direct sound (the first arrival, before any reflection) has its own
 level, delay and colour, and Cross-feed sets how much each side of the
 input reaches the other side of the room (at 0 the left and right get
-separate reverbs). You can load your own impulse response (WAV, AIFF
+separate reverbs). Low CPU runs the convolution on about a third of the
+processing by playing everything 21 ms late, which the DAW makes up. You can load your own impulse response (WAV, AIFF
 or FLAC; mono, stereo or four-channel true stereo): it is resampled to the
 session rate, its decay is measured into the graph, dragging the graph
 reshapes it, and Size makes the room bigger or smaller by moving its

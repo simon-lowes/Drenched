@@ -115,6 +115,10 @@ private:
         space; nothing while the chosen recording is still loading. */
     std::optional<ImpulseResponseRequest> currentRequest (double sampleRate) const;
 
+    /** The latency Low CPU asks for at a sample rate, or 0, and telling the host. */
+    int wantedLatency (double sampleRate) const;
+    void updateLatency (double sampleRate);
+
     /** Copies the chosen space and listener position out of the interface state, for other threads. */
     void cacheUiState();
 
@@ -168,6 +172,7 @@ private:
         std::atomic<float>* directDelay = nullptr;
         std::atomic<float>* directColour = nullptr;
         std::atomic<float>* crossFeed = nullptr;
+        std::atomic<float>* lowCpu = nullptr;
         std::array<std::atomic<float>*, 8> decay {};
     } params;
 
