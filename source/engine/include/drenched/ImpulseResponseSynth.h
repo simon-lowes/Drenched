@@ -41,8 +41,9 @@ struct ImpulseResponseRequest
     // How much each input feeds the opposite output (see applyCrossFeed()).
     float crossFeedPercent = 100.0f;       // 0 = two separate reverbs, 100 = as captured
 
-    // A loaded impulse response to play instead of the bundled space. Size,
-    // distance and listener position only shape synthesised spaces.
+    // A loaded impulse response to play instead of the bundled space. Size
+    // stretches it in time; distance and listener position only shape
+    // synthesised spaces.
     std::shared_ptr<const RecordedResponse> recorded {};
 
     // The speakers the kernel feeds. The response itself is always true
@@ -84,5 +85,8 @@ ImpulseResponseSet synthesiseImpulseResponse (const ImpulseResponseRequest& requ
 /** The listener's distance from the front wall in metres, as the interface
     shows it: from near the source to most of the way down the room. */
 float listenerDistanceMetres (int space, float sizePercent, float distancePercent) noexcept;
+
+/** The request's Size as a factor on the room's dimensions, 0.5 .. 1.5. */
+double sizeScale (const ImpulseResponseRequest& request) noexcept;
 
 } // namespace drenched

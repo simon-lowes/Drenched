@@ -196,6 +196,8 @@ juce::var DrenchedEditor::uiValues()
     object->setProperty ("mode", ui.getProperty (UiIDs::mode, "studio").toString());
     object->setProperty ("view", ui.getProperty (UiIDs::view, "plan").toString());
     object->setProperty ("skin", ui.getProperty (UiIDs::skin, settings::loadDefaultSkin()).toString());
+    object->setProperty ("speakers", ui.getProperty (UiIDs::speakers, "").toString());
+    object->setProperty ("outputs", processor.outputSpeakerNames());
     object->setProperty ("ir", processor.impulseResponseInfo());
     object->setProperty ("irError", ui.getProperty (UiIDs::irError, "").toString());
     object->setProperty ("irEvent", static_cast<int> (ui.getProperty (UiIDs::irEvent, 0)));
@@ -290,6 +292,7 @@ void DrenchedEditor::onUi (const juce::var& payload)
         else if (key == "locks") ui.setProperty (UiIDs::locks, value.toString(), nullptr);
         else if (key == "mode")  ui.setProperty (UiIDs::mode, value.toString(), nullptr);
         else if (key == "view")  ui.setProperty (UiIDs::view, value.toString(), nullptr);
+        else if (key == "speakers") ui.setProperty (UiIDs::speakers, value.toString().substring (0, 1024), nullptr);
         else if (key == "skin")
         {
             ui.setProperty (UiIDs::skin, value.toString(), nullptr);
@@ -417,6 +420,7 @@ void DrenchedEditor::timerCallback()
 
     const auto peaks = processor.takePeaks();
     const std::array<float, 4> fresh { peaks.inL, peaks.inR, peaks.outL, peaks.outR };
+    const auto speakerPeaks = processor.takeSpeakerPeaks();
     constexpr float fallPerTick = 1.4f; // dB at 25 Hz, about 35 dB per second
     bool anyAboveFloor = false;
 
@@ -426,6 +430,9 @@ void DrenchedEditor::timerCallback()
         meterDb[i] = std::max (db, meterDb[i] - fallPerTick);
         anyAboveFloor = anyAboveFloor || meterDb[i] > -60.0f;
     }
+
+    for (size_t i = 0; i < speakerDb.size(); ++i)
+        speakerDb[i] = std::max (juce::Decibels::gainToDecibels (speakerPeaks[i], -60.0f), speakerDb[i] - fallPerTick);
 
     if (! anyAboveFloor && ! metersWereLive)
         return;
@@ -437,6 +444,13 @@ void DrenchedEditor::timerCallback()
     object->setProperty ("inR", meterDb[1]);
     object->setProperty ("outL", meterDb[2]);
     object->setProperty ("outR", meterDb[3]);
+
+    juce::Array<juce::var> speakers;
+
+    for (int i = 0; i < std::min (processor.getTotalNumOutputChannels(), static_cast<int> (maxChannels)); ++i)
+        speakers.add (speakerDb[static_cast<size_t> (i)]);
+
+    object->setProperty ("spk", speakers);
     web.emitEventIfBrowserIsVisible (eventMeters, juce::var (object.release()));
 }
 

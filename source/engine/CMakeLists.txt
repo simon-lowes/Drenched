@@ -11,6 +11,7 @@ add_library(drenched_engine STATIC
     src/LivingTail.cpp
     src/RecordedResponse.cpp
     src/ResponseEnvelope.cpp
+    src/SpeakerTrim.cpp
     src/SweepCapture.cpp
     src/SurroundResponse.cpp)
 

@@ -101,6 +101,13 @@ public:
     struct Peaks { float inL, inR, outL, outR; };
     Peaks takePeaks() noexcept;
 
+    /** Each output channel's peak since the last call, the same way, in the bus's order. */
+    std::array<float, maxChannels> takeSpeakerPeaks() noexcept;
+
+    /** The output bus's speakers by their short names (L, R, C, LFE, Ls, ...), and which
+        of them carry reverberation (all but the LFE). Message thread only. */
+    juce::var outputSpeakerNames() const;
+
 private:
     void timerCallback() override;
 
@@ -203,6 +210,10 @@ private:
     std::unique_ptr<KernelBuilder> builder; // after reverb: stops before it is destroyed
 
     std::array<std::atomic<float>, 4> peaks { 0.0f, 0.0f, 0.0f, 0.0f };
+    std::array<std::atomic<float>, maxChannels> speakerPeaks {};
+
+    // Each output speaker's reverb level and delay, from the interface state.
+    std::array<std::atomic<float>, maxChannels> speakerLevelDb {}, speakerDelayMs {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DrenchedProcessor)
 };

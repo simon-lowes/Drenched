@@ -5,6 +5,7 @@
 #include "drenched/LivingTail.h"
 #include "drenched/PartitionedConvolver.h"
 #include "drenched/SpeakerLayout.h"
+#include "drenched/SpeakerTrim.h"
 #include "drenched/SurroundResponse.h"
 
 #include <array>
@@ -72,6 +73,11 @@ struct ReverbControls
     float crossoverHz = 320.0f;  // below this a frozen tail keeps decaying
     float movement = 0.0f;       // 0 .. 1, how far the living tail drifts
     float movementRateHz = 0.7f; // how fast it drifts
+
+    // Each output speaker's reverb level and delay (see SpeakerTrim), in
+    // the output layout's order.
+    std::array<float, maxChannels> speakerLevelDb {};
+    std::array<float, maxChannels> speakerDelayMs {};
 };
 
 /** The complete reverb: pre-delay, convolution from the two stage sources to
@@ -195,6 +201,9 @@ private:
     std::array<Biquad, maxChannels> lowCut, highCut, lowShelf, highShelf, spreadHighPass;
     ReverbControls lastFilterControls;
     bool filtersValid = false;
+
+    // Each speaker's reverb level and delay.
+    SpeakerTrim speakerTrim;
 
     // Living tail and freeze. Positions run 0..1 and become equal-power gains.
     LivingTail livingTail;

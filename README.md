@@ -8,7 +8,8 @@ standalone form with the real interface (one set of controls, a decay-by-
 frequency graph you drag, a space browser, Studio and Stage views, twelve
 user-selectable looks) and a working zero-latency convolution
 engine, true stereo and surround up to 9.1.6 (each room spreads over the
-surround and height speakers with decorrelated tails), with a living tail: a feedback delay network fitted to each room
+surround and height speakers with decorrelated tails, and Reverb speakers
+sets the reverb's level and delay in each speaker, with a meter for each), with a living tail: a feedback delay network fitted to each room
 that powers Freeze (Crossover sets where the frozen room stops holding, so
 the bass keeps fading). Living tail hands the late reverberation over to it
 at the same level, keeping the early reflections, and Movement lets it
@@ -19,8 +20,9 @@ level, delay and colour, and Cross-feed sets how much each side of the
 input reaches the other side of the room (at 0 the left and right get
 separate reverbs). You can load your own impulse response (WAV, AIFF
 or FLAC; mono, stereo or four-channel true stereo): it is resampled to the
-session rate, its decay is measured into the graph, and dragging the graph
-reshapes it. Or capture a space yourself: Capture a space plays a sine
+session rate, its decay is measured into the graph, dragging the graph
+reshapes it, and Size makes the room bigger or smaller by moving its
+reflections later or sooner while keeping its decay and tone. Or capture a space yourself: Capture a space plays a sine
 sweep from the left speaker (or left, then right, for true stereo) while
 recording the track's input, deconvolves it with the speaker's distortion
 removed, saves the result in Documents/Drenched/Captures and loads it.
