@@ -219,7 +219,7 @@ SpatialResponseSet spreadResponses (const ImpulseResponseSet& stereo, const Spea
 double mixingTimeSeconds (const ImpulseResponseRequest& request) noexcept
 {
     if (request.recorded != nullptr)
-        return request.recorded->room.mixingTimeSeconds;
+        return request.recorded->room.mixingTimeSeconds * sizeScale (request);
 
     const auto& space = bundledSpaces[static_cast<std::size_t> (std::clamp (request.space, 0, static_cast<int> (bundledSpaces.size()) - 1))];
     const auto scale = std::clamp (request.sizePercent, 10.0f, 400.0f) / 100.0;

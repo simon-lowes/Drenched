@@ -159,6 +159,11 @@ std::vector<float> shapeDecay (const std::vector<float>& noise, std::size_t star
 
 } // namespace
 
+double sizeScale (const ImpulseResponseRequest& request) noexcept
+{
+    return std::clamp (static_cast<double> (request.sizePercent), 50.0, 150.0) / 100.0;
+}
+
 float listenerDistanceMetres (int space, float sizePercent, float distancePercent) noexcept
 {
     const auto& room = bundledSpaces[static_cast<std::size_t> (std::clamp (space, 0, static_cast<int> (bundledSpaces.size()) - 1))];
@@ -172,7 +177,7 @@ ImpulseResponseSet synthesiseImpulseResponse (const ImpulseResponseRequest& requ
     const auto sr = request.sampleRate;
     const auto spaceIndex = std::clamp (request.space, 0, static_cast<int> (bundledSpaces.size()) - 1);
     const auto& room = bundledSpaces[static_cast<std::size_t> (spaceIndex)];
-    const auto scale = std::clamp (static_cast<double> (request.sizePercent), 50.0, 150.0) / 100.0;
+    const auto scale = sizeScale (request);
 
     const auto W = room.width * scale, D = room.depth * scale, H = room.height * scale;
     const auto volume = W * D * H;

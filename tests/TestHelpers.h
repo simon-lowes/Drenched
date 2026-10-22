@@ -22,11 +22,10 @@ namespace testing
 
     /** RT60 of one octave band, from the Schroeder backward integral fitted
         between -5 and -25 dB (T20), the standard ISO 3382 measurement. */
-    inline double measureRt60 (const std::vector<float>& ir, double sampleRate, double centre)
+    /** One octave band: fourth-order high-pass and low-pass at the band edges,
+        steep enough that a neighbouring band's longer decay does not leak in. */
+    inline std::vector<float> octaveBand (std::vector<float> band, double sampleRate, double centre)
     {
-        // Octave band: fourth-order high-pass and low-pass at the band edges,
-        // steep enough that a neighbouring band's longer decay does not leak in.
-        std::vector<float> band (ir);
         for (int pass = 0; pass < 2; ++pass)
         {
             drenched::Biquad hp, lp;
@@ -35,6 +34,13 @@ namespace testing
             hp.process (band.data(), band.size());
             lp.process (band.data(), band.size());
         }
+
+        return band;
+    }
+
+    inline double measureRt60 (const std::vector<float>& ir, double sampleRate, double centre)
+    {
+        const auto band = octaveBand (ir, sampleRate, centre);
 
         std::vector<double> schroeder (band.size());
         double sum = 0.0;

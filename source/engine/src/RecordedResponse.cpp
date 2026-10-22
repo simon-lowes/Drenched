@@ -25,6 +25,7 @@ constexpr double windowSeconds = 0.01;      // envelope resolution for finding t
 constexpr double minimumRangeDb = 25.0;     // less decay than this is not an impulse response
 constexpr double maxBoostDb = 30.0;         // how far stretching a decay may lift the tail
 constexpr double defaultEarlyLateAngle = 0.55 * std::numbers::pi / 2.0;
+constexpr double maxColourDb = 12.0;        // how far Size may correct a band's level
 
 std::size_t samplesOf (double seconds, double sampleRate) noexcept
 {
@@ -221,14 +222,38 @@ double fitT20 (const std::vector<double>& energy, double sampleRate)
     return std::nan ("");
 }
 
+/** A per-band value at any frequency, interpolated between the band
+    centres on a log frequency axis and held beyond the end bands. */
+template <typename Value>
+double atFrequency (const std::array<Value, 8>& perBand, double f) noexcept
+{
+    if (f <= decayBandCentres.front())
+        return static_cast<double> (perBand.front());
+
+    if (f >= decayBandCentres.back())
+        return static_cast<double> (perBand.back());
+
+    std::size_t band = 0;
+
+    while (band < 6 && f >= static_cast<double> (decayBandCentres[band + 1]))
+        ++band;
+
+    const auto frac = std::clamp (std::log (f / static_cast<double> (decayBandCentres[band]))
+                                      / std::log (static_cast<double> (decayBandCentres[band + 1]) / static_cast<double> (decayBandCentres[band])),
+                                  0.0, 1.0);
+    return static_cast<double> (perBand[band]) + frac * (static_cast<double> (perBand[band + 1]) - static_cast<double> (perBand[band]));
+}
+
 /** Tilts the decay of every frequency by short-time Fourier analysis and
     resynthesis (square-root Hann windows, 75% overlap), the inverse of how
     the bundled spaces are synthesised. `tilt` is the change in log10 gain
     per second at each band centre, interpolated between them on a log
-    frequency axis. Working bin by bin keeps a band's new decay from being
+    frequency axis; `offset` is a fixed change in log10 gain, in the same
+    way. Working bin by bin keeps a band's new decay from being
     masked by its neighbours, which a filter bank cannot. With no tilt the
     signal comes back unchanged (to rounding). */
-std::vector<float> tiltDecay (const std::vector<float>& x, const std::array<double, 8>& tilt, double lead, double sampleRate)
+std::vector<float> tiltDecay (const std::vector<float>& x, const std::array<double, 8>& tilt, const std::array<double, 8>& offset,
+                              double lead, double sampleRate)
 {
     std::size_t frame = 256;
 
@@ -249,23 +274,13 @@ std::vector<float> tiltDecay (const std::vector<float>& x, const std::array<doub
     for (std::size_t n = 0; n < frame; ++n)
         window[n] = static_cast<float> (std::sin (std::numbers::pi * (static_cast<double> (n) + 0.5) / static_cast<double> (frame)));
 
-    std::vector<double> perBin (bins + 1);
+    std::vector<double> perBin (bins + 1), offsetPerBin (bins + 1);
 
     for (std::size_t k = 0; k <= bins; ++k)
     {
         const auto f = static_cast<double> (k) * sampleRate / static_cast<double> (frame);
-
-        if (f <= decayBandCentres.front())
-            perBin[k] = tilt.front();
-        else if (f >= decayBandCentres.back())
-            perBin[k] = tilt.back();
-        else
-        {
-            const auto position = std::log2 (f / decayBandCentres.front());
-            const auto band = std::min (static_cast<std::size_t> (position), std::size_t (6));
-            const auto frac = std::clamp (position - static_cast<double> (band), 0.0, 1.0);
-            perBin[k] = tilt[band] + frac * (tilt[band + 1] - tilt[band]);
-        }
+        perBin[k] = atFrequency (tilt, f);
+        offsetPerBin[k] = atFrequency (offset, f);
     }
 
     // Pad by a frame each side so every sample is covered by full overlap.
@@ -284,7 +299,7 @@ std::vector<float> tiltDecay (const std::vector<float>& x, const std::array<doub
 
         const auto centre = static_cast<double> (pos + frame / 2) - static_cast<double> (frame) - lead;
         const auto seconds = std::max (0.0, centre / sampleRate);
-        const auto gainAt = [&] (std::size_t k) { return static_cast<float> (std::pow (10.0, std::min (ceiling, perBin[k] * seconds))); };
+        const auto gainAt = [&] (std::size_t k) { return static_cast<float> (std::pow (10.0, std::min (ceiling, offsetPerBin[k] + perBin[k] * seconds))); };
 
         auto* sp = spectrum.get();
         sp[0] *= gainAt (0);
@@ -306,6 +321,69 @@ std::vector<float> tiltDecay (const std::vector<float>& x, const std::array<doub
     return { out.begin() + static_cast<std::ptrdiff_t> (frame), out.begin() + static_cast<std::ptrdiff_t> (frame + length) };
 }
 
+
+/** Plays the response back `scale` times slower: every reflection arrives
+    that much later and echoes thin out as they would in a room that much
+    bigger. Pitch drops with it, which the caller corrects. The direct sound
+    stays where it was. */
+ImpulseResponseSet stretchTime (const ImpulseResponseSet& set, double scale)
+{
+    const auto sr = set.sampleRate;
+    const auto length = set.length();
+    const auto stretched = static_cast<std::size_t> (std::ceil (static_cast<double> (length) * scale));
+    const auto lead = static_cast<double> (samplesOf (leadSeconds, sr));
+    const auto moved = static_cast<std::ptrdiff_t> (std::lround (lead * scale - lead));
+
+    ImpulseResponseSet out;
+    out.sampleRate = sr;
+
+    for (std::size_t p = 0; p < 4; ++p)
+    {
+        auto& path = out.paths[p];
+        path.assign (stretched, 0.0f);
+
+        if (bands::energyOf (set.paths[p]) > 0.0)
+        {
+            r8b::CDSPResampler24 resampler (sr, sr * scale, 8192);
+            resampler.oneshot (set.paths[p].data(), static_cast<int> (length), path.data(), static_cast<int> (stretched));
+        }
+
+        if (moved > 0)
+            path.erase (path.begin(), path.begin() + moved);
+        else if (moved < 0)
+            path.insert (path.begin(), static_cast<std::size_t> (-moved), 0.0f);
+    }
+
+    const auto shortest = std::min_element (out.paths.begin(), out.paths.end(), [] (const auto& a, const auto& b) { return a.size() < b.size(); })->size();
+    resize (out, shortest);
+    return out;
+}
+
+/** Each octave band's power over the response's first `seconds`. */
+std::array<double, 8> startColour (const ImpulseResponseSet& set, double seconds)
+{
+    const auto sr = set.sampleRate;
+    const auto end = std::min (set.length(), samplesOf (leadSeconds + seconds, sr));
+    const auto margin = std::min (set.length(), end + samplesOf (0.02, sr)); // room for the filters to settle
+    std::array<double, 8> power {};
+
+    for (const auto& path : set.paths)
+    {
+        if (bands::energyOf (path) <= 0.0)
+            continue;
+
+        const auto split = bands::split ({ path.begin(), path.begin() + static_cast<std::ptrdiff_t> (margin) }, sr);
+
+        for (std::size_t b = 0; b < 8; ++b)
+            for (std::size_t n = 0; n < end; ++n)
+                power[b] += static_cast<double> (split[b][n]) * split[b][n];
+    }
+
+    for (auto& p : power)
+        p /= seconds;
+
+    return power;
+}
 } // namespace
 
 std::array<float, 8> measureDecay (const std::array<std::vector<float>, 4>& paths, double sampleRate)
@@ -515,17 +593,38 @@ ImpulseResponseSet shapeRecordedResponse (ImpulseResponseSet set, const Recorded
                                           const ImpulseResponseRequest& request)
 {
     const auto sr = set.sampleRate;
-    const auto length = set.length();
     const auto lead = static_cast<double> (samplesOf (leadSeconds, sr));
     const auto seconds = [&] (std::size_t n) { return std::max (0.0, (static_cast<double> (n) - lead) / sr); };
+    const auto scale = sizeScale (request);
+    const auto tm = static_cast<double> (recorded.room.mixingTimeSeconds) * scale;
+
+    // ---- Size: the room played back slower or faster, then its colour put back ----
+    std::array<double, 8> offset {}; // log10 of a fixed gain change
+    const auto resized = std::abs (scale - 1.0) > 1.0e-4;
+
+    if (resized)
+    {
+        const auto window = std::max (0.08, 2.0 * static_cast<double> (recorded.room.mixingTimeSeconds));
+        const auto before = startColour (set, window);
+        set = stretchTime (set, scale);
+        const auto after = startColour (set, window * scale);
+
+        for (std::size_t b = 0; b < 8; ++b)
+            if (before[b] > 0.0 && after[b] > 0.0)
+                offset[b] = std::clamp (0.5 * std::log10 (before[b] / after[b]), -maxColourDb / 20.0, maxColourDb / 20.0);
+    }
+
+    const auto length = set.length();
 
     // ---- Decay: each band's envelope tilted from the measured RT60 to the requested one ----
     std::array<double, 8> tilt {}; // log10 of the gain change per second
-    bool reshape = false;
+    bool reshape = resized;
 
     for (std::size_t b = 0; b < 8; ++b)
     {
-        const auto from = static_cast<double> (recorded.room.decaySeconds[b]);
+        // Stretching made each band's decay `scale` times longer, and moved
+        // down to it what was `scale` times higher.
+        const auto from = scale * atFrequency (recorded.room.decaySeconds, decayBandCentres[b] * scale);
         const auto to = std::clamp (static_cast<double> (request.decaySeconds[b]), 0.05, 20.0);
         tilt[b] = 3.0 * (1.0 / from - 1.0 / to);
         reshape = reshape || std::abs (to - from) > 1.0e-4 * from;
@@ -535,7 +634,7 @@ ImpulseResponseSet shapeRecordedResponse (ImpulseResponseSet set, const Recorded
     {
         for (auto& path : set.paths)
             if (bands::energyOf (path) > 0.0)
-                path = tiltDecay (path, tilt, lead, sr);
+                path = tiltDecay (path, tilt, offset, lead, sr);
 
         // A shortened decay leaves a long, near-silent end: drop it.
         const auto window = std::max<std::size_t> (1, samplesOf (windowSeconds, sr));
@@ -557,7 +656,6 @@ ImpulseResponseSet shapeRecordedResponse (ImpulseResponseSet set, const Recorded
     {
         const auto earlyGain = std::cos (angle) / std::cos (defaultEarlyLateAngle);
         const auto lateGain = std::sin (angle) / std::sin (defaultEarlyLateAngle);
-        const auto tm = static_cast<double> (recorded.room.mixingTimeSeconds);
 
         for (auto& path : set.paths)
         {
