@@ -11,6 +11,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <vector>
 
@@ -310,6 +311,47 @@ TEST_CASE ("The builder makes kernels for the layout asked for", "[surround]")
     run (reverb, channels, c);
 
     CHECK (reverb.isReady());
+}
+
+TEST_CASE ("A sample budget shortens a long surround kernel, fading it out", "[surround][builder]")
+{
+    const auto layout = layouts::fivePointOne();
+    const auto request = roomRequest (layout);
+    REQUIRE (synthesiseImpulseResponse (request).length() > static_cast<std::size_t> (0.6 * rate));
+
+    ConvolutionReverb reverb;
+    reverb.prepare (rate, layouts::stereo(), layout);
+
+    // Two paths per speaker; room for half a second of each.
+    const auto budget = 2 * layout.size() * static_cast<std::size_t> (0.5 * rate);
+    KernelBuilder builder (reverb, std::chrono::milliseconds (30), budget);
+    builder.buildNow (request);
+    CHECK (std::abs (builder.shortenedTo() - 0.5) < 1.0e-3);
+
+    std::vector<std::vector<float>> channels (layout.size(), std::vector<float> (static_cast<std::size_t> (0.8 * rate), 0.0f));
+    channels[0][0] = 1.0f;
+
+    ReverbControls c;
+    c.mix = 1.0f;
+    run (reverb, channels, c);
+
+    const auto at = [] (double seconds) { return static_cast<std::size_t> (seconds * rate); };
+    const auto& left = channels[0];
+    const auto early = energyOf (left, at (0.05), at (0.1));
+    INFO ("early " << early << ", just before the cut " << energyOf (left, at (0.49), at (0.5))
+                   << ", after it " << energyOf (left, at (0.51)));
+
+    CHECK (energyOf (left, at (0.49), at (0.5)) < early * 1.0e-3);
+    CHECK (energyOf (left, at (0.51)) < early * 1.0e-9);
+}
+
+TEST_CASE ("The default budget never shortens stereo, and 64-bit builds have none", "[surround][builder]")
+{
+    // The longest stereo response: 30 s of a loaded file at 192 kHz, four paths.
+    constexpr std::size_t longestStereo = 4 * 30 * 192000;
+
+    STATIC_CHECK (sizeof (void*) >= 8 ? KernelBuilder::defaultSampleBudget == 0
+                                      : KernelBuilder::defaultSampleBudget >= longestStereo);
 }
 
 TEST_CASE ("A 16-channel reverb never allocates on the audio thread", "[surround][realtime]")

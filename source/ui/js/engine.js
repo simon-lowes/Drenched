@@ -251,7 +251,7 @@ function hintText(s){var t;if(s.note)t=s.note;else if(s.hint){var k=s.hint,ov=is
 function days(n){return n+' day'+(n===1?'':'s');}
 /* the trial, in the strip beside the hint until Drenched is activated */
 function licChip(s){var L=s.licence;if(!L||L.state==='licensed')return '';
- if(L.state==='beta')return '<span class="licchip">Beta</span>';
+ if(L.state==='beta')return '<span class="licchip">Beta'+(s.bits===32?' \u00b7 32-bit':'')+'</span>';
  return '<button class="licchip'+(L.state==='ended'?' end':'')+'" data-act="licence" aria-haspopup="dialog">'+(L.state==='ended'?'Trial ended, reverb muted. <u>Activate</u>':'Trial: '+days(L.daysLeft)+' left. <u>Activate</u>')+'</button>';}
 function dbText(v){return v<=-60?'\u2212\u221e':v.toFixed(1).replace('-','\u2212');}
 function meterPct(v){return clamp(1+v/60,0,1)*100;}
