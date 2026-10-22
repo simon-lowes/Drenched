@@ -341,3 +341,20 @@ TEST_CASE ("A session saved now loads back exactly", "[sessions]")
     REQUIRE (xml != nullptr);
     CHECK (xml->getIntAttribute ("version") == DrenchedProcessor::stateVersion);
 }
+
+TEST_CASE ("Every parameter is in the list the interface follows", "[session]")
+{
+    // The editor keeps a flag per entry of ParamIDs::ordered and the page is sent only
+    // those parameters, so a parameter left out of it would never reach the page.
+    testing::Plugin plugin;
+    const auto& parameters = plugin->getParameters();
+    REQUIRE (parameters.size() == static_cast<int> (ParamIDs::ordered.size()));
+
+    for (auto* parameter : parameters)
+    {
+        const auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (parameter);
+        REQUIRE (withId != nullptr);
+        INFO (withId->paramID);
+        CHECK (ParamIDs::all().indexOf (withId->paramID) >= 0);
+    }
+}

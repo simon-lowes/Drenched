@@ -48,8 +48,6 @@ DrenchedEditor::DrenchedEditor (DrenchedProcessor& p)
       state (p.getState()),
       web (makeOptions())
 {
-    jassert (ParamIDs::all().size() == static_cast<int> (numParams));
-
     for (auto& flag : dirty)
         flag.store (true);
 
