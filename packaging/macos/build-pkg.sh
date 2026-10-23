@@ -38,7 +38,7 @@ component app Drenched.app /Applications
 
 sed "s/@VERSION@/$VERSION/g" "$HERE/distribution.xml" > "$WORK/distribution.xml"
 mkdir -p "$WORK/resources"
-cp "$HERE/welcome.txt" "$WORK/resources/"
+cp "$HERE/welcome.txt" "$HERE/../third-party-licences.txt" "$WORK/resources/"
 
 productbuild --distribution "$WORK/distribution.xml" --package-path "$WORK" \
              --resources "$WORK/resources" "$OUT"

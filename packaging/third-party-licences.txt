@@ -1,0 +1,560 @@
+﻿Drenched: third-party software and recordings
+==============================================================================
+
+# Third-party software
+
+Drenched is proprietary software. All rights reserved.
+
+It is built with the following third-party components. Each is licensed for
+use in closed-source commercial software. GPL-licensed code must never be
+added to this repository.
+
+| Component | Use | Licence |
+| --- | --- | --- |
+| [JUCE](https://juce.com) 9 | Plugin wrappers, GUI, platform layer | JUCE Starter or paid JUCE licence (not the AGPL option) |
+| [clap-juce-extensions](https://github.com/free-audio/clap-juce-extensions) | CLAP format | MIT |
+| [CLAP](https://github.com/free-audio/clap) | CLAP format | MIT |
+| [Catch2](https://github.com/catchorg/Catch2) | Unit tests (not shipped) | BSL-1.0 |
+| [pffft](https://github.com/marton78/pffft) | FFT for convolution | BSD-style FFTPACK licence (Julien Pommier, Hayati Ayguen, Dario Mambro, UCAR) |
+| [r8brain-free-src](https://github.com/avaneev/r8brain-free-src) 6.5 | Resampling loaded impulse responses | MIT (Aleksey Vaneev) |
+| Ooura FFT (inside r8brain-free-src) | FFT for the resampler | Free for any use, including commercial (Takuya Ooura) |
+| [Monocypher](https://monocypher.org) 4.0.2 | Checking the signature on activation codes (Ed25519) | BSD-2-Clause or CC0-1.0, used under CC0 (Loup Vaillant, Michael Savage, Fabio Scotoni) |
+| [libmysofa](https://github.com/hoene/libmysofa) 1.3.5 | Reading SOFA impulse response files | BSD-3-Clause (Symonics GmbH, Christian Hoene) |
+| [miniz](https://github.com/richgel999/miniz) 3.0.2 (its inflater only) | Decompressing SOFA files | MIT (Rich Geldreich, RAD Game Tools, Valve Software) |
+| [Microsoft WebView2 SDK](https://developer.microsoft.com/microsoft-edge/webview2/) | Interface web view on Windows (loader linked statically) | Microsoft WebView2 SDK licence (redistributable) |
+
+The r8brain-free-src (MIT) licence requires its copyright and permission
+notice in copies of the software; the installer's licence page must include
+it.
+
+The pffft licence requires its copyright notices and disclaimer to be
+reproduced in documentation shipped with binaries; the installer's licence
+page must include them.
+
+The libmysofa (BSD-3-Clause) licence likewise requires its copyright notice,
+conditions and disclaimer in documentation shipped with binaries; the
+installer's licence page must include them, as must miniz's (MIT) notice.
+libmysofa's test files are used by the tests only and not shipped.
+
+The installers show all of these in full on their licence page, and the Windows one
+installs them beside the app: `packaging/third-party-licences.txt`, built by
+`tools/third_party_licences.py` from this file and each component's licence. Rebuild it
+whenever this file or a dependency changes. The Windows installer is made with
+[Inno Setup](https://jrsoftware.org/isinfo.php) (Inno Setup License, free for commercial
+use), whose setup program ships inside it.
+
+## Typefaces
+
+The interface embeds these typefaces, all under the
+[SIL Open Font Licence 1.1](source/ui/fonts/LICENSE-OFL.txt), as Latin
+subsets from the [Fontsource](https://fontsource.org) packages.
+
+| Typeface | Author |
+| --- | --- |
+| Fraunces | Undercase Type |
+| Inter | Rasmus Andersson |
+| IBM Plex Sans, IBM Plex Mono | IBM |
+| Instrument Sans | Rodrigo Fuenzalida, Jordan Egstad |
+| Geist, Geist Mono | Vercel |
+| Space Grotesk | Florian Karsten |
+| JetBrains Mono | JetBrains |
+| Hanken Grotesk | Alfredo Marco Pradil, Hanken Design Co. |
+
+## Recorded spaces
+
+The bundled impulse responses in `library/ir/` are recordings published by
+others under licences that allow use in a commercial product. Each is credited
+in the plugin (space menu, Recording credits) and in
+[library/README.md](library/README.md).
+
+| Recordings | Spaces | Licence |
+| --- | --- | --- |
+| [MAIR library](https://github.com/APL-Huddersfield/MAIR-Library-and-Renderer): Hyunkook Lee and Connor Millns, Applied Psychoacoustics Lab, University of Huddersfield (2017) | St Paul's Hall, Huddersfield (five microphone setups) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| [OpenAIR library](https://www.openair.hosted.york.ac.uk/) (www.openairlib.net), Audiolab, University of York, with the recordists each space's page names (listed in [library/README.md](library/README.md)); copied from audEERING's public mirror (`audb-public`, openair 1.0.0) | Jack Lyons Concert Hall, Spokane Woman's Club, Dixon Studio Theatre, York Minster, Lady Chapel St Albans, St Patrick's Patrington, St Margaret's York, Heslington Church, Spring Lane Stairwell, Hamilton Mausoleum, Tyndall Bruce Monument, Terry's Factory Warehouse, Terry's Typing Room, R1 Reactor Hall, Genesis 6 Studio Live Room, Elveden Hall Smoking Room, York Guildhall Council Chamber, Innocent Railway Tunnel, Gill Heads Mine, Hoffmann Lime Kiln, Newgrange, University of York Sports Hall, Falkland Palace Royal Tennis Court, Alcuin College Courtyard, Troller's Gill | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| [AIR database](https://www.iks.rwth-aachen.de/en/research/tools-downloads/databases/aachen-impulse-response-database/): Marco Jeub, Magnus Schäfer, Hauke Krüger, Christoph M. Nelke, Christophe Beaugeant and Peter Vary, Institute of Communication Systems, RWTH Aachen University; copied from audEERING's public mirror (`audb-public`, air 1.4) | Aula Carolina, Office and Lecture Room, Aachen | [MIT](https://opensource.org/licenses/MIT) |
+| [Detmold SRIR database](https://zenodo.org/records/4116247): Sebastia Vicenc Amengual Gari, Banu Sahin, Dusty Eddy and Malte Kob, Detmold University of Music (2020) | Detmold Konzerthaus (front stalls, mid hall), Brahmssaal, Sommertheater | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| [ARVERIR](https://zenodo.org/records/20098848): Federico Miotello, Gioele Greco, Paolo Ostan, Francesca Del Gaudio, Luca Comanducci, Raffaele Malvermi, Mirco Pezzoli and Fabio Antonacci, Politecnico di Milano (2026) | Arvedi Auditorium, Cremona | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| [ChurchIR](https://zenodo.org/records/14901751): Riccardo Giampiccolo, Sofia Parrinelli and Fabio Antonacci, Politecnico di Milano (2025) | Ss. Marcellino e Pietro, Cremona | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| [WDR broadcast studios compilation](https://zenodo.org/records/3930833): P. Stade, B. Bernschütz and M. Rühl, TH Köln (2012) | WDR Großer Sendesaal (ORTF, spaced omnis), WDR Kleiner Sendesaal | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+
+The changes made to each recording (B-format decoding, array encoding,
+resampling, trimming, channel mapping, normalising) are listed in [library/README.md](library/README.md)
+and under Recording credits in the plugin.
+
+The MIT licence of the AIR database requires its copyright notice and
+permission notice in copies; the installer's licence page must include them.
+The permission notice is the standard MIT text below. The copyright line must
+be taken word for word from the `LICENSE` file in the original AIR release
+(`air_database_release_1_4.zip` from the IKS site), which the mirror does not
+carry; until it is, credit it as copyright the AIR database authors, Institute
+of Communication Systems, RWTH Aachen University.
+
+> Permission is hereby granted, free of charge, to any person obtaining a copy
+> of this software and associated documentation files (the "Software"), to deal
+> in the Software without restriction, including without limitation the rights
+> to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in
+> all copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+> OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+> SOFTWARE.
+
+## Images
+
+The space photographs in `source/ui/spaces/` are placeholder renders made for
+this project. They are replaced by capture photography as the space library
+is recorded.
+
+VST is a registered trademark of Steinberg Media Technologies GmbH.
+
+==============================================================================
+CLAP
+==============================================================================
+
+MIT License
+
+Copyright (c) 2021 Alexandre BIQUE
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+clap-juce-extensions
+==============================================================================
+
+Copyright 2019-2020, Paul Walker
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+pffft
+==============================================================================
+
+Copyright (c) 2020  Dario Mambro ( dario.mambro@gmail.com )
+Copyright (c) 2019  Hayati Ayguen ( h_ayguen@web.de )
+Copyright (c) 2013  Julien Pommier ( pommier@modartt.com )
+
+Copyright (c) 2004 the University Corporation for Atmospheric
+Research ("UCAR"). All rights reserved. Developed by NCAR's
+Computational and Information Systems Laboratory, UCAR,
+www.cisl.ucar.edu.
+
+Redistribution and use of the Software in source and binary forms,
+with or without modification, is permitted provided that the
+following conditions are met:
+
+- Neither the names of NCAR's Computational and Information Systems
+Laboratory, the University Corporation for Atmospheric Research,
+nor the names of its sponsors or contributors may be used to
+endorse or promote products derived from this Software without
+specific prior written permission.  
+
+- Redistributions of source code must retain the above copyright
+notices, this list of conditions, and the disclaimer below.
+
+- Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions, and the disclaimer below in the
+documentation and/or other materials provided with the
+distribution.
+
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE CONTRIBUTORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS WITH THE
+SOFTWARE.
+
+==============================================================================
+r8brain-free-src
+==============================================================================
+
+MIT License
+
+Copyright (c) 2013-2023 Aleksey Vaneev
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+Monocypher
+==============================================================================
+
+Monocypher as a whole is dual-licensed.  Choose whichever licence you
+want from the two licences listed below.
+
+The first licence is a regular 2-clause BSD licence.  The second licence
+is the CC-0 from Creative Commons. It is intended to release Monocypher
+to the public domain.  The BSD licence serves as a fallback option.
+
+See the individual files for specific information about who contributed
+to what file during which years.  See below for special notes.
+
+Licence 1 (2-clause BSD)
+------------------------
+
+Copyright (c) 2017-2023, Loup Vaillant
+Copyright (c) 2017-2019, Michael Savage
+Copyright (c) 2017-2023, Fabio Scotoni
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the
+   distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+Licence 2 (CC-0)
+----------------
+
+> CREATIVE COMMONS CORPORATION IS NOT A LAW FIRM AND DOES NOT PROVIDE
+> LEGAL SERVICES. DISTRIBUTION OF THIS DOCUMENT DOES NOT CREATE AN
+> ATTORNEY-CLIENT RELATIONSHIP. CREATIVE COMMONS PROVIDES THIS
+> INFORMATION ON AN "AS-IS" BASIS. CREATIVE COMMONS MAKES NO WARRANTIES
+> REGARDING THE USE OF THIS DOCUMENT OR THE INFORMATION OR WORKS
+> PROVIDED HEREUNDER, AND DISCLAIMS LIABILITY FOR DAMAGES RESULTING FROM
+> THE USE OF THIS DOCUMENT OR THE INFORMATION OR WORKS PROVIDED
+> HEREUNDER.
+
+### Statement of Purpose
+
+The laws of most jurisdictions throughout the world automatically confer
+exclusive Copyright and Related Rights (defined below) upon the creator
+and subsequent owner(s) (each and all, an "owner") of an original work
+of authorship and/or a database (each, a "Work").
+
+Certain owners wish to permanently relinquish those rights to a Work for
+the purpose of contributing to a commons of creative, cultural and
+scientific works ("Commons") that the public can reliably and without
+fear of later claims of infringement build upon, modify, incorporate in
+other works, reuse and redistribute as freely as possible in any form
+whatsoever and for any purposes, including without limitation commercial
+purposes. These owners may contribute to the Commons to promote the
+ideal of a free culture and the further production of creative, cultural
+and scientific works, or to gain reputation or greater distribution for
+their Work in part through the use and efforts of others.
+
+For these and/or other purposes and motivations, and without any
+expectation of additional consideration or compensation, the person
+associating CC0 with a Work (the "Affirmer"), to the extent that he or
+she is an owner of Copyright and Related Rights in the Work, voluntarily
+elects to apply CC0 to the Work and publicly distribute the Work under
+its terms, with knowledge of his or her Copyright and Related Rights in
+the Work and the meaning and intended legal effect of CC0 on those
+rights.
+
+1. **Copyright and Related Rights.** A Work made available under CC0 may
+   be protected by copyright and related or neighboring rights
+   ("Copyright and Related Rights"). Copyright and Related Rights
+   include, but are not limited to, the following:
+
+   - the right to reproduce, adapt, distribute, perform, display,
+     communicate, and translate a Work;
+   - moral rights retained by the original author(s) and/or
+     performer(s); publicity and privacy rights pertaining to a person's
+     image or likeness depicted in a Work;
+   - rights protecting against unfair competition in regards to a Work,
+     subject to the limitations in paragraph 4(a), below;
+   - rights protecting the extraction, dissemination, use and reuse of
+     data in a Work;
+   - database rights (such as those arising under Directive 96/9/EC of
+     the European Parliament and of the Council of 11 March 1996 on the
+     legal protection of databases, and under any national
+     implementation thereof, including any amended or successor version
+     of such directive); and
+   - other similar, equivalent or corresponding rights throughout the
+     world based on applicable law or treaty, and any national
+     implementations thereof.
+
+2. **Waiver.** To the greatest extent permitted by, but not in
+   contravention of, applicable law, Affirmer hereby overtly, fully,
+   permanently, irrevocably and unconditionally waives, abandons, and
+   surrenders all of Affirmer's Copyright and Related Rights and
+   associated claims and causes of action, whether now known or unknown
+   (including existing as well as future claims and causes of action),
+   in the Work (i) in all territories worldwide, (ii) for the maximum
+   duration provided by applicable law or treaty (including future time
+   extensions), (iii) in any current or future medium and for any number
+   of copies, and (iv) for any purpose whatsoever, including without
+   limitation commercial, advertising or promotional purposes (the
+   "Waiver"). Affirmer makes the Waiver for the benefit of each member
+   of the public at large and to the detriment of Affirmer's heirs and
+   successors, fully intending that such Waiver shall not be subject to
+   revocation, rescission, cancellation, termination, or any other legal
+   or equitable action to disrupt the quiet enjoyment of the Work by the
+   public as contemplated by Affirmer's express Statement of Purpose.
+
+3. **Public License Fallback.** Should any part of the Waiver for any
+   reason be judged legally invalid or ineffective under applicable law,
+   then the Waiver shall be preserved to the maximum extent permitted
+   taking into account Affirmer's express Statement of Purpose. In
+   addition, to the extent the Waiver is so judged Affirmer hereby
+   grants to each affected person a royalty-free, non transferable, non
+   sublicensable, non exclusive, irrevocable and unconditional license
+   to exercise Affirmer's Copyright and Related Rights in the Work (i)
+   in all territories worldwide, (ii) for the maximum duration provided
+   by applicable law or treaty (including future time extensions), (iii)
+   in any current or future medium and for any number of copies, and
+   (iv) for any purpose whatsoever, including without limitation
+   commercial, advertising or promotional purposes (the "License"). The
+   License shall be deemed effective as of the date CC0 was applied by
+   Affirmer to the Work. Should any part of the License for any reason
+   be judged legally invalid or ineffective under applicable law, such
+   partial invalidity or ineffectiveness shall not invalidate the
+   remainder of the License, and in such case Affirmer hereby affirms
+   that he or she will not (i) exercise any of his or her remaining
+   Copyright and Related Rights in the Work or (ii) assert any
+   associated claims and causes of action with respect to the Work, in
+   either case contrary to Affirmer's express Statement of Purpose.
+
+4. **Limitations and Disclaimers.**
+
+   - No trademark or patent rights held by Affirmer are waived,
+     abandoned, surrendered, licensed or otherwise affected by this
+     document.
+   - Affirmer offers the Work as-is and makes no representations or
+     warranties of any kind concerning the Work, express, implied,
+     statutory or otherwise, including without limitation warranties of
+     title, merchantability, fitness for a particular purpose, non
+     infringement, or the absence of latent or other defects, accuracy,
+     or the present or absence of errors, whether or not discoverable,
+     all to the greatest extent permissible under applicable law.
+   - Affirmer disclaims responsibility for clearing rights of other
+     persons that may apply to the Work or any use thereof, including
+     without limitation any person's Copyright and Related Rights in the
+     Work. Further, Affirmer disclaims responsibility for obtaining any
+     necessary consents, permissions or other rights required for any
+     use of the Work.
+   - Affirmer understands and acknowledges that Creative Commons is not
+     a party to this document and has no duty or obligation with respect
+     to this CC0 or use of the Work.
+
+Special notes
+-------------
+
+The files in `tests/externals/` were placed in the public domain by
+their respective authors.  See the `AUTHORS.md` files in each directory.
+
+==============================================================================
+libmysofa
+==============================================================================
+
+Copyright (c) 2016-2017, Symonics GmbH, Christian Hoene
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+    (1) Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer. 
+
+    (2) Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in
+    the documentation and/or other materials provided with the
+    distribution.  
+    
+    (3)The name of the author may not be used to
+    endorse or promote products derived from this software without
+    specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+==============================================================================
+miniz
+==============================================================================
+
+Copyright 2013-2014 RAD Game Tools and Valve Software
+Copyright 2010-2014 Rich Geldreich and Tenacious Software LLC
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+==============================================================================
+Typefaces (SIL Open Font Licence 1.1)
+==============================================================================
+
+Copyright 2020 The Fraunces Project Authors (github.com/undercasetype/Fraunces) Fraunces-Italic[SOFT,WONK,opsz,wght].ttf: Copyright 2020 The Fraunces Project Authors (github.com/undercasetype/Fraunces)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+

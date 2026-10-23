@@ -33,6 +33,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 UninstallDisplayName=Drenched {#AppVersion}
 UninstallDisplayIcon={app}\Drenched.exe
+; Several components' licences ask for their notices in documentation shipped with the
+; binaries; the licence page shows them all (tools/third_party_licences.py builds the file).
+LicenseFile=..\third-party-licences.txt
 
 [Types]
 Name: "full"; Description: "Everything"
@@ -56,11 +59,11 @@ Source: "{#Source}\CLAP\32-bit\Drenched.clap"; DestDir: "{commoncf32}\CLAP"; Com
 Source: "{#Source}\Drenched.exe"; DestDir: "{app}"; Components: app; Flags: ignoreversion; Check: Is64BitInstallMode
 Source: "{#Source}\Drenched (32-bit).exe"; DestDir: "{app}"; DestName: "Drenched.exe"; Components: app; Flags: ignoreversion; Check: not Is64BitInstallMode
 
-Source: "{#Source}\Third-party notices.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\third-party-licences.txt"; DestDir: "{app}"; DestName: "Third-party licences.txt"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Drenched"; Filename: "{app}\Drenched.exe"; Components: app
-Name: "{group}\Third-party notices"; Filename: "{app}\Third-party notices.txt"
+Name: "{group}\Third-party licences"; Filename: "{app}\Third-party licences.txt"
 Name: "{group}\Uninstall Drenched"; Filename: "{uninstallexe}"
 
 [Run]

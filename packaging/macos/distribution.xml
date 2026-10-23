@@ -3,6 +3,8 @@
 <installer-gui-script minSpecVersion="2">
     <title>Drenched @VERSION@ beta</title>
     <welcome file="welcome.txt" mime-type="text/plain"/>
+    <!-- the components' notices, which their licences ask to ship with the binaries -->
+    <license file="third-party-licences.txt" mime-type="text/plain"/>
     <options customize="allow" require-scripts="false" hostArchitectures="arm64,x86_64"/>
     <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
     <choices-outline>

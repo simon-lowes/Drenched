@@ -292,7 +292,6 @@ jobs:
         shell: pwsh
         run: |
           $version = (Select-String -Path CMakeLists.txt -Pattern '^project\(Drenched VERSION ([0-9.]+)').Matches[0].Groups[1].Value
-          Copy-Item NOTICE.md "dist/Third-party notices.txt"
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
           & $iscc "/DAppVersion=$version" "/DSource=$PWD\dist" "/O$PWD\installer" packaging\windows\Drenched.iss
