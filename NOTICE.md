@@ -16,6 +16,8 @@ added to this repository.
 | [r8brain-free-src](https://github.com/avaneev/r8brain-free-src) 6.5 | Resampling loaded impulse responses | MIT (Aleksey Vaneev) |
 | Ooura FFT (inside r8brain-free-src) | FFT for the resampler | Free for any use, including commercial (Takuya Ooura) |
 | [Monocypher](https://monocypher.org) 4.0.2 | Checking the signature on activation codes (Ed25519) | BSD-2-Clause or CC0-1.0, used under CC0 (Loup Vaillant, Michael Savage, Fabio Scotoni) |
+| [libmysofa](https://github.com/hoene/libmysofa) 1.3.5 | Reading SOFA impulse response files | BSD-3-Clause (Symonics GmbH, Christian Hoene) |
+| [miniz](https://github.com/richgel999/miniz) 3.0.2 (its inflater only) | Decompressing SOFA files | MIT (Rich Geldreich, RAD Game Tools, Valve Software) |
 | [Microsoft WebView2 SDK](https://developer.microsoft.com/microsoft-edge/webview2/) | Interface web view on Windows (loader linked statically) | Microsoft WebView2 SDK licence (redistributable) |
 
 The r8brain-free-src (MIT) licence requires its copyright and permission
@@ -25,6 +27,11 @@ it.
 The pffft licence requires its copyright notices and disclaimer to be
 reproduced in documentation shipped with binaries; the installer's licence
 page must include them.
+
+The libmysofa (BSD-3-Clause) licence likewise requires its copyright notice,
+conditions and disclaimer in documentation shipped with binaries; the
+installer's licence page must include them, as must miniz's (MIT) notice.
+libmysofa's test files are used by the tests only and not shipped.
 
 ## Typefaces
 

@@ -85,3 +85,54 @@ target_include_directories(drenched_monocypher SYSTEM PUBLIC
     ${monocypher_SOURCE_DIR}/src
     ${monocypher_SOURCE_DIR}/src/optional)
 set_target_properties(drenched_monocypher PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# miniz 3.0.2 (MIT): only its inflater (tinfl), for the compressed data in SOFA
+# files. Not zlib itself, whose symbols would clash with the copy inside JUCE.
+FetchContent_Declare(miniz
+    GIT_REPOSITORY https://github.com/richgel999/miniz.git
+    GIT_TAG        293d4db1b7d0ffee9756d035b9ac6f7431ef8492 # 3.0.2
+    SOURCE_SUBDIR  do-not-add-subdirectory)
+FetchContent_MakeAvailable(miniz)
+
+set(DRENCHED_MINIZ_CONFIG ${CMAKE_CURRENT_BINARY_DIR}/miniz-config)
+file(WRITE ${DRENCHED_MINIZ_CONFIG}/miniz_export.h "#define MINIZ_EXPORT\n")
+
+add_library(drenched_miniz STATIC ${miniz_SOURCE_DIR}/miniz_tinfl.c)
+target_include_directories(drenched_miniz SYSTEM PUBLIC ${miniz_SOURCE_DIR} ${DRENCHED_MINIZ_CONFIG})
+target_compile_definitions(drenched_miniz PUBLIC MINIZ_NO_ZLIB_COMPATIBLE_NAMES MINIZ_NO_STDIO MINIZ_NO_TIME MINIZ_NO_ARCHIVE_APIS)
+set_target_properties(drenched_miniz PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+
+# libmysofa 1.3.5 (BSD-3-Clause): reads SOFA (AES69) impulse response files.
+# Only its HDF5 reader is compiled, not the HRTF lookup and resampling. Its
+# gunzip.c is swapped for cmake/mysofa/gunzip.c, which inflates with miniz, and
+# the config headers its CMake would generate are written here instead.
+FetchContent_Declare(mysofa
+    GIT_REPOSITORY https://github.com/hoene/libmysofa.git
+    GIT_TAG        6cc5b15a73e9bd97810d03767082edda7f315881 # v1.3.5
+    SOURCE_SUBDIR  do-not-add-subdirectory)
+FetchContent_MakeAvailable(mysofa)
+
+set(DRENCHED_MYSOFA_CONFIG ${CMAKE_CURRENT_BINARY_DIR}/mysofa-config)
+file(WRITE ${DRENCHED_MYSOFA_CONFIG}/config.h
+    "#define CMAKE_INSTALL_PREFIX \"\"\n#define CPACK_PACKAGE_VERSION_MAJOR 1\n#define CPACK_PACKAGE_VERSION_MINOR 3\n#define CPACK_PACKAGE_VERSION_PATCH 5\n")
+file(WRITE ${DRENCHED_MYSOFA_CONFIG}/export/mysofa_export.h "#define MYSOFA_EXPORT\n")
+
+add_library(drenched_mysofa STATIC
+    ${mysofa_SOURCE_DIR}/src/hrtf/reader.c
+    ${mysofa_SOURCE_DIR}/src/hrtf/tools.c
+    ${mysofa_SOURCE_DIR}/src/hdf/btree.c
+    ${mysofa_SOURCE_DIR}/src/hdf/dataobject.c
+    ${mysofa_SOURCE_DIR}/src/hdf/fractalhead.c
+    ${mysofa_SOURCE_DIR}/src/hdf/gcol.c
+    ${CMAKE_CURRENT_LIST_DIR}/mysofa/gunzip.c
+    ${mysofa_SOURCE_DIR}/src/hdf/superblock.c)
+target_include_directories(drenched_mysofa SYSTEM PUBLIC ${mysofa_SOURCE_DIR}/src/hrtf ${DRENCHED_MYSOFA_CONFIG}/export
+    PRIVATE ${DRENCHED_MYSOFA_CONFIG})
+target_include_directories(drenched_mysofa PRIVATE ${mysofa_SOURCE_DIR}/src/hdf)
+target_link_libraries(drenched_mysofa PRIVATE drenched_miniz)
+set_target_properties(drenched_mysofa PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+if(MSVC)
+    target_compile_definitions(drenched_mysofa PRIVATE _CRT_SECURE_NO_WARNINGS)
+elseif(NOT WIN32)
+    target_link_libraries(drenched_mysofa PRIVATE m)
+endif()
