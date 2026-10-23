@@ -790,6 +790,9 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .ma-wm{font:700 13px var(--fui);letter-spacing:.3em;margin-right:auto}
 .ma-head{position:absolute;left:40px;top:66px;width:540px;display:flex;flex-direction:column;gap:6px}
 .ma-head h3{font:700 46px/1 var(--fui);letter-spacing:-.03em;margin:0}
+/* a long name gets smaller type and stays on one line, so the nav never lands on the graph */
+.ma-head h3{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ma-head h3.lg{font-size:32px;line-height:46px}
 .ma-head .sub{font-size:13px;color:var(--tx2);display:flex;align-items:center;gap:6px}
 .ma-head .sub i{display:inline-block;width:12px;height:12px;background:var(--ac);border-radius:2px;flex-shrink:0}
 .ma-head .nav{display:flex;align-items:center;gap:6px;margin-top:2px}
