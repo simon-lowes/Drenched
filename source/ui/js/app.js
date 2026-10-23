@@ -221,6 +221,16 @@ function fakeAnalysis(s){var b=s.bands,rt=BANDS31.map(function(f){var x=Math.log
  return {seconds:secs,bands:BANDS31.slice(),waterfall:wf,sliceSeconds:sl,decay:dec,decayStep:step,rt60:b.slice()};}
 function fakeSpectrum(){var t=Date.now()/1000,env=0.5+0.5*Math.sin(t*0.9),lv=[];for(var i=0;i<31;i++)lv.push(-24-Math.abs(i-14)*1.4-14*(1-env)+(hash(i,Math.floor(t*12))-0.5)*5);onSpectrum({levels:lv});}
 
+/* ---- the space browser: the search, the kind, the reference space of Similar (an index into
+   SPACES, or null) and the row the keyboard is on (a position in the results) ---- */
+st.brwQ='';st.brwKind='all';st.brwSim=null;st.brwCur=0;
+/* the row the keyboard is on, scrolled into view inside the list */
+function brwReveal(){var l=live.querySelector('.brw-list'),r=live.querySelector('.brw-row.key');if(!l||!r)return;var t=r.offsetTop,b=t+r.offsetHeight;if(t<l.scrollTop)l.scrollTop=t;else if(b>l.scrollTop+l.clientHeight)l.scrollTop=b-l.clientHeight;}
+function brwFocus(){var q=live.querySelector('#brw-q');if(q)q.focus({preventScroll:true});}
+/* opening starts a fresh search; the kind and the Similar reference stay, so the next of the
+   same kind, or the next closest, is one keypress away */
+function openBrowser(){st.browse=true;st.brwQ='';if(st.brwSim!=null&&!SPACES[st.brwSim])st.brwSim=null;var rows=browseResults(st).rows;st.brwCur=0;for(var j=0;j<rows.length;j++)if(rows[j].i===st.sp)st.brwCur=j;}
+
 /* ---- scenes: every setting and the space under a name, recalled here or by automating Scene ---- */
 st.scn=false;st.scenes=[];st.scene=0;st.scnLocal={};
 var MAX_SCENES=32;
@@ -275,11 +285,13 @@ function fit(){var w=live.clientWidth,h=live.clientHeight,sc=Math.min(w/W,h/H),e
  el.style.transform='translate('+((w-W*sc)/2).toFixed(2)+'px,'+((h-H*sc)/2).toFixed(2)+'px) scale('+sc.toFixed(5)+')';
  var frs=live.querySelectorAll('.skins .fr');for(var i=0;i<frs.length;i++){var s2=frs[i].firstElementChild;if(s2)s2.style.transform='scale('+(frs[i].clientWidth/W).toFixed(5)+')';}
  if(st.wf||st.eq)drawDisplays();}
-function renderLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAttribute('data-fid'):null;
+function renderLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAttribute('data-fid'):null,bl=live.querySelector('.brw-list'),blt=bl?bl.scrollTop:0;
  var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.wf)html=html.slice(0,-6)+wfHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';
  live.innerHTML=html;fit();syncDisplays();
+ if(blt){var bl2=live.querySelector('.brw-list');if(bl2)bl2.scrollTop=blt;}
  if(fid){var n=live.querySelector('[data-fid="'+fid+'"]');if(n){n.focus({preventScroll:true});if(n.matches('input,textarea'))n.selectionStart=n.selectionEnd=n.value.length;}}
  // A dialog keeps the keyboard even when the control that had it is redrawn away.
+ if(st.browse&&!live.contains(document.activeElement))brwFocus();
  if((st.lic||st.capture||st.credits||st.spk||st.scn||st.eq||st.wf)&&!live.contains(document.activeElement)){var d=live.querySelector('.cap .cgo:not([disabled])')||live.querySelector('.cap .cx');if(d)d.focus({preventScroll:true});}}
 var raf=0;function schedule(){if(!raf)raf=requestAnimationFrame(function(){raf=0;renderLive();sync();syncUi();});}
 window.schedule=schedule;
@@ -329,6 +341,12 @@ live.addEventListener('wheel',function(e){var en=e.target.closest&&e.target.clos
 
 live.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1,PageUp:10,PageDown:-10};
  if(e.key==='Escape'&&(st.skins||st.browse||st.capture||st.lic||st.credits||st.spk||st.scn||st.eq||st.wf)){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.wf)st.wf=false;else if(st.eq)st.eq=false;else if(st.scn)st.scn=false;else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
+ var bw=st.browse&&t.closest&&t.closest('.brw');
+ if(bw){var R=browseResults(st),n=R.rows.length,bc=clamp(st.brwCur||0,0,Math.max(0,n-1)),mv={ArrowDown:1,ArrowUp:-1,PageDown:8,PageUp:-8}[e.key];
+  if(mv){if(n){st.brwCur=clamp(bc+mv,0,n-1);renderLive();brwReveal();}e.preventDefault();return;}
+  if(e.key==='Enter'&&t.id==='brw-q'){e.preventDefault();if(!n)return;var br=R.rows[bc];
+   if(e.shiftKey){st.brwSim=br.i;st.brwCur=0;renderLive();brwReveal();}
+   else{st.browse=false;changeSpace(br.i);renderLive();sync();syncUi();var ob=live.querySelector('[data-act="browse"]');if(ob)ob.focus({preventScroll:true});}return;}}
  if(e.key==='Enter'&&t.id==='lic-key'){e.preventDefault();licActivate();renderLive();return;}
  if(e.key==='Enter'&&t.matches('input[data-scn]')){e.preventDefault();t.blur();return;}
  if(t.matches('.sk')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.click();return;}
@@ -358,11 +376,12 @@ live.addEventListener('change',function(e){var t=e.target;
  else if((ty==='hicut'||/^eq\df$/.test(ty))&&/k/i.test(raw)){setParam(st,ty,v*1000);}
  else setParam(st,ty,v);
  st.note=null;renderLive();sync();});
-live.addEventListener('input',function(e){var k=e.target.getAttribute&&e.target.getAttribute('data-in');if(k==='licKey'||k==='licCode')st[k]=e.target.value;});
+live.addEventListener('input',function(e){var k=e.target.getAttribute&&e.target.getAttribute('data-in');if(k==='licKey'||k==='licCode')st[k]=e.target.value;
+ if(e.target.id==='brw-q'){var ss=e.target.selectionStart;st.brwQ=e.target.value;st.brwCur=0;renderLive();var q=live.querySelector('#brw-q');if(q){q.focus({preventScroll:true});q.selectionStart=q.selectionEnd=ss;}brwReveal();}});
 live.addEventListener('focusin',function(e){if(e.target.matches('input.ro'))e.target.select();});
 live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
- if(!b){if(st.browse&&!e.target.closest('.menu')){st.browse=false;renderLive();}return;}
- var a=b.getAttribute('data-act'),v=b.getAttribute('data-v');if(a!=='browse'&&a!=='pick')st.browse=false;
+ if(!b){if(st.browse&&!e.target.closest('.brw .cbox')){st.browse=false;renderLive();}return;}
+ var a=b.getAttribute('data-act'),v=b.getAttribute('data-v');if(a!=='browse'&&a!=='pick'&&a.indexOf('brw')!==0)st.browse=false;
  switch(a){
   case 'mode':st.mode=v;st.note=v==='stage'?'<b>Stage view</b> for post: large numerals, channel meters and locks, on the same tokens.':'<b>Studio view</b>: the space and its decay lead.';st.hint=null;break;
   case 'slot':if(v!==st.slot){st.slots[st.slot]=snap(st);var nx=st.slots[v]||snap(st);Object.keys(nx).forEach(function(k){st[k]=Array.isArray(nx[k])?nx[k].slice():nx[k];});st.slot=v;st.hint=null;st.note='<b>Snapshot '+v+'.</b> Changes now go to '+v+'. Switch back to compare.';}break;
@@ -372,7 +391,10 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'match':st.hint=null;if(JUCE){JUCE.emitEvent('match',{});st.note='<b>Match a room.</b> Choose a recording made in the room you want to match: a voice, a band or a drum kit, with pauses where the sound stops and the room rings on.';}else st.note='<b>Match a room</b> listens to a recording made in a room and sets the decay to match it.';break;
   case 'lock':var lk=b.getAttribute('data-k');st.locks[lk]=!st.locks[lk];st.hint=null;st.note=(st.locks[lk]?'<b>Locked.</b> ':'<b>Unlocked.</b> ')+P[lk].l+(st.locks[lk]?' now holds when you change space.':' follows each space again.');break;
   case 'view':st.view=v;break;
-  case 'browse':st.browse=!st.browse;break;
+  case 'browse':if(st.browse)st.browse=false;else openBrowser();break;
+  case 'brwkind':st.brwKind=v;st.brwCur=0;break;
+  case 'brwsim':st.brwSim=v==='off'?null:+v;st.brwCur=0;break;
+  case 'brwclear':st.brwQ='';st.brwKind='all';st.brwCur=0;break;
   case 'loadir':st.browse=false;st.hint=null;if(JUCE){JUCE.emitEvent('loadIr',{});st.note='Choose a WAV, AIFF or FLAC impulse response: mono, stereo, four-channel true stereo, or surround up to 9.1.6.';}else st.note='<b>Load your own IR</b> opens a file chooser in the plugin.';break;
   case 'credits':st.credits=!st.credits;st.browse=false;st.hint=null;break;
   case 'speakers':st.spk=!st.spk;st.browse=false;st.hint=null;break;
@@ -405,7 +427,8 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'skin':if(SKINS.some(function(x){return x.id===v;})){st.skin=v;st.note='<b>'+esc(skinOf(v).name)+'.</b> Click the Drenched name to change the look again.';st.hint=null;}st.skins=false;break;
  }
  renderLive();sync();syncUi();
- if(a==='browse'&&st.browse){var mi=live.querySelector('.menu button[aria-current="true"]');if(mi)mi.focus({preventScroll:true});}
+ if(a==='browse'&&st.browse){brwFocus();brwReveal();}
+ else if(a==='brwsim'||a==='brwclear'){brwFocus();brwReveal();}
  else if(a==='skins'&&st.skins){var sk=live.querySelector('.skins .sk[aria-current="true"]');if(sk)sk.focus({preventScroll:true});}
  else if(a==='capture'&&st.capture){var cf=live.querySelector('.cap .cgo');if(cf)cf.focus({preventScroll:true});}
  else if(a==='speakers'&&st.spk){var sf=live.querySelector('.spkd input');if(sf)sf.focus({preventScroll:true});}
