@@ -77,12 +77,18 @@ DrenchedProcessor::DrenchedProcessor()
 
         if (const auto* bands = recordings.front().info["bands"].getArray())
             for (size_t band = 0; band < params.decay.size() && static_cast<int> (band) < bands->size(); ++band)
-                if (auto* parameter = state.getParameter (ParamIDs::decay[band]))
-                    parameter->setValueNotifyingHost (parameter->convertTo0to1 (static_cast<float> (static_cast<double> ((*bands)[static_cast<int> (band)]))));
+                for (const auto* id : { ParamIDs::decay[band], ParamIDs::decayRight[band] })
+                    if (auto* parameter = state.getParameter (id))
+                        parameter->setValueNotifyingHost (parameter->convertTo0to1 (static_cast<float> (static_cast<double> ((*bands)[static_cast<int> (band)]))));
     }
 
     for (size_t band = 0; band < params.decay.size(); ++band)
+    {
         params.decay[band] = raw (ParamIDs::decay[band]);
+        params.decayRight[band] = raw (ParamIDs::decayRight[band]);
+    }
+
+    params.decayLink = raw (ParamIDs::decayLink);
 
     builder = std::make_unique<KernelBuilder> (reverb);
     cacheUiState();
@@ -188,6 +194,10 @@ std::optional<ImpulseResponseRequest> DrenchedProcessor::currentRequest (double 
 
     for (size_t band = 0; band < params.decay.size(); ++band)
         request.decaySeconds[band] = params.decay[band]->load();
+
+    if (params.decayLink->load() < 0.5f)
+        for (size_t band = 0; band < params.decayRight.size(); ++band)
+            request.rightDecaySeconds[band] = params.decayRight[band]->load();
 
     return request;
 }
@@ -609,11 +619,14 @@ void DrenchedProcessor::applyLoadedImpulseResponse (const juce::File& file, std:
     // scene brings its own.
     for (size_t band = 0; band < (measuredDecay ? measured.size() : 0); ++band)
     {
-        if (auto* parameter = state.getParameter (ParamIDs::decay[band]))
+        for (const auto* id : { ParamIDs::decay[band], ParamIDs::decayRight[band] })
         {
-            parameter->beginChangeGesture();
-            parameter->setValueNotifyingHost (parameter->convertTo0to1 (measured[band]));
-            parameter->endChangeGesture();
+            if (auto* parameter = state.getParameter (id))
+            {
+                parameter->beginChangeGesture();
+                parameter->setValueNotifyingHost (parameter->convertTo0to1 (measured[band]));
+                parameter->endChangeGesture();
+            }
         }
     }
 

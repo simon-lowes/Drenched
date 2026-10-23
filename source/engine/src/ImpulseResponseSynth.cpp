@@ -164,6 +164,27 @@ double sizeScale (const ImpulseResponseRequest& request) noexcept
     return std::clamp (static_cast<double> (request.sizePercent), 50.0, 150.0) / 100.0;
 }
 
+std::array<double, 8> decayFor (const ImpulseResponseRequest& request, double right) noexcept
+{
+    const auto& r = request.rightDecaySeconds;
+    const auto split = std::any_of (r.begin(), r.end(), [] (float seconds) { return seconds > 0.0f; });
+    const auto w = split ? std::clamp (right, 0.0, 1.0) : 0.0;
+
+    std::array<double, 8> rt {};
+
+    for (std::size_t b = 0; b < 8; ++b)
+    {
+        const auto onLeft = std::clamp (static_cast<double> (request.decaySeconds[b]), 0.05, 20.0);
+        const auto onRight = std::clamp (static_cast<double> (r[b]), 0.05, 20.0);
+
+        // A decay's rate (dB per second) goes as 1 / RT60, so a centred output
+        // hearing both sides decays at the mean of their rates.
+        rt[b] = w <= 0.0 ? onLeft : w >= 1.0 ? onRight : 1.0 / ((1.0 - w) / onLeft + w / onRight);
+    }
+
+    return rt;
+}
+
 float listenerDistanceMetres (int space, float sizePercent, float distancePercent) noexcept
 {
     const auto& room = bundledSpaces[static_cast<std::size_t> (std::clamp (space, 0, static_cast<int> (bundledSpaces.size()) - 1))];
@@ -183,21 +204,31 @@ ImpulseResponseSet synthesiseImpulseResponse (const ImpulseResponseRequest& requ
     const auto volume = W * D * H;
     const auto surface = 2.0 * (W * D + W * H + D * H);
 
-    std::array<double, 8> rt {};
-    std::array<double, 8> reflection {};
+    // Each receiver (the left and right outputs) hears its own side's decay.
+    std::array<std::array<double, 8>, 2> rt {};
+    std::array<std::array<double, 8>, 2> reflection {};
+    std::array<double, 2> betaMid {}, reverberantEnergy {};
 
-    for (std::size_t b = 0; b < 8; ++b)
+    for (std::size_t side = 0; side < 2; ++side)
     {
-        rt[b] = std::clamp (static_cast<double> (request.decaySeconds[b]), 0.05, 20.0);
+        rt[side] = decayFor (request, static_cast<double> (side));
 
-        // Sabine: the mean absorption this band's RT60 implies, then the
-        // pressure reflection coefficient of one wall bounce.
-        const auto alpha = std::clamp (0.161 * volume / (surface * rt[b]), 0.02, 0.98);
-        reflection[b] = std::sqrt (1.0 - alpha);
+        for (std::size_t b = 0; b < 8; ++b)
+        {
+            // Sabine: the mean absorption this band's RT60 implies, then the
+            // pressure reflection coefficient of one wall bounce.
+            const auto alpha = std::clamp (0.161 * volume / (surface * rt[side][b]), 0.02, 0.98);
+            reflection[side][b] = std::sqrt (1.0 - alpha);
+        }
+
+        betaMid[side] = 0.5 * (reflection[side][3] + reflection[side][4]);
+
+        // Diffuse-field theory: reverberant energy relative to a direct sound at
+        // 1 m is 1 / rc^2, with rc the critical distance.
+        const auto rtMid = 0.5 * (rt[side][3] + rt[side][4]);
+        const auto criticalDistance = 0.057 * std::sqrt (volume / rtMid);
+        reverberantEnergy[side] = 1.0 / (criticalDistance * criticalDistance);
     }
-
-    const auto rtMid = 0.5 * (rt[3] + rt[4]);
-    const auto betaMid = 0.5 * (reflection[3] + reflection[4]);
 
     // Positions: two sources across the stage, either side of where the sound
     // is placed (kept clear of the side walls), two receivers 60 cm apart.
@@ -226,17 +257,12 @@ ImpulseResponseSet synthesiseImpulseResponse (const ImpulseResponseRequest& requ
 
     const auto mixingTime = std::clamp (std::sqrt (volume) / 1000.0, 0.01, 0.2);
     const auto earlyEnd = 2.0 * mixingTime;
-    const auto slowest = *std::max_element (rt.begin(), rt.end());
+    const auto slowest = std::max (*std::max_element (rt[0].begin(), rt[0].end()), *std::max_element (rt[1].begin(), rt[1].end()));
     const auto tailSeconds = std::min (maxLengthSeconds, std::max (earlyEnd + 0.05, slowest * tailRangeDb / 60.0));
 
     const auto lead = static_cast<std::size_t> (std::ceil (leadInSeconds * sr));
     const auto length = static_cast<std::size_t> (std::ceil (tailSeconds * sr));
     const auto earlyLength = lead + static_cast<std::size_t> (std::ceil ((earlyEnd + 0.01) * sr));
-
-    // Diffuse-field theory: reverberant energy relative to a direct sound at
-    // 1 m is 1 / rc^2, with rc the critical distance.
-    const auto criticalDistance = 0.057 * std::sqrt (volume / rtMid);
-    const auto reverberantEnergy = 1.0 / (criticalDistance * criticalDistance);
 
     const auto angle = std::clamp (static_cast<double> (request.earlyLatePercent), 0.0, 100.0) / 100.0 * std::numbers::pi / 2.0;
     const auto earlyGain = std::cos (angle) / std::cos (defaultEarlyLateAngle);
@@ -248,7 +274,8 @@ ImpulseResponseSet synthesiseImpulseResponse (const ImpulseResponseRequest& requ
     for (std::size_t path = 0; path < 4; ++path)
     {
         const auto& source = sources[path / 2];
-        const auto& receiver = receivers[path % 2];
+        const auto side = path % 2;
+        const auto& receiver = receivers[side];
 
         // ---- Early reflections: image sources, one train per octave band ----
         std::array<std::vector<float>, 8> early;
@@ -285,11 +312,11 @@ ImpulseResponseSet synthesiseImpulseResponse (const ImpulseResponseRequest& requ
             const auto position = static_cast<double> (lead) + t * sr;
 
             for (std::size_t b = 0; b < 8; ++b)
-                addInterpolated (early[b], position, std::pow (reflection[b], bounces) / r * taper);
+                addInterpolated (early[b], position, std::pow (reflection[side][b], bounces) / r * taper);
 
             if (bounces > 0)
             {
-                const auto g = std::pow (betaMid, bounces) / r * taper;
+                const auto g = std::pow (betaMid[side], bounces) / r * taper;
                 imageEnergyMid += g * g;
             }
         }
@@ -314,10 +341,10 @@ ImpulseResponseSet synthesiseImpulseResponse (const ImpulseResponseRequest& requ
             noise[n] = generator.next() * static_cast<float> (raisedCosine (t / mixingTime));
         }
 
-        const auto late = shapeDecay (noise, lead, rt, sr);
+        const auto late = shapeDecay (noise, lead, rt[side], sr);
 
         // Scale the tail to the diffuse-field level not already carried by the early images.
-        const auto lateTarget = std::max (reverberantEnergy - imageEnergyMid, 0.25 * reverberantEnergy);
+        const auto lateTarget = std::max (reverberantEnergy[side] - imageEnergyMid, 0.25 * reverberantEnergy[side]);
         const auto lateEnergy = energyOf (late);
         const auto lateScale = lateEnergy > 0.0 ? std::sqrt (lateTarget / lateEnergy) : 0.0;
 

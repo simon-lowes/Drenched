@@ -701,7 +701,7 @@ ImpulseResponseSet resampleResponses (const ImpulseResponseSet& responses, doubl
 }
 
 ImpulseResponseSet shapeRecordedResponse (ImpulseResponseSet set, const RecordedResponse& recorded,
-                                          const ImpulseResponseRequest& request)
+                                          const ImpulseResponseRequest& request, const std::array<double, 4>& sides)
 {
     const auto sr = set.sampleRate;
     const auto lead = static_cast<double> (samplesOf (leadSeconds, sr));
@@ -728,24 +728,29 @@ ImpulseResponseSet shapeRecordedResponse (ImpulseResponseSet set, const Recorded
     const auto length = set.length();
 
     // ---- Decay: each band's envelope tilted from the measured RT60 to the requested one ----
-    std::array<double, 8> tilt {}; // log10 of the gain change per second
+    std::array<std::array<double, 8>, 4> tilt {}; // per path, log10 of the gain change per second
     bool reshape = resized;
 
-    for (std::size_t b = 0; b < 8; ++b)
+    for (std::size_t p = 0; p < 4; ++p)
     {
-        // Stretching made each band's decay `scale` times longer, and moved
-        // down to it what was `scale` times higher.
-        const auto from = scale * atFrequency (recorded.room.decaySeconds, decayBandCentres[b] * scale);
-        const auto to = std::clamp (static_cast<double> (request.decaySeconds[b]), 0.05, 20.0);
-        tilt[b] = 3.0 * (1.0 / from - 1.0 / to);
-        reshape = reshape || std::abs (to - from) > 1.0e-4 * from;
+        const auto wanted = decayFor (request, sides[p]);
+
+        for (std::size_t b = 0; b < 8; ++b)
+        {
+            // Stretching made each band's decay `scale` times longer, and moved
+            // down to it what was `scale` times higher.
+            const auto from = scale * atFrequency (recorded.room.decaySeconds, decayBandCentres[b] * scale);
+            const auto to = wanted[b];
+            tilt[p][b] = 3.0 * (1.0 / from - 1.0 / to);
+            reshape = reshape || std::abs (to - from) > 1.0e-4 * from;
+        }
     }
 
     if (reshape)
     {
-        for (auto& path : set.paths)
-            if (bands::energyOf (path) > 0.0)
-                path = tiltDecay (path, tilt, offset, lead, sr);
+        for (std::size_t p = 0; p < 4; ++p)
+            if (bands::energyOf (set.paths[p]) > 0.0)
+                set.paths[p] = tiltDecay (set.paths[p], tilt[p], offset, lead, sr);
 
         // A shortened decay leaves a long, near-silent end: drop it.
         const auto window = std::max<std::size_t> (1, samplesOf (windowSeconds, sr));

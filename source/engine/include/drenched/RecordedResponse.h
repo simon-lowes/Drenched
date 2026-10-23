@@ -94,9 +94,11 @@ ImpulseResponseSet resampleResponses (const ImpulseResponseSet& responses, doubl
     later or sooner as in a bigger or smaller room, with each band's level
     put back; each band's decay is then stretched or shortened to the
     requested RT60, and early reflections are balanced against the tail. With the measured decay and the default balance the response
-    comes back unchanged. */
+    comes back unchanged. `sides` says where each path plays (see decayFor()),
+    so the left and right outputs can decay differently. */
 ImpulseResponseSet shapeRecordedResponse (ImpulseResponseSet atRate, const RecordedResponse& recorded,
-                                          const ImpulseResponseRequest& request);
+                                          const ImpulseResponseRequest& request,
+                                          const std::array<double, 4>& sides = stereoPathSides);
 
 /** The response a request asks for: the recorded one if it carries one,
     otherwise a synthesised bundled space. */

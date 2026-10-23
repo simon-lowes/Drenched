@@ -21,6 +21,7 @@ struct ImpulseResponseRequest
     double sampleRate = 48000.0;
     int space = 0;                         // index into bundledSpaces
     std::array<float, 8> decaySeconds {};  // RT60 per octave band, 63 Hz .. 8 kHz
+    std::array<float, 8> rightDecaySeconds {}; // the right-hand side's own curve; all 0 = decaySeconds on both (see decayFor())
     float sizePercent = 100.0f;            // 50 .. 150, scales the room
     float distancePercent = 40.0f;         // 0 .. 100, listener from near to far
     float listenerX = 0.5f;                // 0 .. 1, across the room
@@ -90,5 +91,15 @@ float listenerDistanceMetres (int space, float sizePercent, float distancePercen
 
 /** The request's Size as a factor on the room's dimensions, 0.5 .. 1.5. */
 double sizeScale (const ImpulseResponseRequest& request) noexcept;
+
+/** The RT60 per octave band an output decays at, 0.05 .. 20 s. `right` says
+    where the output is: 0 on the left, 1 on the right, 0.5 in the centre,
+    which decays at the mean of the two sides' rates. Without a right-hand
+    curve, every output plays decaySeconds. */
+std::array<double, 8> decayFor (const ImpulseResponseRequest& request, double right) noexcept;
+
+/** Which side each path of a true-stereo response plays on, for decayFor():
+    the left output's two paths and the right output's two. */
+inline constexpr std::array<double, 4> stereoPathSides { 0.0, 1.0, 0.0, 1.0 };
 
 } // namespace drenched

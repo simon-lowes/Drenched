@@ -175,9 +175,17 @@ void KernelBuilder::build (const ImpulseResponseRequest& wanted)
 
     if (native)
     {
-        for (const auto& set : resampledSpeakers)
+        for (std::size_t s = 0; s < resampledSpeakers.size(); ++s)
         {
-            auto& shaped = speakerSets.emplace_back (shapeRecordedResponse (set, *wanted.recorded, wanted));
+            // Each channel decays as its side asks; B-format channels have no
+            // side, so they take the mean of both.
+            auto sides = std::array<double, 4> { 0.5, 0.5, 0.5, 0.5 };
+
+            for (std::size_t p = 0; p < 4; ++p)
+                if (const auto c = 4 * s + p; ! wanted.recorded->ambisonic && c < wanted.recorded->layout.size())
+                    sides[p] = wanted.recorded->layout[c].isLeft() ? 0.0 : wanted.recorded->layout[c].isRight() ? 1.0 : 0.5;
+
+            auto& shaped = speakerSets.emplace_back (shapeRecordedResponse (resampledSpeakers[s], *wanted.recorded, wanted, sides));
             applyDirect (shaped, wanted);
             applyEnvelope (shaped, wanted);
 
