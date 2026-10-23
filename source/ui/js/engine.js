@@ -34,7 +34,7 @@ function spaceIndex(id){for(var i=0;i<SPACES.length;i++)if(SPACES[i].id===id)ret
 function setUserSpace(ir){SPACES.length=USER;if(!ir)return;var miss=!!ir.missing;
  SPACES.push({id:'user',name:String(ir.name||'Your impulse response'),no:'Your IR',kind:'user',img:'user',place:miss?'File not found':'Your own impulse response',
   W:+ir.W||10,D:+ir.D||14,H:+ir.H||5.5,mat:'Measured from the file',bands:(ir.bands||[1,1,1,1,1,1,1,1]).map(function(b){return clamp(+b||1,0.1,20);}),pre:0,
-  rec:miss?'Load it again to hear it':(ir.layout?String(ir.layout)+' surround':+ir.ch===4?'True-stereo':+ir.ch===2?'Stereo':'Mono')+' file, '+Math.round(+ir.rate||48000)+' Hz',date:miss?'file missing':'by you',missing:miss});}
+  rec:miss?'Load it again to hear it':(ir.bformat?'B-format':ir.layout?String(ir.layout)+' surround':+ir.ch===4?'True-stereo':+ir.ch===2?'Stereo':'Mono')+' file, '+Math.round(+ir.rate||48000)+' Hz',date:miss?'file missing':'by you',missing:miss});}
 /* The twelve skins. Each is a token set plus a composition in COMPOSE; the ids match the
    CSS (.s-<id>) and the value saved in the plugin state. Order is the picker order. */
 var SKINS=[
