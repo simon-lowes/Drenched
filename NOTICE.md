@@ -33,6 +33,13 @@ conditions and disclaimer in documentation shipped with binaries; the
 installer's licence page must include them, as must miniz's (MIT) notice.
 libmysofa's test files are used by the tests only and not shipped.
 
+The installers show all of these in full on their licence page, and the Windows one
+installs them beside the app: `packaging/third-party-licences.txt`, built by
+`tools/third_party_licences.py` from this file and each component's licence. Rebuild it
+whenever this file or a dependency changes. The Windows installer is made with
+[Inno Setup](https://jrsoftware.org/isinfo.php) (Inno Setup License, free for commercial
+use), whose setup program ships inside it.
+
 ## Typefaces
 
 The interface embeds these typefaces, all under the

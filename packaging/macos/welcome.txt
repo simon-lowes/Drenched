@@ -1,0 +1,7 @@
+Thank you for testing Drenched.
+
+This installs the Drenched reverb as an Audio Unit, VST3 and CLAP plug-in, and as a standalone app. Choose Customise to leave any of them out.
+
+After installing, rescan plug-ins in your host if Drenched doesn't appear. Logic Pro finds it under Audio Units > Drenched.
+
+This is a beta: please tell us about anything that sounds, looks or behaves wrong, with your host, its version and your macOS version.

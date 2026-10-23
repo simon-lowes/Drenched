@@ -147,7 +147,16 @@ To preview the interface in a browser without the plugin, serve
 
 Every push builds the plugin on macOS (Universal), Windows (32 and 64-bit)
 and Linux (32 and 64-bit) in GitHub Actions. Open the latest run under
-**Actions** and download the artifact for your platform: `Drenched-macOS`,
+**Actions** and download the installer for your platform: `Drenched-macOS-Installer`
+(a .pkg with the Audio Unit, VST3, CLAP and the app, each optional) or
+`Drenched-Windows-Installer` (puts the 64-bit and 32-bit plug-ins where each kind of
+host looks, and the app). The installers are unsigned for now: on macOS, right-click
+the .pkg and choose Open; on Windows, choose More info > Run anyway.
+Both show the third-party licences (`packaging/third-party-licences.txt`); after changing
+`NOTICE.md` or a dependency, rebuild that file with `python3 tools/third_party_licences.py`
+(after a CMake configure, which fetches the licence texts) and commit it.
+
+The plug-ins on their own are there too: `Drenched-macOS`,
 `Drenched-Windows` (one VST3 for 32 and 64-bit hosts, plus both CLAPs and
 apps), `Drenched-Linux-x64` or `Drenched-Linux-i686`. See
 [32-bit and 64-bit](docs/32-bit-and-64-bit.md) for where to install each,
