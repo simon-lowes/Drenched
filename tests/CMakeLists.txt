@@ -12,6 +12,7 @@ add_executable(drenched_tests
     ReverbCloudTests.cpp
     RoomMatchTests.cpp
     SpeakerTrimTests.cpp
+    WetEqualiserTests.cpp
     ClapCaptureTests.cpp
     SweepCaptureTests.cpp
     SurroundTests.cpp

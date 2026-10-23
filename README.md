@@ -47,6 +47,14 @@ To match a room you only have a recording of, choose Match a room and pick
 the recording (a voice, a band, a drum kit, anything with pauses in it):
 Drenched hears how fast the room dies away each time the sound stops, sets
 the decay graph to match, and switches to the closest space.
+For post, Scenes (in the space menu) keep every setting and the space under
+a name, up to 32 per session: recall one there, or automate the Scene
+parameter to change rooms on the cut. Scenes follow automation within a
+twentieth of a second of real time, so bounce in real time when a scene
+changes the space. Scene Off leaves the settings alone.
+Wet EQ (next to Freeze, or in the space menu) shapes the reverb alone with
+six bands: a low shelf, four bells and a high shelf, after the wet cuts. It
+starts flat, and a band at 0 dB does nothing.
 The space list starts with recorded spaces bundled in the plugin
 (`library/`, licence-checked recordings published by others), followed by
 modelled spaces whose responses are synthesised from their dimensions and

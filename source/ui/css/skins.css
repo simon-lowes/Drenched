@@ -63,7 +63,7 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .menu button:hover,.menu button[aria-current="true"]{background:var(--r)}
 .menu small{color:var(--tx2);font:11px var(--fnum)}
 .menu .mload{margin-top:4px;border-top:1px solid var(--ln);border-radius:0 0 var(--rad) var(--rad);color:var(--ac)}
-.menu .mcap,.menu .mlic,.menu .mcred,.menu .mspk{color:var(--ac)}
+.menu .mcap,.menu .mlic,.menu .mcred,.menu .mspk,.menu .mscn,.menu .meq{color:var(--ac)}
 .crl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px;max-height:360px;overflow:auto}
 .crl li{display:flex;flex-direction:column;gap:2px;font-size:13px}
 .crl span,.crl small{color:var(--tx2)}.crl small{font-size:12px}
@@ -104,6 +104,46 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .spkd input{width:100%;box-sizing:border-box;border:1px solid var(--ln);border-radius:var(--rad,6px);background:transparent;color:var(--tx);padding:5px 8px;font:12px var(--fnum,var(--fui));text-align:right}
 .spkd input:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
 .spkd .spn{grid-column:3/5;color:var(--tx2);font-size:12px}
+.scn .scl{max-height:352px;overflow:auto;margin-top:14px;padding:0 2px 10px;border-top:1px solid var(--ln)}
+.scn .scr{display:grid;grid-template-columns:28px 1fr 150px auto auto auto;column-gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--ln)}
+.scn .scr[aria-current="true"] b{color:var(--ac)}
+.scn .scr b{font:600 13px var(--fnum,var(--fui));text-align:right}
+.scn .scr input{width:100%;box-sizing:border-box;border:1px solid transparent;border-radius:var(--rad,6px);background:transparent;color:var(--tx);padding:5px 8px;font:13px var(--fui)}
+.scn .scr input:hover{border-color:var(--ln)}
+.scn .scr input:focus-visible{outline:2px solid var(--ac);outline-offset:1px;border-color:var(--ln)}
+.scn .scs{color:var(--tx2);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scn .lsm{border:1px solid var(--ln);border-radius:var(--rad,6px);background:transparent;color:var(--tx);padding:4px 10px;font:12px var(--fui)}
+.scn .scr[aria-current="true"] .lsm[data-act="screcall"]{border-color:var(--ac);color:var(--ac)}
+.scn .lsm:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+.scn .sce{color:var(--tx2);margin:14px 0 4px}
+/* The wet EQ: a response curve with a point per band, then each band's values to type. */
+.eqd .cbox{width:780px}
+.eqd .eqg{display:block;margin-top:14px;touch-action:none;overflow:visible}
+.eqd .eqg text{font:11px var(--fnum,var(--fui));fill:var(--tx2)}
+.eqd .eqg .gr{stroke:var(--ln);stroke-width:1;fill:none}
+.eqd .eqg .zero{stroke:var(--tx2);stroke-width:1;fill:none;opacity:.7}
+.eqd .eqg .fill{fill:var(--ac);opacity:.14;stroke:none}
+.eqd .eqg .sum{fill:none;stroke:var(--ac);stroke-width:2;stroke-linejoin:round}
+.eqd .eqg .one{fill:none;stroke:var(--tx2);stroke-width:1;stroke-dasharray:3 3}
+.eqd .eqg .cut{stroke:var(--tx2);stroke-width:1;stroke-dasharray:2 4;opacity:.7}
+.eqd .eqg .cutt{font-size:10px;opacity:.8}
+.eqd .eqn{cursor:move}
+.eqd .eqn circle{fill:var(--p);stroke:var(--ac);stroke-width:2}
+.eqd .eqn .hit{fill:transparent;stroke:none}
+.eqd .eqn text{font:600 10px var(--fnum,var(--fui));fill:var(--ac);text-anchor:middle;pointer-events:none}
+.eqd .eqn.on circle{fill:var(--ac)}.eqd .eqn.on text{fill:var(--onac,#111)}
+.eqd .eqn.cur circle{stroke-width:3}
+.eqd .eqn:focus{outline:none}.eqd .eqn:focus-visible circle{stroke:var(--focus);stroke-width:3}
+.eqd .eqt{display:grid;grid-template-columns:76px repeat(6,minmax(0,1fr));gap:4px 8px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--ln)}
+.eqd .eqt>span{color:var(--tx2);font-size:12px}
+.eqd .eqt b{font-size:12px;font-weight:500;text-align:center;color:var(--tx2);white-space:nowrap}.eqd .eqt b.cur{color:var(--tx)}
+.eqd .eqt .ro{width:100%;height:26px;font-size:13px;text-align:center;border-color:var(--ln)}
+.eqd .eqt .ro:focus{border-color:var(--focus)}
+.eqd .eqt em{font:12px var(--fnum,var(--fui));color:var(--tx2);text-align:center;opacity:.6}
+.eqd .cft{margin-top:14px}
+.eqd .ct{max-width:60ch}
+/* the way in: a diamond on the button while the EQ is in use */
+button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 /* The licence: the trial notice and the activation dialog, which reuses the capture dialog's frame. */
 .licchip{flex:none;margin:0 6px 0 12px;border:1px solid var(--ln);border-radius:999px;background:var(--p);color:var(--tx2);padding:3px 11px;font:11.5px/1.4 var(--fui);white-space:nowrap}
 .licchip u{text-decoration:none;color:var(--ac);font-weight:600;margin-left:2px}
@@ -514,7 +554,7 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .co-mix{display:flex;align-items:center;gap:14px;margin-top:auto;padding-top:8px}
 .co-mix .ro{font-size:34px;width:120px;text-align:left;height:40px;padding:0;font-weight:300;letter-spacing:-.02em}
 .co-mix .ml{display:flex;flex-direction:column}.co-mix .ml span{font:11px var(--fnum);letter-spacing:.08em;text-transform:uppercase;color:var(--tx2);display:flex;align-items:center;gap:6px}
-.co-acts{margin-left:auto;display:flex;gap:8px}
+.co-mix{flex-wrap:wrap}.co-acts{flex-basis:100%;display:flex;justify-content:flex-end;gap:8px}.co-btn{white-space:nowrap}
 .co-btn{height:30px;padding:0 12px;border:1px solid var(--tx);background:transparent;color:var(--tx);font:11px var(--fnum);letter-spacing:.08em;text-transform:uppercase;border-radius:2px}
 .co-btn[aria-pressed="true"],.co-btn[aria-expanded="true"]{background:var(--ac);border-color:var(--ac);color:#fff}
 .co-strip{position:absolute;left:48px;right:48px;bottom:14px;height:18px;display:flex;align-items:center;gap:16px}

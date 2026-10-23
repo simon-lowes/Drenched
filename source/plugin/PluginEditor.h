@@ -52,11 +52,14 @@ private:
     void onUi (const juce::var&);
     void onLoadIr (const juce::var&);
     void onMatch (const juce::var&);
+    void onScene (const juce::String& action, const juce::var&);
     void sendCaptureStatus();
     void sendLicenceStatus();
 
     void parameterChanged (const juce::String& id, float value) override;
     void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override;
+    void valueTreeChildAdded (juce::ValueTree&, juce::ValueTree&) override;
+    void valueTreeChildRemoved (juce::ValueTree&, juce::ValueTree&, int) override;
     void valueTreeRedirected (juce::ValueTree&) override;
     void handleAsyncUpdate() override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;

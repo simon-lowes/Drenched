@@ -96,6 +96,10 @@ juce::WebBrowserComponent::Options DrenchedEditor::makeOptions()
         .withEventListener ("ui",      [this] (const juce::var& v) { onUi (v); })
         .withEventListener ("loadIr",  [this] (const juce::var& v) { onLoadIr (v); })
         .withEventListener ("match",   [this] (const juce::var& v) { onMatch (v); })
+        .withEventListener ("sceneStore",  [this] (const juce::var& v) { onScene ("store", v); })
+        .withEventListener ("sceneRename", [this] (const juce::var& v) { onScene ("rename", v); })
+        .withEventListener ("sceneDelete", [this] (const juce::var& v) { onScene ("delete", v); })
+        .withEventListener ("sceneRecall", [this] (const juce::var& v) { onScene ("recall", v); })
         .withEventListener ("startCapture",  [this] (const juce::var& v) { processor.startCapture (v); sendCaptureStatus(); })
         .withEventListener ("cancelCapture", [this] (const juce::var&) { processor.cancelCapture(); sendCaptureStatus(); })
         .withEventListener ("licenceOpen",       [this] (const juce::var&) { processor.getLicence().open(); })
@@ -200,6 +204,7 @@ juce::var DrenchedEditor::uiValues()
     object->setProperty ("ir", processor.impulseResponseInfo());
     object->setProperty ("irError", ui.getProperty (UiIDs::irError, "").toString());
     object->setProperty ("irEvent", static_cast<int> (ui.getProperty (UiIDs::irEvent, 0)));
+    object->setProperty ("scenes", processor.sceneList());
     sentShortened = processor.shortenedSeconds();
     object->setProperty ("shortened", sentShortened);
 
@@ -362,6 +367,33 @@ void DrenchedEditor::onMatch (const juce::var&)
                           });
 }
 
+void DrenchedEditor::onScene (const juce::String& action, const juce::var& payload)
+{
+    const auto number = static_cast<int> (payload.getProperty ("number", 0));
+    const auto name = payload.getProperty ("name", "").toString();
+
+    if (action == "store")
+    {
+        if (const auto stored = processor.storeScene (number, name); stored > 0 && number == 0)
+            processor.recallScene (stored); // a new scene is the one playing
+    }
+    else if (action == "rename")
+    {
+        processor.renameScene (number, name);
+    }
+    else if (action == "delete")
+    {
+        processor.deleteScene (number);
+    }
+    else if (action == "recall")
+    {
+        processor.recallScene (number);
+    }
+
+    uiDirty.store (true);
+    triggerAsyncUpdate();
+}
+
 //==============================================================================
 void DrenchedEditor::parameterChanged (const juce::String& id, float)
 {
@@ -381,11 +413,27 @@ void DrenchedEditor::parameterChanged (const juce::String& id, float)
 
 void DrenchedEditor::valueTreePropertyChanged (juce::ValueTree& tree, const juce::Identifier& property)
 {
-    if (tree.getType() != UiIDs::tree || property == UiIDs::width || settingFromUi.load())
+    const auto isUi = tree.getType() == UiIDs::tree && property != UiIDs::width;
+
+    if ((! isUi && tree.getType() != SceneIDs::scene) || settingFromUi.load())
         return;
 
     uiDirty.store (true);
     triggerAsyncUpdate();
+}
+
+void DrenchedEditor::valueTreeChildAdded (juce::ValueTree& parent, juce::ValueTree&)
+{
+    if (parent.getType() == SceneIDs::tree)
+    {
+        uiDirty.store (true);
+        triggerAsyncUpdate();
+    }
+}
+
+void DrenchedEditor::valueTreeChildRemoved (juce::ValueTree& parent, juce::ValueTree&, int)
+{
+    valueTreeChildAdded (parent, parent);
 }
 
 void DrenchedEditor::valueTreeRedirected (juce::ValueTree&)

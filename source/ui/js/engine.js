@@ -79,6 +79,19 @@ var P={
  moveRate:{l:'Movement rate',min:0.05,max:5,st:0.01,log:1,help:'sets how fast the living tail drifts.'},
  cpu:{l:'Low CPU',min:0,max:1,st:1,help:'runs the reverb on about a third of the processing by playing everything 21 ms late. Your DAW makes up the delay, so it stays in time; leave it off when you play live through the reverb.'}
 };
+/* The wet EQ: six bands on the reverb alone, a low shelf, four bells and a high shelf. Keys are
+   eq<n>f, eq<n>g and, for the bells, eq<n>q; the plugin ids are eq<n>Freq, eq<n>Gain, eq<n>Q.
+   A band at 0 dB does nothing, so the flat defaults play as the plugin did before the EQ. */
+var EQ_N=6,EQ_DEF=[[100,0.71],[250,0.9],[700,0.9],[2000,0.9],[5000,0.9],[10000,0.71]],EQ_NAME=['Low shelf','Band 2','Band 3','Band 4','Band 5','High shelf'];
+function eqBell(i){return i>0&&i<EQ_N-1;}
+for(var eqi=0;eqi<EQ_N;eqi++){var eqn=eqi+1,eqs=eqi===0?'below':eqi===EQ_N-1?'above':'around';
+ P['eq'+eqn+'f']={l:'EQ '+eqn+' frequency',min:20,max:20000,st:1,log:1,help:eqBell(eqi)?'sets the centre of band '+eqn+' of the wet EQ.':'sets where the '+EQ_NAME[eqi].toLowerCase()+' of the wet EQ turns over.'};
+ P['eq'+eqn+'g']={l:'EQ '+eqn+' gain',min:-18,max:18,st:0.1,help:'lifts or cuts the reverb '+eqs+' this frequency. The dry sound is not changed, and at 0 dB the band does nothing.'};
+ if(eqBell(eqi))P['eq'+eqn+'q']={l:'EQ '+eqn+' Q',min:0.1,max:10,st:0.01,log:1,help:'sets how narrow band '+eqn+' is. Higher is narrower.'};}
+function eqDefaults(o){for(var i=0;i<EQ_N;i++){o['eq'+(i+1)+'f']=EQ_DEF[i][0];o['eq'+(i+1)+'g']=0;if(eqBell(i))o['eq'+(i+1)+'q']=EQ_DEF[i][1];}return o;}
+function eqActive(s,i){return Math.abs(s['eq'+(i+1)+'g'])>=0.01;}
+function eqFlat(s){for(var i=0;i<EQ_N;i++)if(eqActive(s,i))return false;return true;}
+function eqUsed(s){var n=0;for(var i=0;i<EQ_N;i++)if(eqActive(s,i))n++;return n;}
 var DEEP=['lx','sx','output','preSync','rev','gate','attack','dLvl','dDel','dCol','xover','living','move','moveRate','locut','hicut','width','cloud','xfeed','duck','mono','cpu'];
 var TOGGLES=['preSync','rev','cpu'];
 var MAIN=['decay','pre','size','bright','el','dist'];
@@ -89,7 +102,7 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 var UID=0;function uid(){return 'u'+(++UID);}
 function vol(sp){var v=sp.W*sp.D*sp.H;v=v>2000?Math.round(v/100)*100:Math.round(v/10)*10;return v.toLocaleString('en-GB')+' m\u00b3';}
 function decayOf(b){return (b[3]+b[4])/2;}
-function newState(){var sp=SPACES[0];return {sp:0,bands:sp.bands.slice(),mix:30,pre:sp.pre,size:100,bright:0,el:55,dist:40,lx:50,sx:50,output:0,preSync:0,xover:320,locut:80,hicut:14000,width:100,duck:0,mono:0,living:0,move:20,moveRate:0.7,rev:0,gate:0,attack:0,dLvl:0,dDel:0,dCol:0,xfeed:100,cloud:100,cpu:0,mode:'studio',slot:'A',slots:{A:null,B:null},freeze:false,adv:false,browse:false,view:'plan',locks:{},hint:null,note:null,lastBand:4,skin:'aperture',skins:false,inL:-60,inR:-60,outL:-60,outR:-60};}
+function newState(){var sp=SPACES[0];return eqDefaults({sp:0,bands:sp.bands.slice(),mix:30,pre:sp.pre,size:100,bright:0,el:55,dist:40,lx:50,sx:50,output:0,preSync:0,xover:320,locut:80,hicut:14000,width:100,duck:0,mono:0,living:0,move:20,moveRate:0.7,rev:0,gate:0,attack:0,dLvl:0,dDel:0,dCol:0,xfeed:100,cloud:100,cpu:0,mode:'studio',slot:'A',slots:{A:null,B:null},freeze:false,adv:false,browse:false,view:'plan',locks:{},hint:null,note:null,lastBand:4,skin:'aperture',skins:false,inL:-60,inR:-60,outL:-60,outR:-60});}
 var st=newState();
 function spOf(s){return SPACES[s.sp];}
 function getV(s,k){return k==='decay'?decayOf(s.bands):s[k];}
@@ -98,7 +111,11 @@ function isOver(s,k){if(k==='decay'){var sp=spOf(s);return s.bands.some(function
 function distM(s){var sp=spOf(s),D=sp.D*s.size/100,lo=Math.min(1.5,D*0.15);return lo+s.dist/100*(D*0.85-lo);}
 function distFromM(s,m){var sp=spOf(s),D=sp.D*s.size/100,lo=Math.min(1.5,D*0.15);return clamp((m-lo)/(D*0.85-lo)*100,0,100);}
 function eqp(el){var a=el/100*Math.PI/2;function d(x){return x<0.001?'\u2212\u221e':(20*Math.log10(x)).toFixed(1).replace('-','\u2212');}return {e:d(Math.cos(a)),t:d(Math.sin(a))};}
-function fmt(s,k,v){if(v==null)v=getV(s,k);switch(k){
+function hzText(v){return v<1000?Math.round(v)+' Hz':(+(v/1000).toFixed(2))+' kHz';}
+function dbSigned(v){return (v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+' dB';}
+function fmt(s,k,v){if(v==null)v=getV(s,k);
+ if(/^eq\d[fgq]$/.test(k)){var ek=k.charAt(3);return ek==='f'?hzText(v):ek==='g'?dbSigned(v):v.toFixed(2);}
+ switch(k){
  case 'mix':return Math.round(v)+'%';case 'decay':return f1(v)+' s';case 'pre':return Math.round(v)+' ms';case 'size':return Math.round(v)+'%';
  case 'bright':return (v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+' dB';case 'el':return (100-Math.round(v))+' / '+Math.round(v);
  case 'dist':var old=s.dist;s.dist=v;var m=distM(s);s.dist=old;return f1(m)+' m';
@@ -134,7 +151,11 @@ var ICON={lockOn:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" st
  down:'<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>',
  freeze:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M8 1.5v13M2.4 4.75l11.2 6.5M2.4 11.25l11.2-6.5"/></svg>',
  match:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2 8h1.5M5 5v6M8 3v10M11 5.5v5M14 8h-.5"/></svg>',
- more:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h7"/></svg>'};
+ more:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h7"/></svg>',
+ eq:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M1.5 10.5c3 0 3.5-6 6.5-6s3.5 6 6.5 6"/></svg>'};
+/* the way into the wet EQ window; the diamond shows when the EQ is doing something */
+function eqMark(s){return eqFlat(s)?'':'<span class="ovr" title="The wet EQ is in use" aria-label="in use"></span>';}
+function eqBtn(s,cls,label,icon){return '<button class="'+cls+'" data-act="eq" aria-haspopup="dialog" aria-expanded="'+!!s.eq+'">'+(icon?ICON.eq:'')+(label||'Wet EQ')+eqMark(s)+'</button>';}
 function lockBtn(s,k,label){var on=!!s.locks[k];return '<button class="lk" data-act="lock" data-k="'+k+'" aria-pressed="'+on+'" aria-label="Lock '+label+' when changing space" title="Lock '+label+'">'+(on?ICON.lockOn:ICON.lockOff)+'</button>';}
 function smooth(pts){var d='M'+pts[0][0].toFixed(1)+' '+pts[0][1].toFixed(1);for(var i=0;i<pts.length-1;i++){var p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;d+='C'+(p1[0]+(p2[0]-p0[0])/6).toFixed(1)+' '+(p1[1]+(p2[1]-p0[1])/6).toFixed(1)+' '+(p2[0]-(p3[0]-p1[0])/6).toFixed(1)+' '+(p2[1]-(p3[1]-p1[1])/6).toFixed(1)+' '+p2[0].toFixed(1)+' '+p2[1].toFixed(1);}return d;}
 function niceMax(v){var c=[1,1.5,2,3,4,5,6,8,10,12,16,20];for(var i=0;i<c.length;i++)if(c[i]>=v)return c[i];return 24;}
@@ -163,6 +184,37 @@ function decaySVG(sysId,s,w,h,o){o=o||{};var sp=spOf(s),b=s.bands,nat=sp.bands,b
  if(o.dims){var lb=s.lastBand,dx=X(lb)+16,y1=Y(b[lb]),y2=Y(0);out+='<path class="dim" d="M'+dx+' '+y1.toFixed(1)+'V'+y2+'M'+(dx-4)+' '+(y1+4).toFixed(1)+'l8 -8M'+(dx-4)+' '+(y2+4)+'l8 -8M'+(X(lb)+5)+' '+y1.toFixed(1)+'H'+(dx+6)+'"/><text class="dimt" x="'+(dx+8)+'" y="'+((y1+y2)/2+4).toFixed(1)+'">'+b[lb].toFixed(2)+' s at '+FREQ[lb]+' Hz</text>';}
  for(i=0;i<8;i++){var e2=Math.abs(b[i]-nat[i])>0.004,cx=X(i).toFixed(1),cy=Y(b[i]).toFixed(1),cl='nd'+(e2?' ed':'')+(i===s.lastBand?' cur':''),ar=' data-node="'+i+'" data-fid="nd-'+i+'" tabindex="0" role="slider" aria-label="Decay at '+FREQ[i]+'Hz" aria-valuemin="0.1" aria-valuemax="20" aria-valuenow="'+b[i].toFixed(2)+'" aria-valuetext="'+b[i].toFixed(2)+' seconds"';
   if(sysId==='section')out+='<rect class="'+cl+'"'+ar+' x="'+(cx-4.5)+'" y="'+(cy-4.5)+'" width="9" height="9"/>';else out+='<circle class="'+cl+'"'+ar+' cx="'+cx+'" cy="'+cy+'" r="'+(o.big?6:sysId==='catalogue'?4.5:5.5)+'"/>';}
+ return out+'</svg>';}
+
+/* wet EQ response: the Audio EQ Cookbook shelves (slope 1) and peaking bell, as the engine
+   designs them (source/engine/include/drenched/Biquad.h), evaluated at 48 kHz */
+var EQ_SR=48000,EQ_MIN=20,EQ_MAX=20000,EQ_DB=18;
+function eqCoef(i,f,g,q){var A=Math.pow(10,g/40),w=2*Math.PI*clamp(f,1,EQ_SR*0.49)/EQ_SR,c=Math.cos(w),sn=Math.sin(w),b0,b1,b2,a0,a1,a2;
+ if(eqBell(i)){var al=sn/(2*q);b0=1+al*A;b1=-2*c;b2=1-al*A;a0=1+al/A;a1=-2*c;a2=1-al/A;}
+ else{var sh=2*Math.sqrt(A)*(sn/(2*Math.SQRT1_2)),lo=i===0,p=A+1,m=A-1;
+  if(lo){b0=A*(p-m*c+sh);b1=2*A*(m-p*c);b2=A*(p-m*c-sh);a0=p+m*c+sh;a1=-2*(m+p*c);a2=p+m*c-sh;}
+  else{b0=A*(p+m*c+sh);b1=-2*A*(m+p*c);b2=A*(p+m*c-sh);a0=p-m*c+sh;a1=2*(m-p*c);a2=p-m*c-sh;}}
+ return [b0/a0,b1/a0,b2/a0,a1/a0,a2/a0];}
+function eqMagDb(c,f){var w=2*Math.PI*f/EQ_SR,c1=Math.cos(w),s1=Math.sin(w),c2=Math.cos(2*w),s2=Math.sin(2*w);
+ var nr=c[0]+c[1]*c1+c[2]*c2,ni=-(c[1]*s1+c[2]*s2),dr=1+c[3]*c1+c[4]*c2,di=-(c[3]*s1+c[4]*s2);return 10*Math.log10((nr*nr+ni*ni)/(dr*dr+di*di));}
+function eqBandCoef(s,i){var n=i+1;return eqCoef(i,s['eq'+n+'f'],s['eq'+n+'g'],eqBell(i)?s['eq'+n+'q']:Math.SQRT1_2);}
+/* the whole EQ's response at f, in dB; bands at 0 dB are skipped as the engine skips them */
+function eqResponse(s,f,only){var t=0;for(var i=0;i<EQ_N;i++){if(only!=null&&i!==only)continue;if(!eqActive(s,i))continue;t+=eqMagDb(eqBandCoef(s,i),f);}return t;}
+function eqSVG(s,w,h,cur){var L=36,R=14,T=14,B=22,pw=w-L-R,ph=h-T-B,span=Math.log(EQ_MAX/EQ_MIN);
+ function X(f){return L+pw*Math.log(f/EQ_MIN)/span;}function Y(g){return T+ph*(EQ_DB-g)/(2*EQ_DB);}
+ function curve(only){var d='';for(var k=0;k<=160;k++){var f=EQ_MIN*Math.exp(span*k/160),y=clamp(Y(eqResponse(s,f,only)),T-3,T+ph+3);d+=(k?'L':'M')+X(f).toFixed(1)+' '+y.toFixed(1);}return d;}
+ var out='<svg class="eqg" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" data-eqg="1" data-l="'+L+'" data-t="'+T+'" data-pw="'+pw+'" data-ph="'+ph+'" data-w="'+w+'" role="group" aria-label="Wet EQ response, 20 Hz to 20 kHz, plus or minus 18 dB. Drag a point sideways for frequency and up or down for gain, or focus it and use the arrow keys.">';
+ for(var g=-EQ_DB;g<=EQ_DB;g+=6){var yy=Y(g).toFixed(1);out+='<line class="'+(g===0?'zero':'gr')+'" x1="'+L+'" x2="'+(L+pw)+'" y1="'+yy+'" y2="'+yy+'"/><text x="'+(L-6)+'" y="'+(+yy+4)+'" text-anchor="end">'+(g>0?'+':g<0?'\u2212':'')+Math.abs(g)+'</text>';}
+ [20,50,100,200,500,1000,2000,5000,10000,20000].forEach(function(f){var xx=X(f).toFixed(1);if(f>20&&f<20000)out+='<line class="gr" x1="'+xx+'" x2="'+xx+'" y1="'+T+'" y2="'+(T+ph)+'"/>';
+  out+='<text x="'+xx+'" y="'+(h-6)+'" text-anchor="'+(f===20?'start':f===20000?'end':'middle')+'">'+(f>=1000?(f/1000)+'k':f)+(f===20000?' Hz':'')+'</text>';});
+ /* the wet low cut and high cut come first, so the EQ has nothing left to shape beyond them */
+ if(s.locut>EQ_MIN){var xl=X(s.locut).toFixed(1);out+='<line class="cut" x1="'+xl+'" x2="'+xl+'" y1="'+T+'" y2="'+(T+ph)+'"/><text class="cutt" x="'+(+xl-5)+'" y="'+(T+10)+'" text-anchor="end">Low cut</text>';}
+ if(s.hicut<EQ_MAX){var xh=X(s.hicut).toFixed(1);out+='<line class="cut" x1="'+xh+'" x2="'+xh+'" y1="'+T+'" y2="'+(T+ph)+'"/><text class="cutt" x="'+(+xh+5)+'" y="'+(T+10)+'">High cut</text>';}
+ var sum=curve(null);out+='<path class="fill" d="'+sum+'L'+(L+pw)+' '+Y(0).toFixed(1)+'L'+L+' '+Y(0).toFixed(1)+'Z"/>';
+ if(cur!=null&&eqActive(s,cur))out+='<path class="one" d="'+curve(cur)+'"/>';
+ out+='<path class="sum" d="'+sum+'"/>';
+ for(var i=0;i<EQ_N;i++){var n=i+1,f=s['eq'+n+'f'],gn=s['eq'+n+'g'],q=eqBell(i)?s['eq'+n+'q']:null,cx=X(f).toFixed(1),cy=Y(gn).toFixed(1);
+  out+='<g class="eqn'+(eqActive(s,i)?' on':'')+(i===cur?' cur':'')+'" data-eqn="'+i+'" data-fid="eqn-'+i+'" tabindex="0" role="slider" aria-label="'+EQ_NAME[i]+(eqBell(i)?', bell':'')+'. Left and right move the frequency, up and down the gain'+(eqBell(i)?', Page Up and Page Down the Q':'')+'." aria-valuemin="-18" aria-valuemax="18" aria-valuenow="'+gn.toFixed(1)+'" aria-valuetext="'+dbSigned(gn)+' at '+hzText(f)+(q?', Q '+q.toFixed(2):'')+'" transform="translate('+cx+' '+cy+')"><circle class="hit" r="14"/><circle r="8"/><text y="3.5">'+n+'</text></g>';}
  return out+'</svg>';}
 
 /* photographs */
@@ -275,7 +327,7 @@ function licChip(s){var L=s.licence;if(!L||L.state==='licensed')return '';
 function dbText(v){return v<=-60?'\u2212\u221e':v.toFixed(1).replace('-','\u2212');}
 function meterPct(v){return clamp(1+v/60,0,1)*100;}
 function meters(){var i=Math.max(st.inL,st.inR),o=Math.max(st.outL,st.outR);return '<div class="mm">In<span class="bar"><i data-m="in" style="width:'+meterPct(i).toFixed(0)+'%"></i></span><em data-mt="in">'+dbText(i)+'</em></div><div class="mm">Out<span class="bar"><i data-m="out" style="width:'+meterPct(o).toFixed(0)+'%"></i></span><em data-mt="out">'+dbText(o)+'</em></div>';}
-function menuHTML(s){return '<div class="menu" role="menu"><div class="mh"><span>'+(LIBRARY.length?'Recorded':'Spaces')+'</span><span>RT60, volume</span></div>'+SPACES.map(function(sp,i){return (LIBRARY.length&&i===LIBRARY.length?'<div class="mh"><span>Modelled</span></div>':'')+'<button role="menuitem" data-act="pick" data-v="'+i+'" aria-current="'+(i===s.sp)+'"><span>'+esc(sp.name)+'</span><small>'+f1(decayOf(sp.bands))+' s, '+vol(sp)+'</small></button>';}).join('')+'<button role="menuitem" class="mload" data-act="loadir"><span>Load your own IR\u2026</span><small>WAV, AIFF, FLAC</small></button><button role="menuitem" class="mcap" data-act="capture"><span>Capture a space\u2026</span><small>Sweep or clap, and record</small></button><button role="menuitem" class="mspk" data-act="speakers"><span>Reverb speakers\u2026</span><small>Level and delay each</small></button>'+(LIBRARY.length?'<button role="menuitem" class="mcred" data-act="credits"><span>Recording credits\u2026</span><small>'+LIBRARY.length+' recorded</small></button>':'')+(s.licence&&s.licence.state==='beta'?'':'<button role="menuitem" class="mlic" data-act="licence"><span>Licence\u2026</span><small>'+(s.licence&&s.licence.state==='licensed'?'Activated':s.licence&&s.licence.state==='ended'?'Trial ended':'Trial')+'</small></button>')+'</div>';}
+function menuHTML(s){return '<div class="menu" role="menu"><div class="mh"><span>'+(LIBRARY.length?'Recorded':'Spaces')+'</span><span>RT60, volume</span></div>'+SPACES.map(function(sp,i){return (LIBRARY.length&&i===LIBRARY.length?'<div class="mh"><span>Modelled</span></div>':'')+'<button role="menuitem" data-act="pick" data-v="'+i+'" aria-current="'+(i===s.sp)+'"><span>'+esc(sp.name)+'</span><small>'+f1(decayOf(sp.bands))+' s, '+vol(sp)+'</small></button>';}).join('')+'<button role="menuitem" class="mload" data-act="loadir"><span>Load your own IR\u2026</span><small>WAV, AIFF, FLAC</small></button><button role="menuitem" class="mcap" data-act="capture"><span>Capture a space\u2026</span><small>Sweep or clap, and record</small></button><button role="menuitem" class="mspk" data-act="speakers"><span>Reverb speakers\u2026</span><small>Level and delay each</small></button><button role="menuitem" class="meq" data-act="eq"><span>Wet EQ\u2026</span><small>'+(eqFlat(s)?'Six bands, flat':eqUsed(s)+(eqUsed(s)===1?' band':' bands')+' in use')+'</small></button><button role="menuitem" class="mscn" data-act="scenes"><span>Scenes\u2026</span><small>'+(s.scenes&&s.scenes.length?s.scenes.length+' stored':'For each shot')+'</small></button>'+(LIBRARY.length?'<button role="menuitem" class="mcred" data-act="credits"><span>Recording credits\u2026</span><small>'+LIBRARY.length+' recorded</small></button>':'')+(s.licence&&s.licence.state==='beta'?'':'<button role="menuitem" class="mlic" data-act="licence"><span>Licence\u2026</span><small>'+(s.licence&&s.licence.state==='licensed'?'Activated':s.licence&&s.licence.state==='ended'?'Trial ended':'Trial')+'</small></button>')+'</div>';}
 function advRows(s){
  var deepRow=function(k){if(TOGGLES.indexOf(k)>=0)return '<div class="row"><span>'+P[k].l+'</span><button class="tg" data-act="toggle" data-k="'+k+'" aria-pressed="'+(s[k]>=0.5)+'">'+fmt(s,k)+'</button></div>';return '<div class="row"><span>'+P[k].l+'</span>'+roEl(s,k)+'</div>';};
  return '<div class="ph"><span class="lbl">All parameters</span><span class="ph-r"><button data-act="skins" aria-expanded="'+s.skins+'">Look: '+esc(skinOf(s.skin).name)+'</button><button data-act="adv" aria-label="Close all parameters">Close</button></span></div>'+MAIN.map(function(k){return '<div class="row"><span>'+P[k].l+'</span>'+roEl(s,k)+'</div>';}).join('')+DEEP.map(deepRow).join('')+'<div class="row"><span>Early pattern</span><em>As captured</em></div>';}
@@ -290,7 +342,7 @@ function stageHTML(id,s){var sp=spOf(s),e=eqp(s.el);
  return '<div class="stg-top">'+wordmark(s,'wm',wm,true)+prevNext(s)+'<span style="font-size:13px">'+esc(sp.name)+'</span><span style="flex:1"></span>'+segMode(s)+segAB(s)+'</div>'+
  '<div class="stg"><div class="stg-nums">'+tile('RT60','decay',roEl(s,'decay'))+tile('Pre-delay','pre',roEl(s,'pre'))+tile('Early','el','<span class="big">'+e.e+'<small> dB</small></span>')+tile('Tail',null,'<span class="big">'+e.t+'<small> dB</small></span>')+tile('Mix','mix',roEl(s,'mix'))+'</div>'+
  '<div class="stg-met"><div class="ph"><span class="lbl">Output, 7.1.4</span><span class="lbl">dBFS, peak hold, slow ballistics</span></div><div class="mtrs">'+CH.map(function(c,ci){var lv=ci===0?s.outL:ci===2?s.outR:-60,p=meterPct(lv),ch=ci===0?'outL':ci===2?'outR':'';return '<div class="mt"><em data-mt="'+ch+'">'+dbText(lv)+'</em><div class="tr"><s></s><i data-m="'+ch+'" style="height:'+p.toFixed(0)+'%"></i><b style="bottom:'+Math.min(98,p+4).toFixed(0)+'%"></b></div><span>'+c[0]+'</span></div>';}).join('')+'</div></div>'+
- '<div class="stg-bot"><div class="stg-dec"><span class="lbl">Decay by frequency</span>'+decaySVG(id,s,536,250,{bars:id==='signal',dims:id==='section'})+'</div><div class="stg-ct">'+MAIN.map(function(k){return '<div class="row"><span>'+P[k].l+ovrEl(s,k)+'</span>'+roEl(s,k)+'</div>';}).join('')+'<div class="row"><span>Freeze</span><button class="lk" data-act="freeze" aria-pressed="'+s.freeze+'" style="width:auto;padding:0 8px;font-size:11px">'+(s.freeze?'On':'Off')+'</button></div></div><div class="stg-th">'+th+'<div class="cap"><b>'+esc(sp.name)+'</b><span>'+vol(sp)+', listener '+esc(fmt(s,'dist'))+'</span></div></div></div></div>'+
+ '<div class="stg-bot"><div class="stg-dec"><span class="lbl">Decay by frequency</span>'+decaySVG(id,s,536,250,{bars:id==='signal',dims:id==='section'})+'</div><div class="stg-ct">'+MAIN.map(function(k){return '<div class="row"><span>'+P[k].l+ovrEl(s,k)+'</span>'+roEl(s,k)+'</div>';}).join('')+'<div class="row"><span>Freeze</span><button class="lk" data-act="freeze" aria-pressed="'+s.freeze+'" style="width:auto;padding:0 8px;font-size:11px">'+(s.freeze?'On':'Off')+'</button></div><div class="row"><span>Wet EQ'+eqMark(s)+'</span><button class="lk" data-act="eq" aria-haspopup="dialog" aria-expanded="'+!!s.eq+'" style="width:auto;padding:0 8px;font-size:11px">'+(eqFlat(s)?'Flat':'In use')+'</button></div></div><div class="stg-th">'+th+'<div class="cap"><b>'+esc(sp.name)+'</b><span>'+vol(sp)+', listener '+esc(fmt(s,'dist'))+'</span></div></div></div></div>'+
  '<div class="stg-strip">'+hintText(s)+meters()+'</div>';}
 
 /* ---- the six studio compositions ---- */
@@ -303,7 +355,7 @@ var COMPOSE={
    '<div class="an-graph">'+decaySVG('anodised',s,600,250,{m:[40,20,14,26]})+'</div>'+
    '<div class="an-bands">'+s.bands.map(function(v,i){var ed=Math.abs(v-sp.bands[i])>0.004;return '<div><input class="ro'+(ed?' ed':'')+'" data-type="band" data-i="'+i+'" data-fid="bi-'+i+'" value="'+v.toFixed(2)+'" aria-label="Decay at '+FREQ[i]+'Hz, seconds" spellcheck="false"><span>'+FREQ[i]+'</span></div>';}).join('')+'</div><div class="glass"></div></div>';
   var deck=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="an-deck"><div class="an-mix">'+roEl(s,'mix')+knobEl(s,'mix',128,'anodised')+'<span class="an-lab">Mix '+lockBtn(s,'mix','Mix')+'</span></div>'+MAIN.map(ctl).join('')+
-   '<div class="an-acts"><button class="an-btn" data-act="freeze" aria-pressed="'+s.freeze+'"><i></i>Freeze</button><button class="an-btn" data-act="match"><i></i>Match a room</button><button class="an-btn" data-act="adv" aria-expanded="'+s.adv+'"><i></i>All parameters</button></div></div>';
+   '<div class="an-acts"><button class="an-btn" data-act="freeze" aria-pressed="'+s.freeze+'"><i></i>Freeze</button><button class="an-btn" data-act="match"><i></i>Match a room</button><button class="an-btn" data-act="adv" aria-expanded="'+s.adv+'"><i></i>All parameters</button>'+eqBtn(s,'an-btn','<i></i>Wet EQ')+'</div></div>';
   return top+win+deck+'<div class="an-strip">'+hintText(s)+meters()+'</div>';},
 
  section:function(s){var sp=spOf(s),e=eqp(s.el);
@@ -312,7 +364,7 @@ var COMPOSE={
   var row=function(k){return '<div class="se-row"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+lockBtn(s,k,P[k].l)+'</div>';};
   var right=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="se-right"><div><div class="se-h"><span>SECTION A-A, DECAY TIME BY FREQUENCY</span><span>SOLID AS SET, DASHED AS CAPTURED</span></div>'+decaySVG('section',s,454,214,{dims:true,m:[40,16,16,24]})+'</div>'+
    '<div class="se-sched"><div class="se-row hd"><span>Parameter</span><span>Value</span><span style="text-align:right">Typed</span><span></span></div>'+row('mix')+MAIN.map(row).join('')+'</div>'+
-   '<div class="se-acts"><button data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button data-act="match">Match a room</button><button data-act="adv" aria-expanded="'+s.adv+'">All parameters</button></div>'+
+   '<div class="se-acts"><button data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button data-act="match">Match a room</button><button data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'')+'</div>'+
    '<div class="se-tb"><div><small>Drawing</small><b>'+esc(sp.name)+'</b></div><div><small>RT60 mid</small><b>'+esc(fmt(s,'decay'))+'</b></div><div><small>Early / tail</small><b>'+e.e+' / '+e.t+' dB</b></div><div><small>Captured</small><b>'+esc(sp.date)+'</b></div></div></div>';
   return '<div class="se-grid"></div><div class="se-frame"></div><div class="se-ticks"></div>'+head+plan+right+'<div class="se-strip">'+hintText(s)+meters()+'</div>';},
 
@@ -324,12 +376,12 @@ var COMPOSE={
    '<dl class="ca-dl"><dt>Location</dt><dd>'+esc(sp.place)+'</dd><dt>Volume</dt><dd>'+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</dd><dt>Captured</dt><dd>'+esc(sp.rec)+', '+esc(sp.date)+'</dd><dt>Listener</dt><dd>'+esc(fmt(s,'dist'))+' from the source, early '+e.e+' dB, tail '+e.t+' dB</dd></dl>'+
    '<div class="ca-fig"><div class="fh"><b>Fig. 1</b><span>Decay time by frequency</span></div>'+decaySVG('catalogue',s,488,176,{m:[36,14,12,24]})+'<p class="fc">Solid line as set, dashed as captured. Drag a point to change one band.</p></div>'+
    '<div class="ca-list">'+MAIN.map(row).join('')+'</div>'+
-   '<div class="ca-mix">'+knobEl(s,'mix',56,'catalogue')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div><div class="ca-acts"><button class="ca-link" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="ca-link" data-act="match">Match a room</button><button class="ca-link" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button></div></div></div>';
+   '<div class="ca-mix">'+knobEl(s,'mix',56,'catalogue')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div><div class="ca-acts"><button class="ca-link" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="ca-link" data-act="match">Match a room</button><button class="ca-link" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'ca-link')+'</div></div></div>';
   return '<div class="ca-photo">'+photoEl(s,620,760)+(s.note?'<div class="ca-note" role="status">'+s.note+'</div>':'')+'<div class="ca-lic">'+licChip(s)+'</div></div>'+wall;},
 
  field:function(s){var sp=spOf(s),e=eqp(s.el);
   var fr=function(k,cls){return '<div class="fr '+(cls||'')+'">'+knobEl(s,k,cls?44:34,'field')+'<div class="t"><span>'+P[k].l+ovrEl(s,k)+(k==='mix'?lockBtn(s,'mix','Mix'):'')+'</span>'+roEl(s,k)+'</div></div>';};
-  var rail=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="fi-rail">'+fr('mix','mix')+MAIN.map(function(k){return fr(k);}).join('')+'<div class="segs">'+segMode(s)+segAB(s)+'</div><div class="acts"><button class="fi-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="fi-btn" data-act="match">'+ICON.match+'Match a room</button><button class="fi-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'All parameters</button></div></div>';
+  var rail=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="fi-rail">'+fr('mix','mix')+MAIN.map(function(k){return fr(k);}).join('')+'<div class="segs">'+segMode(s)+segAB(s)+'</div><div class="acts"><button class="fi-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="fi-btn" data-act="match">'+ICON.match+'Match a room</button><button class="fi-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'All parameters</button>'+eqBtn(s,'fi-btn',null,true)+'</div></div>';
   return '<div class="fi-heat">'+decaySVG('field',s,1200,760,{heat:true,cols:88,rows:44,m:[72,280,150,96],big:true,cb:true,xy:712})+'</div>'+
    '<div class="fi-big">'+roEl(s,'decay').replace('class="ro "','class="ro "')+'<div class="what"><b>RT60, mid band'+(isOver(s,'decay')?', changed':'')+'</b><span>Energy decay, frequency by time, \u221260 dB floor</span></div></div>'+
    '<div class="fi-sp">'+prevNext(s).replace('</button><button','</button><button class="ca-link" data-act="browse" aria-expanded="'+s.browse+'" style="font:13px var(--fui);color:var(--tx);text-decoration:none"><span class="nm">'+esc(sp.name)+', '+vol(sp)+', pre-delay '+esc(fmt(s,'pre'))+'</span></button><button')+'</div>'+
@@ -339,7 +391,7 @@ var COMPOSE={
 
  vitrine:function(s){var sp=spOf(s),nsp=SPACES.length,pv=SPACES[(s.sp+nsp-1)%nsp],nx=SPACES[(s.sp+1)%nsp];
   var ctl=function(k){return '<div class="vi-ctl">'+knobEl(s,k,64,'vitrine')+roEl(s,k)+'<span class="nm">'+P[k].l+ovrEl(s,k)+'</span></div>';};
-  var rail=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="vi-rail"><div class="vi-mix">'+knobEl(s,'mix',96,'vitrine')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div></div><div class="vi-grid">'+MAIN.map(ctl).join('')+'</div><div class="vi-acts"><button class="vi-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="vi-btn" data-act="match">'+ICON.match+'Match</button><button class="vi-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'More</button></div></div>';
+  var rail=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="vi-rail"><div class="vi-mix">'+knobEl(s,'mix',96,'vitrine')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div></div><div class="vi-grid">'+MAIN.map(ctl).join('')+'</div><div class="vi-acts"><button class="vi-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="vi-btn" data-act="match">'+ICON.match+'Match</button><button class="vi-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'More</button>'+eqBtn(s,'vi-btn','EQ',true)+'</div></div>';
   return '<div class="vi-photo">'+photoEl(s,0,0,'position:absolute;inset:0')+'</div><div class="vi-grade"></div>'+
    '<div class="vi-top">'+wordmark(s,'vi-wm','Drenched')+segMode(s)+segAB(s)+'</div>'+
    '<div class="vi-name"><h3>'+esc(sp.name)+'</h3><span>'+esc(sp.place)+', '+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</span></div>'+
@@ -350,7 +402,7 @@ var COMPOSE={
  signal:function(s){var sp=spOf(s),ss=s.size/100,e=eqp(s.el);
   var blk=function(k,cls){var ed=isOver(s,k);return '<div class="blk'+(ed?' ed':'')+(k==='mix'?' wet mix':'')+' '+(cls||'')+'" data-knob="'+k+'" data-fid="kn-'+k+'" '+ariaFor(s,k)+'><div class="blk-l"><span>'+P[k].l+(ed?' *':'')+'</span>'+(k==='mix'?lockBtn(s,'mix','Mix'):'')+'</div>'+roEl(s,k)+'<div class="blk-bar"><i style="width:'+(to01(k,getV(s,k))*100).toFixed(1)+'%"></i></div></div>';};
   var vb=function(l,v,u){return '<div class="blk ro-only"><div class="blk-l"><span>'+l+'</span></div><div class="vbig">'+v+'<small>'+u+'</small></div><div class="blk-bar" style="background:transparent"></div></div>';};
-  var rail=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="si-rail">'+blk('mix','mix')+blk('decay')+blk('pre')+'<div class="si-acts"><button class="si-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="si-btn" data-act="match">'+ICON.match+'Match a room</button><button class="si-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'All parameters</button></div></div>';
+  var rail=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="si-rail">'+blk('mix','mix')+blk('decay')+blk('pre')+'<div class="si-acts"><button class="si-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="si-btn" data-act="match">'+ICON.match+'Match a room</button><button class="si-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'All parameters</button>'+eqBtn(s,'si-btn',null,true)+'</div></div>';
   return '<div class="si-grid"></div><div class="si-top">'+wordmark(s,'si-wm','<i></i>DRENCHED')+segMode(s)+segAB(s)+'</div>'+
    '<div class="si-space"><div class="nm"><button data-act="browse" aria-expanded="'+s.browse+'" aria-label="Choose a space, current '+esc(sp.name)+'">'+esc(sp.name)+'</button></div><div class="meta">'+prevNext(s)+'<span>'+esc(sp.place)+'</span><span>'+vol(sp)+'</span></div></div>'+
    '<div class="si-room"><div class="si-mh"><span>Room</span><span>'+f1(sp.W*ss)+' \u00d7 '+f1(sp.D*ss)+' \u00d7 '+f1(sp.H*ss)+' m</span></div>'+photoEl(s,398,140)+pixelRoom(s,398,260)+'</div>'+
@@ -358,7 +410,7 @@ var COMPOSE={
    '<div class="si-vals">'+blk('size')+blk('bright')+blk('el')+blk('dist')+vb('Early',e.e,'dB')+vb('Tail',e.t,'dB')+vb('Listener',f1(distM(s)),'m')+'</div>'+
    '<div class="si-strip">'+hintText(s)+meters()+'</div>';},
  aperture:function(s){var sp=spOf(s);
-  var bar=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="ap-nums">'+bandInputs(s,sp)+'</div><div class="ap-bar">'+numCtl(s,'mix','mix')+MAIN.map(function(k){return numCtl(s,k);}).join('')+'<div class="ap-acts"><button class="ap-btn" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="ap-btn" data-act="match">Match a room</button><button class="ap-btn" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button></div></div>';
+  var bar=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="ap-nums">'+bandInputs(s,sp)+'</div><div class="ap-bar">'+numCtl(s,'mix','mix')+MAIN.map(function(k){return numCtl(s,k);}).join('')+'<div class="ap-acts"><button class="ap-btn" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="ap-btn" data-act="match">Match a room</button><button class="ap-btn" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'ap-btn')+'</div></div>';
   return '<div class="ap-photo">'+photoEl(s,0,0,'position:absolute;inset:0')+'</div><div class="ap-grade"></div>'+
    '<div class="ap-top">'+wordmark(s,'ap-wm','Drenched')+segMode(s)+segAB(s)+'</div>'+
    '<div class="ap-name"><h3>'+esc(sp.name)+'</h3><span>'+prevNext(s)+'<button class="ap-link" data-act="browse" aria-expanded="'+s.browse+'">'+esc(sp.place)+', '+vol(sp)+'</button></span></div>'+
@@ -369,14 +421,14 @@ var COMPOSE={
   var row=function(k){return '<div class="co-row"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+lockBtn(s,k,P[k].l)+'</div>';};
   var right=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="co-right"><div class="co-h"><span>Decay by frequency, seconds</span><span>Ticks mark the capture</span></div><div class="co-fad">'+decaySVG('contact',s,506,340,{bars:true,bw:18,track:true,m:[14,14,30,26]})+'</div>'+
    '<div class="co-list">'+MAIN.map(row).join('')+'</div>'+
-   '<div class="co-mix">'+knobEl(s,'mix',48,'contact')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix '+lockBtn(s,'mix','Mix')+'</span></div><div class="co-acts"><button class="co-btn" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="co-btn" data-act="match">Match a room</button><button class="co-btn" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button></div></div></div>';
+   '<div class="co-mix">'+knobEl(s,'mix',48,'contact')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix '+lockBtn(s,'mix','Mix')+'</span></div><div class="co-acts"><button class="co-btn" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="co-btn" data-act="match">Match a room</button><button class="co-btn" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'co-btn')+'</div></div></div>';
   return '<div class="co-top">'+wordmark(s,'co-wm','DRENCHED')+segMode(s)+segAB(s)+'</div>'+
    '<div class="co-print">'+photoEl(s,506,430)+'<div class="co-cap"><h3>'+esc(sp.name)+'</h3><div class="co-meta"><span>Location</span><b>'+esc(sp.place)+'</b><span>Volume</span><b>'+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</b><span>Capture</span><b>'+esc(sp.rec)+', '+esc(sp.date)+'</b><span>Listener</span><b>'+esc(fmt(s,'dist'))+', early '+e.e+' dB, tail '+e.t+' dB</b></div></div><div class="co-nav">'+prevNext(s)+'<span style="font:11px var(--fnum);color:var(--tx2);letter-spacing:.08em">'+esc(sp.no.toUpperCase())+'</span><button class="co-link" data-act="browse" aria-expanded="'+s.browse+'">Browse the prints</button></div></div>'+right+
    '<div class="co-strip">'+hintText(s)+meters()+'</div>';},
 
  strata:function(s){var sp=spOf(s),parts=sp.name.split(' '),last=parts.pop();
   var c=function(k){return '<div class="st-c'+(k==='mix'?' mix':'')+'">'+roEl(s,k)+slideEl(s,k)+'<span class="nm">'+P[k].l+ovrEl(s,k)+(k==='mix'?lockBtn(s,'mix','Mix'):'')+'</span></div>';};
-  var ctl=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="st-ctl">'+c('mix')+MAIN.map(c).join('')+'</div><div class="st-acts"><button class="st-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="st-btn" data-act="match">'+ICON.match+'Match a room</button><button class="st-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'All parameters</button></div>';
+  var ctl=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="st-ctl">'+c('mix')+MAIN.map(c).join('')+'</div><div class="st-acts"><button class="st-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="st-btn" data-act="match">'+ICON.match+'Match a room</button><button class="st-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'All parameters</button>'+eqBtn(s,'st-btn',null,true)+'</div>';
   return '<div class="st-photo">'+photoEl(s,440,760)+'<div class="st-name"><h3>'+esc(parts.join(' '))+(parts.length?' ':'')+'<em>'+esc(last)+'</em></h3><span>'+esc(sp.place)+', '+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</span><div class="nav">'+prevNext(s)+'<button class="st-link" data-act="browse" aria-expanded="'+s.browse+'">All spaces</button></div></div></div>'+
    '<div class="st-top">'+wordmark(s,'st-wm','Drenched')+segMode(s)+segAB(s)+'</div>'+
    '<div class="st-ridges">'+ridgesSVG(s,690,420)+'</div>'+ctl+
@@ -386,14 +438,14 @@ var COMPOSE={
   var c=function(k){return '<div class="rt-c">'+knobEl(s,k,40,'rotunda')+'<div class="t"><span>'+P[k].l+ovrEl(s,k)+'</span>'+roEl(s,k)+'</div></div>';};
   var side=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="rt-side"><h3>'+esc(sp.name)+'</h3><div class="sub"><span>'+esc(sp.place)+', '+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</span><span>Listener '+esc(fmt(s,'dist'))+' from the source, early '+e.e+' dB, tail '+e.t+' dB</span></div><div class="rt-nav">'+prevNext(s)+'<button class="rt-link" data-act="browse" aria-expanded="'+s.browse+'">All spaces</button></div>'+
    '<div class="rt-mix">'+knobEl(s,'mix',64,'rotunda')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div></div><div class="rt-grid">'+MAIN.map(c).join('')+'</div>'+
-   '<div class="rt-acts"><button class="rt-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="rt-btn" data-act="match">'+ICON.match+'Match</button><button class="rt-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'More</button></div></div>';
+   '<div class="rt-acts"><button class="rt-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="rt-btn" data-act="match">'+ICON.match+'Match</button><button class="rt-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'More</button>'+eqBtn(s,'rt-btn','EQ',true)+'</div></div>';
   return '<div class="rt-top">'+wordmark(s,'rt-wm','Drenched')+segMode(s)+segAB(s)+'</div>'+
    '<div class="rt-round"><div class="rt-ph">'+photoEl(s,340,340)+'</div>'+polarSVG('rotunda',s,620,{r0:188,r1:276})+'</div>'+side+
    '<div class="rt-strip">'+hintText(s)+meters()+'</div>';},
 
  material:function(s){var sp=spOf(s),ss=s.size/100;
   var c=function(k){return '<div class="ma-c'+(k==='mix'?' mix':'')+'">'+knobEl(s,k,56,'material')+roEl(s,k)+'<span class="nm">'+P[k].l+ovrEl(s,k)+(k==='mix'?lockBtn(s,'mix','Mix'):'')+'</span></div>';};
-  var ctl=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="ma-ctl">'+c('mix')+MAIN.map(c).join('')+'<div class="ma-acts"><button class="ma-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="ma-btn" data-act="match">'+ICON.match+'Match a room</button><button class="ma-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'All parameters</button></div></div>';
+  var ctl=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="ma-ctl">'+c('mix')+MAIN.map(c).join('')+'<div class="ma-acts"><button class="ma-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="ma-btn" data-act="match">'+ICON.match+'Match a room</button><button class="ma-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'All parameters</button>'+eqBtn(s,'ma-btn',null,true)+'</div></div>';
   return '<div class="ma-top">'+wordmark(s,'ma-wm','DRENCHED')+segMode(s)+segAB(s)+'</div>'+
    '<div class="ma-head"><h3>'+esc(sp.name)+'</h3><span class="sub"><i></i>'+esc(sp.mat)+', '+vol(sp)+', '+f1(sp.W*ss)+' \u00d7 '+f1(sp.D*ss)+' \u00d7 '+f1(sp.H*ss)+' m</span><div class="nav">'+prevNext(s)+'<button class="ma-link" data-act="browse" aria-expanded="'+s.browse+'">All spaces</button></div></div>'+
    '<div class="ma-graph"><span class="lbl">Decay by frequency<span style="margin-left:auto">RT60 '+esc(fmt(s,'decay'))+', pre-delay '+esc(fmt(s,'pre'))+'</span></span>'+decaySVG('material',s,538,296,{m:[44,18,10,26]})+'</div>'+
@@ -405,7 +457,7 @@ var COMPOSE={
   var row=function(k){return '<div class="fo-row"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+lockBtn(s,k,P[k].l)+'</div>';};
   var page=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="fo-page"><div class="fo-col"><span class="hd">'+esc(sp.no)+'</span><p><b>'+esc(sp.place)+'.</b> '+esc(sp.mat)+', '+vol(sp)+'. Captured '+esc(sp.date)+' with '+esc(sp.rec.toLowerCase())+'.</p><div class="dl"><span>Listener</span><span>'+esc(fmt(s,'dist'))+' from the source</span><span>Early</span><span>'+e.e+' dB</span><span>Tail</span><span>'+e.t+' dB</span><span>Pre-delay</span><span>'+esc(fmt(s,'pre'))+'</span></div></div>'+
    '<div class="fo-col fo-fig"><span class="hd">Fig. 1, decay time by frequency</span>'+decaySVG('folio',s,468,236,{m:[48,14,12,24]})+'<p class="fc">Solid as set, dashed as captured. Drag a point to change one band.</p></div>'+
-   '<div class="fo-col"><span class="hd">Settings</span>'+MAIN.map(row).join('')+'<div class="fo-mix">'+knobEl(s,'mix',44,'folio')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div><div class="fo-acts"><button class="fo-btn" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="fo-btn" data-act="match">Match a room</button><button class="fo-btn" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button></div></div></div></div>';
+   '<div class="fo-col"><span class="hd">Settings</span>'+MAIN.map(row).join('')+'<div class="fo-mix">'+knobEl(s,'mix',44,'folio')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div><div class="fo-acts"><button class="fo-btn" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="fo-btn" data-act="match">Match a room</button><button class="fo-btn" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'fo-btn')+'</div></div></div></div>';
   return '<div class="fo-hero">'+photoEl(s,0,0,'position:absolute;inset:0')+'<div class="fo-top">'+wordmark(s,'fo-wm','Drenched')+segMode(s)+segAB(s)+'</div><div class="fo-title"><div><span class="kick">'+esc(sp.place)+'</span><h3>'+esc(parts.join(' '))+(parts.length?' ':'')+'<em>'+esc(last)+'</em></h3></div><div class="nav">'+prevNext(s)+'<button class="fo-link" data-act="browse" aria-expanded="'+s.browse+'">All spaces</button></div></div></div>'+page+
    '<div class="fo-foot"><span class="no">DRENCHED, '+esc(sp.no.toUpperCase())+'</span>'+hintText(s)+meters()+'</div>';}
 

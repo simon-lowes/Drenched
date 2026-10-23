@@ -262,6 +262,7 @@ void ConvolutionReverb::prepare (double newSampleRate, const SpeakerLayout& inpu
 
     livingTail.prepare (sampleRate);
     speakerTrim.prepare (sampleRate, numOut);
+    equaliser.prepare (sampleRate);
     cloud.prepare (sampleRate, inputLayout, outputLayout);
 
     if (current != nullptr)
@@ -292,6 +293,7 @@ void ConvolutionReverb::reset() noexcept
     // A cleared room has nothing to hold; the next block re-freezes if asked.
     livingTail.reset();
     speakerTrim.reset();
+    equaliser.reset();
     cloud.reset();
     livingTail.setFrozen (false, crossover);
     frozen = false;
@@ -410,6 +412,8 @@ void ConvolutionReverb::installIncoming() noexcept
 
 void ConvolutionReverb::updateFilters (const ReverbControls& c) noexcept
 {
+    equaliser.setBands (c.eq);
+
     const auto& last = lastFilterControls;
 
     if (filtersValid && ! differs (c.lowCutHz, last.lowCutHz) && ! differs (c.highCutHz, last.highCutHz)
@@ -744,6 +748,8 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
                 lowShelf[k].process (w, n);
                 highShelf[k].process (w, n);
             }
+
+            equaliser.process (k, w, n);
         }
 
         // Width and mono bass: each speaker's difference from the mean of all
