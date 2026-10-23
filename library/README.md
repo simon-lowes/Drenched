@@ -9,7 +9,10 @@ out, and so is anything made for or taken from another reverb product.
   `name`, `no`, `place`, `rec` and `date`; `credit`, `licence` and `source`
   appear under Recording credits; `bands` (RT60 per octave, 63 Hz to 8 kHz)
   and `W`, `D`, `H` (metres) are measured from the recording. `kind` and
-  `img` pick the plan drawing and picture. `fixedSize` keeps the size given
+  `img` pick the plan drawing and picture: `hall`, `chapel`, `room`, `garage`
+  (any bare concrete or industrial space, listed as industrial), `outdoor`
+  (open to the sky) or `underground` (a tunnel, mine, cave, kiln or buried
+  hall). `fixedSize` keeps the size given
   instead of the measured one (the real dimensions, or a shoebox of the
   volume the source publishes). The `id` is saved in sessions: never change or
   reuse one.

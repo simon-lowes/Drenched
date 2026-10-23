@@ -19,7 +19,11 @@ var MODELLED=[
  {id:'modelled-room',name:'Live Room B',no:'Modelled',kind:'room',img:'room',place:'Studio live room',W:9,D:12,H:4.2,mat:'Timber and diffusers',bands:[0.72,0.66,0.6,0.55,0.52,0.5,0.45,0.38],pre:4,rec:'Modelled from the room\u2019s size and decay',date:'synthesised'}
 ];
 var LIBRARY=[],SPACES=MODELLED.slice(),USER=SPACES.length;
-var KINDS={hall:1,chapel:1,garage:1,room:1};
+/* The kinds a space can be. They pick the plan and section drawing, the pixel room, the
+   Material palette and the photograph: garage is any bare concrete or industrial space,
+   outdoor is open to the sky, underground is a tunnel, mine, cave, kiln or buried hall.
+   Only halls and churches have a stage (stageDepth). An unknown kind draws as a hall. */
+var KINDS={hall:1,chapel:1,garage:1,room:1,outdoor:1,underground:1};
 function setLibrary(list){LIBRARY=(list||[]).filter(function(x){return x&&x.id&&x.name;}).map(function(x){var k=KINDS[x.kind]?x.kind:'hall';
   return {id:String(x.id),name:String(x.name),no:String(x.no||'Recorded'),kind:k,img:KINDS[x.img]?x.img:k,place:String(x.place||''),W:+x.W||14,D:+x.D||20,H:+x.H||8,
    mat:String(x.mat||''),bands:(x.bands||[2,2,2,2,2,2,2,2]).map(function(b){return clamp(+b||1,0.1,20);}),pre:+x.pre||0,rec:String(x.rec||''),date:String(x.date||''),
@@ -296,18 +300,28 @@ function photoEl(s,w,h,extra){var z=1+(1-s.dist/100)*0.22,st2=w?'width:'+w+'px;h
 function planMarks(s,cp,at,lab){var CP=positionsOf(s);if(!CP)return '';var out='',d=0;CP.groups.forEach(function(g,k){if(g.atM==null)return;var p=at(posDepth(s,g)),x=p[0].toFixed(1),y=p[1].toFixed(1);
  out+='<g class="pl-pos'+(g.cur?' cur':'')+'" data-act="pos" data-v="'+posTarget(s,g)+'" data-fid="posg-'+k+'" tabindex="0" role="button" aria-pressed="'+g.cur+'" aria-label="'+esc(posAria(g))+'"><rect class="pl-hit" x="'+(p[0]-12).toFixed(1)+'" y="'+(p[1]-12).toFixed(1)+'" width="24" height="24"/><rect class="pl-st" x="-4.5" y="-4.5" width="9" height="9" transform="translate('+x+' '+y+') rotate(45)"/>'+(g.cur?'<rect class="pl-st2" x="-8.5" y="-8.5" width="17" height="17" transform="translate('+x+' '+y+') rotate(45)"/>':'')+
   (cp?'':'<text class="pl-t" '+lab(p,d++)+'>'+esc(g.label.toUpperCase())+'</text>')+'</g>';});return out;}
+/* rock or earth beyond a line: short ticks every 8px, leaning the way d says */
+function hatchLine(x1,y1,x2,y2,d){var out='',L=Math.hypot(x2-x1,y2-y1),ux=(x2-x1)/L,uy=(y2-y1)/L,n=Math.floor(L/8);
+ for(var i=1;i<n;i++){var x=x1+ux*i*8,y=y1+uy*i*8;out+='M'+x.toFixed(1)+' '+y.toFixed(1)+'l'+(-uy*d+ux*d*0.6).toFixed(1)+' '+(ux*d+uy*d*0.6).toFixed(1);}return out;}
 /* plan drawing (Section) */
 function planView(s,w,h){var sp=spOf(s),ss=s.size/100,W=sp.W*ss,D=sp.D*ss,H=sp.H*ss,cp=w<400,m=cp?16:64;
  var out='<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" style="display:block" data-plan="1" data-w="'+w+'" ';
  var stp=W>30?5:W>12?2:1,body='';
- if(s.view==='section'){var sc=Math.min((w-2*m-60)/D,(h-2*m)/H),ox=(w-D*sc)/2,oy=(h+H*sc)/2+8,sd=sp.kind==='hall'?6:sp.kind==='chapel'?4:0;
+ if(s.view==='section'){var sc=Math.min((w-2*m-60)/D,(h-2*m)/H),ox=(w-D*sc)/2,oy=(h+H*sc)/2+8,sd=stageDepth(sp),top=oy-H*sc,rt=ox+D*sc;
   out+='data-mode="section" data-ox="'+ox.toFixed(1)+'" data-oy="'+oy.toFixed(1)+'" data-sc="'+sc.toFixed(3)+'">';
-  out+='<rect class="pl-w" x="'+ox.toFixed(1)+'" y="'+(oy-H*sc).toFixed(1)+'" width="'+(D*sc).toFixed(1)+'" height="'+(H*sc).toFixed(1)+'"/><rect class="pl-w2" x="'+(ox-4)+'" y="'+(oy-H*sc-4).toFixed(1)+'" width="'+(D*sc+8).toFixed(1)+'" height="'+(H*sc+8).toFixed(1)+'"/>';
+  if(sp.kind==='outdoor'){/* no roof: the walls stop at the top and the sky is left open */
+   out+='<path class="pl-w" d="M'+ox.toFixed(1)+' '+top.toFixed(1)+'V'+oy.toFixed(1)+'H'+rt.toFixed(1)+'V'+top.toFixed(1)+'"/><path class="pl-w2" d="M'+(ox-4).toFixed(1)+' '+top.toFixed(1)+'V'+(oy+4).toFixed(1)+'H'+(rt+4).toFixed(1)+'V'+top.toFixed(1)+'"/>';
+   out+='<path class="pl-w2" d="M'+(ox-4).toFixed(1)+' '+top.toFixed(1)+'h-10M'+(rt+4).toFixed(1)+' '+top.toFixed(1)+'h10"/>';}
+  else if(sp.kind==='underground'){/* cut through the ground: rock hatched over the crown and behind the walls, the ends open where it goes on */
+   out+='<path class="pl-w" d="M'+ox.toFixed(1)+' '+top.toFixed(1)+'H'+rt.toFixed(1)+'M'+ox.toFixed(1)+' '+oy.toFixed(1)+'H'+rt.toFixed(1)+'"/><path class="pl-op" d="M'+ox.toFixed(1)+' '+top.toFixed(1)+'V'+oy.toFixed(1)+'M'+rt.toFixed(1)+' '+top.toFixed(1)+'V'+oy.toFixed(1)+'"/>';
+   out+='<path class="pl-f" d="'+hatchLine(ox,top-2,rt,top-2,-8)+hatchLine(ox,oy+2,rt,oy+2,8)+'"/>';}
+  else out+='<rect class="pl-w" x="'+ox.toFixed(1)+'" y="'+top.toFixed(1)+'" width="'+(D*sc).toFixed(1)+'" height="'+(H*sc).toFixed(1)+'"/><rect class="pl-w2" x="'+(ox-4)+'" y="'+(top-4).toFixed(1)+'" width="'+(D*sc+8).toFixed(1)+'" height="'+(H*sc+8).toFixed(1)+'"/>';
   if(sd)out+='<rect class="pl-f" x="'+ox.toFixed(1)+'" y="'+(oy-1.1*sc).toFixed(1)+'" width="'+(sd*sc).toFixed(1)+'" height="'+(1.1*sc).toFixed(1)+'"/>';
   if(sp.kind==='hall'||sp.kind==='chapel'){var pth='M'+(ox+(sd+1)*sc).toFixed(1)+' '+oy.toFixed(1);for(var zz=sd+1;zz<D-1;zz+=2){var rise=sp.kind==='hall'?(zz-sd)*0.12:0;pth+='V'+(oy-rise*sc).toFixed(1)+'H'+(ox+(zz+2)*sc).toFixed(1);}out+='<path class="pl-f" d="'+pth+'"/>';}
   var sx=ox+(sd?sd/2:2)*sc,sy=oy-(sd?2.6:1.6)*sc,lxm=distM(s),lx=ox+lxm*sc,ly=oy-1.2*sc;
   out+='<path class="pl-dir" d="M'+sx.toFixed(1)+' '+sy.toFixed(1)+'L'+lx.toFixed(1)+' '+ly.toFixed(1)+'"/>';
-  var mx=(sx+lx)/2,ceil=oy-H*sc;out+='<path class="pl-ray" d="M'+sx.toFixed(1)+' '+sy.toFixed(1)+'L'+mx.toFixed(1)+' '+ceil.toFixed(1)+'L'+lx.toFixed(1)+' '+ly.toFixed(1)+'"/>';
+  var mx=(sx+lx)/2,bounce=sp.kind==='outdoor'?oy:top;/* nothing overhead outdoors: the echo this section shows comes off the ground */
+  out+='<path class="pl-ray" d="M'+sx.toFixed(1)+' '+sy.toFixed(1)+'L'+mx.toFixed(1)+' '+bounce.toFixed(1)+'L'+lx.toFixed(1)+' '+ly.toFixed(1)+'"/>';
   var pd=positionsOf(s)?14:0;out+='<path class="pl-d" d="M'+ox.toFixed(1)+' '+(oy+22+pd)+'H'+(ox+D*sc).toFixed(1)+'M'+(ox-4)+' '+(oy+26+pd)+'l8 -8M'+(ox+D*sc-4).toFixed(1)+' '+(oy+26+pd)+'l8 -8"/><text class="pl-tt" x="'+(ox+D*sc/2).toFixed(1)+'" y="'+(oy+40+pd)+'" text-anchor="middle">D '+f1(D)+' m</text>';
   out+='<path class="pl-d" d="M'+(ox-22)+' '+oy.toFixed(1)+'V'+(oy-H*sc).toFixed(1)+'M'+(ox-26)+' '+(oy+4).toFixed(1)+'l8 -8M'+(ox-26)+' '+(oy-H*sc+4).toFixed(1)+'l8 -8"/><text class="pl-tt" x="'+(ox-30)+'" y="'+(oy-H*sc/2+4).toFixed(1)+'" text-anchor="end">H '+f1(H)+' m</text>';
   out+=planMarks(s,cp,function(mm){return [ox+mm*sc,oy-1.2*sc];},function(p,k){return 'x="'+p[0].toFixed(1)+'" y="'+(oy+14+(k%2?13:0)).toFixed(1)+'" text-anchor="middle"';});
@@ -317,8 +331,12 @@ function planView(s,w,h){var sp=spOf(s),ss=s.size/100,W=sp.W*ss,D=sp.D*ss,H=sp.H
  var sc2=Math.min((w-2*m-(cp?0:120))/W,(h-2*m-(cp?0:30))/D),ox2=(w-W*sc2)/2-(cp?0:20),oy2=(h-D*sc2)/2+(cp?0:16),X=function(x){return ox2+x*sc2;},Y=function(y){return oy2+y*sc2;};
  out+='data-mode="plan" data-ox="'+ox2.toFixed(1)+'" data-oy="'+oy2.toFixed(1)+'" data-sc="'+sc2.toFixed(3)+'" data-rw="'+W.toFixed(2)+'">';
  for(var mx2=0;mx2<=W+0.01;mx2+=stp)out+='<line class="pl-g2" x1="'+X(mx2).toFixed(1)+'" x2="'+X(mx2).toFixed(1)+'" y1="'+(oy2-6)+'" y2="'+(Y(D)+6).toFixed(1)+'" opacity=".6"/>';
- out+='<rect class="pl-w2" x="'+(ox2-4)+'" y="'+(oy2-4)+'" width="'+(W*sc2+8).toFixed(1)+'" height="'+(D*sc2+8).toFixed(1)+'"/><rect class="pl-w" x="'+ox2.toFixed(1)+'" y="'+oy2.toFixed(1)+'" width="'+(W*sc2).toFixed(1)+'" height="'+(D*sc2).toFixed(1)+'"/>';
- var sdp=sp.kind==='hall'?6:sp.kind==='chapel'?4:0;
+ if(sp.kind==='outdoor'||sp.kind==='underground'){/* walls down the sides only; the ends are open (a gorge or a courtyard's way in, a tunnel going on) */
+  out+='<path class="pl-w2" d="M'+(ox2-4).toFixed(1)+' '+(oy2-4)+'V'+(Y(D)+4).toFixed(1)+'M'+(X(W)+4).toFixed(1)+' '+(oy2-4)+'V'+(Y(D)+4).toFixed(1)+'"/><path class="pl-w" d="M'+ox2.toFixed(1)+' '+oy2.toFixed(1)+'V'+Y(D).toFixed(1)+'M'+X(W).toFixed(1)+' '+oy2.toFixed(1)+'V'+Y(D).toFixed(1)+'"/><path class="pl-op" d="M'+ox2.toFixed(1)+' '+oy2.toFixed(1)+'H'+X(W).toFixed(1)+'M'+ox2.toFixed(1)+' '+Y(D).toFixed(1)+'H'+X(W).toFixed(1)+'"/>';
+  if(sp.kind==='underground'){out+='<path class="pl-f" d="'+hatchLine(ox2-2,oy2,ox2-2,Y(D),-8)+hatchLine(X(W)+2,oy2,X(W)+2,Y(D),8)+'"/><path class="pl-f" style="stroke-dasharray:6 5" d="M'+X(W/2).toFixed(1)+' '+oy2.toFixed(1)+'V'+Y(D).toFixed(1)+'"/>';if(!cp)out+='<text class="pl-t" x="'+(X(W/2)+6).toFixed(1)+'" y="'+(Y(D)-8).toFixed(1)+'">CROWN OF THE VAULT</text>';}
+  else if(!cp)out+='<text class="pl-t" x="'+(X(W)-8).toFixed(1)+'" y="'+(Y(D)-8).toFixed(1)+'" text-anchor="end">OPEN TO THE SKY</text>';}
+ else out+='<rect class="pl-w2" x="'+(ox2-4)+'" y="'+(oy2-4)+'" width="'+(W*sc2+8).toFixed(1)+'" height="'+(D*sc2+8).toFixed(1)+'"/><rect class="pl-w" x="'+ox2.toFixed(1)+'" y="'+oy2.toFixed(1)+'" width="'+(W*sc2).toFixed(1)+'" height="'+(D*sc2).toFixed(1)+'"/>';
+ var sdp=stageDepth(sp);
  if(sdp){out+='<rect class="pl-f" x="'+X(W*0.075).toFixed(1)+'" y="'+oy2.toFixed(1)+'" width="'+(W*0.85*sc2).toFixed(1)+'" height="'+(sdp*sc2).toFixed(1)+'"/>';if(!cp)out+='<text class="pl-t" x="'+X(W*0.09).toFixed(1)+'" y="'+(Y(sdp)-6).toFixed(1)+'">'+(sp.kind==='hall'?'STAGE':'CHANCEL')+'</text>';
   var rs=sp.kind==='hall'?1.15:1.7;for(var ry=sdp+1.5;ry<D-1;ry+=rs){out+='<path class="pl-f" d="M'+X(0.9).toFixed(1)+' '+Y(ry).toFixed(1)+'H'+X(W/2-0.9).toFixed(1)+'M'+X(W/2+0.9).toFixed(1)+' '+Y(ry).toFixed(1)+'H'+X(W-0.9).toFixed(1)+'"/>';}}
  if(sp.kind==='chapel'||sp.kind==='garage'){var cx3=sp.kind==='chapel'?[W*0.17,W*0.83]:[W*0.14,W*0.38,W*0.62,W*0.86];for(var cz=3;cz<D-1;cz+=(sp.kind==='chapel'?4.5:8)){cx3.forEach(function(x){out+='<rect class="pl-fl" x="'+(X(x)-2.5).toFixed(1)+'" y="'+(Y(cz)-2.5).toFixed(1)+'" width="5" height="5"/>';});}}
@@ -342,7 +360,9 @@ function pixelRoom(s,w,h){var sp=spOf(s),ss=s.size/100,cell=12,cols=Math.floor((
  var k=Math.min((cols-4)/sp.W,(rows-4)/sp.D)*(0.55+0.45*(s.size-50)/100),rw=Math.max(6,Math.round(sp.W*k)),rh=Math.max(6,Math.round(sp.D*k));rw=Math.min(rw,cols-2);rh=Math.min(rh,rows-2);
  var c0=Math.floor((cols-rw)/2),r0=Math.floor((rows-rh)/2),sc=c0+1+Math.round(s.sx/100*(rw-3)),sr=r0+2,lc=c0+1+Math.round(s.lx/100*(rw-3)),D=sp.D*ss,lr=r0+1+Math.round(clamp(distM(s)/D,0,1)*(rh-3)),reach=rh*clamp(decayOf(s.bands)/3,0.3,1.2);
  var out='<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" aria-hidden="true" style="display:block">';
+ var open=sp.kind==='outdoor'||sp.kind==='underground';/* open ends: every other cell */
  for(var r=0;r<rows;r++)for(var c=0;c<cols;c++){var x=ox+c*cell,y=oy+r*cell,inR=c>=c0&&c<c0+rw&&r>=r0&&r<r0+rh,wall=inR&&(c===c0||c===c0+rw-1||r===r0||r===r0+rh-1),fill=null;
+  if(wall&&open&&(r===r0||r===r0+rh-1)&&(c-c0)%2)wall=false;
   if(wall)fill='var(--tx)';else if(inR){var d=Math.hypot(c-sc,r-sr);if(d<reach&&(Math.floor(d)%3===0))fill='var(--ln)';}
   if(c===sc&&r===sr)fill='var(--ac)';if(c===lc&&r===lr)fill='var(--wet)';
   if(fill)out+='<rect x="'+(x+1)+'" y="'+(y+1)+'" width="'+(cell-2)+'" height="'+(cell-2)+'" fill="'+fill+'"'+(c===lc&&r===lr?' stroke="var(--tx)" stroke-width="1.5"':'')+'/>';
@@ -395,6 +415,8 @@ var MAT={hall:{g:'#2A1F17',p:'#33271E',r:'#3F3128',ln:'#574538',tx:'#F3E9DB',tx2
  chapel:{g:'#D8D1C2',p:'#E5DFD1',r:'#CBC3B1',ln:'#B0A794',tx:'#262219',tx2:'#6B6355',ac:'#8C4A3C',onac:'#FFFFFF'},
  garage:{g:'#55585A',p:'#606366',r:'#6E7174',ln:'#85888B',tx:'#F2F2F0',tx2:'#D2D4D3',ac:'#FFD23F',onac:'#1A1A1A'},
  room:{g:'#1E2522',p:'#27302C',r:'#313B36',ln:'#44504A',tx:'#EDEFEA',tx2:'#A4ADA6',ac:'#F2845C',onac:'#1A0E08'},
+ outdoor:{g:'#5E6E63',p:'#68786C',r:'#748477',ln:'#8E9D90',tx:'#F4F6EE',tx2:'#D5DCCF',ac:'#F2CF6B',onac:'#241C05'},
+ underground:{g:'#1C1715',p:'#26201D',r:'#312925',ln:'#4A3F39',tx:'#EFE6DC',tx2:'#B09F92',ac:'#E8913E',onac:'#1F0E03'},
  user:{g:'#24262A',p:'#2C2F34',r:'#363A40',ln:'#4A4F57',tx:'#ECEDEF',tx2:'#A7ABB2',ac:'#8FB8DE',onac:'#0B1622'}};
 function matStyle(k){var m=MAT[k];return '--g:'+m.g+';--p:'+m.p+';--r:'+m.r+';--ln:'+m.ln+';--tx:'+m.tx+';--tx2:'+m.tx2+';--ac:'+m.ac+';--ac2:'+m.ac+';--onac:'+m.onac+';--num:'+m.tx+';--mtr:'+m.ac+';--focus:'+m.tx;}
 var STYLE={material:function(s){return matStyle(spOf(s).kind);}};
@@ -415,13 +437,14 @@ function dbText(v){return v<=-60?'\u2212\u221e':v.toFixed(1).replace('-','\u2212
 function meterPct(v){return clamp(1+v/60,0,1)*100;}
 function meters(){var i=Math.max(st.inL,st.inR),o=Math.max(st.outL,st.outR);return '<div class="mm">In<span class="bar"><i data-m="in" style="width:'+meterPct(i).toFixed(0)+'%"></i></span><em data-mt="in">'+dbText(i)+'</em></div><div class="mm">Out<span class="bar"><i data-m="out" style="width:'+meterPct(o).toFixed(0)+'%"></i></span><em data-mt="out">'+dbText(o)+'</em></div>';}
 /* ---- the space browser: search, kinds, Similar, and the tools in a strip of their own ---- */
-/* The kinds the browser filters by. A recorded space goes under its own kind, the modelled
-   ones and a loaded impulse response get a group each, so every space is in exactly one and
-   the counts add up. */
-var BRW_KINDS=[['all','All'],['hall','Halls'],['chapel','Churches'],['room','Rooms'],['modelled','Modelled'],['user','Your IR']];
-function brwKind(sp){return sp.kind==='user'?'user':sp.recorded?(sp.kind==='garage'?'room':sp.kind):'modelled';}
+/* The kinds the browser filters by. A recorded space goes under its own kind (a garage is
+   listed as industrial, which is what the warehouses and stairwells are), the modelled ones
+   and a loaded impulse response get a group each, so every space is in exactly one and the
+   counts add up. */
+var BRW_KINDS=[['all','All'],['hall','Halls'],['chapel','Churches'],['room','Rooms'],['garage','Industrial'],['outdoor','Outdoors'],['underground','Underground'],['modelled','Modelled'],['user','Your IR']];
+function brwKind(sp){return sp.kind==='user'?'user':sp.recorded?sp.kind:'modelled';}
 /* words a search finds a space by, beyond what its row says */
-var BRW_WORDS={hall:'hall',chapel:'church chapel cathedral',garage:'room garage industrial',room:'room',user:'your own impulse response file'};
+var BRW_WORDS={hall:'hall',chapel:'church chapel cathedral',garage:'industrial garage car park concrete',room:'room',outdoor:'outdoor outdoors open air courtyard gorge',underground:'underground tunnel mine cave kiln',user:'your own impulse response file'};
 function brwText(sp){return (sp.name+' '+sp.place+' '+sp.mat+' '+sp.rec+' '+sp.date+' '+sp.no+' '+(BRW_WORDS[sp.kind]||'')+' '+(sp.recorded?'recorded':sp.kind==='user'?'':'modelled')).toLowerCase();}
 function brwMatch(sp,q){var t=brwText(sp),w=q.toLowerCase().split(/\s+/);for(var i=0;i<w.length;i++)if(w[i]&&t.indexOf(w[i])<0)return false;return true;}
 /* How far apart two spaces sound, for the Similar ordering. Each octave band's decay is
