@@ -13,8 +13,12 @@ var PID={mix:'mix',pre:'predelay',size:'size',bright:'brightness',el:'earlyLate'
          living:'living',move:'movement',moveRate:'movementRate',rev:'reverse',gate:'gate',attack:'attack',dLvl:'directLevel',dDel:'directDelay',dCol:'directColour',xfeed:'crossFeed',cpu:'lowCpu',cloud:'cloudSize',lx:'listenerX',sx:'sourceX'};
 for(var eb=1;eb<=EQ_N;eb++){PID['eq'+eb+'f']='eq'+eb+'Freq';PID['eq'+eb+'g']='eq'+eb+'Gain';if(eqBell(eb-1))PID['eq'+eb+'q']='eq'+eb+'Q';}
 var BAND_ID=['decay63','decay125','decay250','decay500','decay1k','decay2k','decay4k','decay8k'];
+/* the right side's curve, heard only while decayLink is 0; linked, the eight above serve both sides */
+var RBAND_ID=['decayR63','decayR125','decayR250','decayR500','decayR1k','decayR2k','decayR4k','decayR8k'],LINK_ID='decayLink';
 function keyOf(id){for(var k in PID)if(PID[k]===id)return k;return null;}
-function paramValues(s){var o={};for(var k in PID)o[PID[k]]=k==='freeze'?(s.freeze?1:0):s[k];s.bands.forEach(function(b,i){o[BAND_ID[i]]=b;});return o;}
+/* the parameter id of band i on the side being edited */
+function bandId(s,i){return !s.link&&s.side==='R'?RBAND_ID[i]:BAND_ID[i];}
+function paramValues(s){var o={};for(var k in PID)o[PID[k]]=k==='freeze'?(s.freeze?1:0):s[k];s.bands.forEach(function(b,i){o[BAND_ID[i]]=b;});s.rbands.forEach(function(b,i){o[RBAND_ID[i]]=b;});o[LINK_ID]=s.link?1:0;return o;}
 function uiState(s){return {spaceId:SPACES[s.sp]?SPACES[s.sp].id:'',locks:Object.keys(s.locks).filter(function(k){return s.locks[k];}).join(','),mode:s.mode,view:s.view,skin:s.skin,speakers:speakersText(s)};}
 
 var lastSent={},lastUi={};
@@ -38,6 +42,7 @@ function applyFromHost(msg){if(!msg)return;var p=msg.params||{},u=msg.ui||{};
    st.note=u.irError?'<b>That file didn\u2019t load.</b> '+esc(u.irError):'<b>'+esc(SPACES[USER]?SPACES[USER].name:'Your IR')+'</b> loaded. The graph shows its measured decay; drag a band to reshape it.';}
   irEvent=ev;}
  for(var id in p){var v=+p[id];if(!isFinite(v))continue;lastSent[id]=v;var bi=BAND_ID.indexOf(id);if(bi>=0){st.bands[bi]=v;continue;}
+  var ri=RBAND_ID.indexOf(id);if(ri>=0){st.rbands[ri]=v;continue;}if(id===LINK_ID){st.link=v>=0.5;if(st.link)st.side='L';continue;}
   var k=keyOf(id);if(!k)continue;if(k==='freeze')st.freeze=v>=0.5;else st[k]=v;}
  if(u.spaceId!=null){var si=spaceIndex(String(u.spaceId));if(si>=0){st.sp=si;lastUi.spaceId=String(u.spaceId);}}
  if(u.locks!=null){st.locks={};String(u.locks).split(',').forEach(function(k){if(k&&P[k])st.locks[k]=true;});lastUi.locks=uiState(st).locks;}
@@ -61,7 +66,7 @@ function onMatched(m){if(!m)return;st.hint=null;
  if(m.listening)st.note='<b>Listening to '+esc(m.file||'the recording')+'</b> for the room\u2019s decay.';
  else if(m.error)st.note='<b>No match.</b> '+esc(m.error);
  else if(Array.isArray(m.bands)&&m.bands.length===8){var si=spaceIndex(String(m.spaceId||''));if(si>=0)changeSpace(si);
-  st.bands=m.bands.map(function(b){return clamp(+b||1,0.1,20);});
+  st.bands=m.bands.map(function(b){return clamp(+b||1,0.1,20);});st.rbands=st.bands.slice();
   var missed=(m.heard||[]).map(function(n,i){return +n>0?null:BAND_NAMES[i];}).filter(Boolean);
   st.note='<b>Matched'+(si>=0?' to '+esc(SPACES[si].name):'')+'.</b> '+st.bands[4].toFixed(1)+' s at 1 kHz, as heard in '+esc(m.file||'the recording')+'.'+
    (missed.length?' '+missed.join(', ')+(missed.length>1?' are':' is')+' estimated.':' Drag a band to adjust.');}
@@ -157,8 +162,8 @@ for(var sb=0;sb<31;sb++)specCur.push(-100);
 var SPEC_FALL=1.5; /* dB per tick at 25 Hz, so a bar takes about two seconds to fall away */
 /* the parameters whose change rebuilds the response, so a new analysis is on its way */
 var REBUILD={lx:1,sx:1,size:1,dist:1,el:1,living:1,rev:1,gate:1,attack:1,dLvl:1,dDel:1,dCol:1,xfeed:1,cpu:1};
-function rebuilds(id){var k=keyOf(id);return BAND_ID.indexOf(id)>=0||!!(k&&REBUILD[k]);}
-function wfHTML(){if(!JUCE){var sig=st.sp+'|'+st.bands.join(',');if(!ana||ana.sig!==sig){ana=fakeAnalysis(st);ana.sig=sig;}}
+function rebuilds(id){var k=keyOf(id);return BAND_ID.indexOf(id)>=0||RBAND_ID.indexOf(id)>=0||id===LINK_ID||!!(k&&REBUILD[k]);}
+function wfHTML(){if(!JUCE){var sig=st.sp+'|'+curBands(st).join(',');if(!ana||ana.sig!==sig){ana=fakeAnalysis(st);ana.sig=sig;}}
  var rt=ana?ana.rt60:null,cells='';for(var i=0;i<8;i++){var v=rt?+rt[i]:0,ok=v>0;cells+='<div'+(ok?'':' class="na" title="Not measurable in this response"')+' aria-label="'+BAND_NAMES[i]+', '+(ok?v.toFixed(2)+' seconds':'not measurable')+'"><b>'+(ok?v.toFixed(2):'\u2013')+'</b><span>'+BAND_NAMES[i]+'</span></div>';}
  return '<div class="cap wfd" role="dialog" aria-modal="true" aria-labelledby="wf-h"><div class="cbox"><div class="chd"><h2 id="wf-h">Waterfall</h2><button class="cx" data-act="wf" aria-label="Close">Close</button></div>'+
   '<p>The response you are hearing: each third-octave band falling away over time, the broadband decay with the RT60 measured in each octave, and the live spectrum of the reverb.</p>'+
@@ -214,7 +219,7 @@ function drawSpectrum(cv,eq){var c=cvCtx(cv),w=+cv.getAttribute('data-w'),h=+cv.
  c.textAlign='center';c.textBaseline='alphabetic';c.fillStyle=tx2;WF_LAB.forEach(function(l){c.fillText(l[1],L+slot*(l[0]+0.5),h-6);});}
 /* Without the plugin (a browser preview) the displays show a plausible response made from the
    decay graph: an exponential fall per band, and a spectrum that swells and settles. */
-function fakeAnalysis(s){var b=s.bands,rt=BANDS31.map(function(f){var x=Math.log(f/63)/Math.LN2;return Math.max(0.1,rtAt(b,x)*(x>7?1-(x-7)*0.2:1));}),secs=Math.max.apply(null,rt)*1.05,sl=secs/39,step=secs/199,wf=[],dec=[],e0=0;
+function fakeAnalysis(s){var b=curBands(s),rt=BANDS31.map(function(f){var x=Math.log(f/63)/Math.LN2;return Math.max(0.1,rtAt(b,x)*(x>7?1-(x-7)*0.2:1));}),secs=Math.max.apply(null,rt)*1.05,sl=secs/39,step=secs/199,wf=[],dec=[],e0=0;
  var shape=function(i){return -Math.abs(i-15)*0.35-(i>24?(i-24)*1.2:0);};
  for(var r=0;r<40;r++){var row=[];for(var i=0;i<31;i++)row.push(Math.round(10*clamp(shape(i)-60*r*sl/rt[i]+(hash(i,r)-0.5)*3,-90,0))/10);wf.push(row);}
  for(var k=0;k<200;k++){var e=0;for(i=0;i<31;i++)e+=Math.pow(10,(shape(i)-60*k*step/rt[i])/10);if(!k)e0=e;dec.push(Math.round(10*10*Math.log10(e/e0))/10);}
@@ -299,9 +304,10 @@ window.addEventListener('resize',fit);
 if(window.ResizeObserver)new ResizeObserver(fit).observe(live);
 
 /* ---- interaction ---- */
-function snap(s){var o={sp:s.sp,bands:s.bands.slice()};for(var k in PID)if(k!=='freeze')o[k]=s[k];return o;}
-function changeSpace(i){var old=snap(st),sp=SPACES[i],held=[];st.sp=i;st.bands=sp.bands.slice();st.pre=sp.pre;st.size=100;
- if(st.locks.decay){var f=decayOf(old.bands)/decayOf(sp.bands);st.bands=st.bands.map(function(b){return clamp(b*f,0.1,20);});held.push('Decay');}
+function snap(s){var o={sp:s.sp,bands:s.bands.slice(),rbands:s.rbands.slice(),link:s.link};for(var k in PID)if(k!=='freeze')o[k]=s[k];return o;}
+/* a new space brings its curve to both sides; the link state stays as it was */
+function changeSpace(i){var old=snap(st),sp=SPACES[i],held=[];st.sp=i;st.bands=sp.bands.slice();st.rbands=sp.bands.slice();st.pre=sp.pre;st.size=100;
+ if(st.locks.decay){var f=decayOf(old.bands)/decayOf(sp.bands),sc=function(b){return clamp(b*f,0.1,20);};st.bands=st.bands.map(sc);st.rbands=st.rbands.map(sc);held.push('Decay');}
  if(st.locks.pre){st.pre=old.pre;held.push('Pre-delay');}if(st.locks.mix)held.push('Mix');
  st.hint=null;st.note='<b>'+esc(sp.name)+'</b> loaded.'+(held.length?' Locked and held: '+held.join(', ')+'.':' Lock a value to hold it when you change space.')+(sp.credit?' Recording: '+esc(sp.credit)+', '+esc(sp.licence)+'.':'');}
 var drag=null,eqTap=null;
@@ -312,19 +318,19 @@ live.addEventListener('pointerdown',function(e){var t=e.target;if(t.closest('inp
   if(eqTap&&eqTap.i===ei&&now-eqTap.t<400){eqTap=null;eqSet(ei,'g',0);st.note=null;schedule();e.preventDefault();return;}eqTap={i:ei,t:now};
   drag={type:'eq',i:ei,alt:alt,rect:es.getBoundingClientRect(),w:+es.getAttribute('data-w'),pw:+es.getAttribute('data-pw'),ph:+es.getAttribute('data-ph'),x0:e.clientX,y0:e.clientY,f0:st[eqKey(ei,'f')],g0:st[eqKey(ei,'g')],q0:st[eqKey(ei,'q')],ids:eqIds(ei,alt)};
   st.eqCur=ei;en.focus({preventScroll:true});schedule();}
- else if(kn){var k=kn.getAttribute('data-knob'),h=kn.getAttribute('data-h')==='1';drag={type:'knob',k:k,h:h,x0:e.clientX,y0:e.clientY,n0:to01(k,getV(st,k)),w:kn.getBoundingClientRect().width*(W/live.firstElementChild.getBoundingClientRect().width),ids:k==='decay'?BAND_ID.slice():[PID[k]]};kn.focus({preventScroll:true});}
+ else if(kn){var k=kn.getAttribute('data-knob'),h=kn.getAttribute('data-h')==='1';drag={type:'knob',k:k,h:h,x0:e.clientX,y0:e.clientY,n0:to01(k,getV(st,k)),w:kn.getBoundingClientRect().width*(W/live.firstElementChild.getBoundingClientRect().width),ids:k==='decay'?(st.link?BAND_ID.slice():BAND_ID.concat(RBAND_ID)):[PID[k]]};kn.focus({preventScroll:true});}
  else if(lis){var sv=lis.closest('svg');drag={type:'lis',rect:sv.getBoundingClientRect(),w:+sv.getAttribute('data-w'),mode:sv.getAttribute('data-mode'),ox:+sv.getAttribute('data-ox'),oy:+sv.getAttribute('data-oy'),sc:+sv.getAttribute('data-sc'),rw:+sv.getAttribute('data-rw'),ids:lis.getAttribute('data-drag')==='src'?[PID.sx]:[PID.dist,PID.lx],src:lis.getAttribute('data-drag')==='src'};lis.focus({preventScroll:true});}
  else if(dg){var r=dg.getBoundingClientRect(),d={rect:r,l:+dg.getAttribute('data-l'),t:+dg.getAttribute('data-t'),pw:+dg.getAttribute('data-pw'),ph:+dg.getAttribute('data-ph'),ymax:+dg.getAttribute('data-ymax'),w:+dg.getAttribute('data-w'),bars:dg.getAttribute('data-bars')==='1'};
   var sx=(e.clientX-r.left)*d.w/r.width,sy=(e.clientY-r.top)*d.w/r.width;d.polar=dg.getAttribute('data-polar')==='1';d.horiz=dg.getAttribute('data-horiz')==='1';
   if(d.polar){d.cx=+dg.getAttribute('data-cx');d.cy=+dg.getAttribute('data-cy');d.r0=+dg.getAttribute('data-r0');d.r1=+dg.getAttribute('data-r1');var dd=Math.hypot(sx-d.cx,sy-d.cy);if(dd<d.r0-24||dd>d.r1+40)return;var ang=Math.atan2(sy-d.cy,sx-d.cx)*180/Math.PI;d.i=((Math.round((ang+90)/45)%8)+8)%8;}
   else if(d.horiz){d.rh=+dg.getAttribute('data-rh');if(sy<d.t||sy>d.t+d.ph+d.rh)return;d.i=clamp(Math.round((sy-d.t)/d.rh)-1,0,7);}
   else{if(sx<d.l||sx>d.l+d.pw)return;d.i=d.bars?clamp(Math.floor((sx-d.l)/(d.pw/8)),0,7):clamp(Math.round((sx-d.l)/(d.pw/7)),0,7);}
-  d.type='decay';d.ids=[BAND_ID[d.i]];drag=d;st.lastBand=d.i;applyDecay(e);
+  d.type='decay';d.ids=[bandId(st,d.i)];drag=d;st.lastBand=d.i;applyDecay(e);
   var nd=live.querySelector('[data-fid="nd-'+d.i+'"]');if(nd)nd.focus({preventScroll:true});}
  else return;
  gesture(drag.ids,true);
  try{live.setPointerCapture(e.pointerId);}catch(_){}e.preventDefault();});
-function applyDecay(e){var d=drag,sc=d.w/d.rect.width,sx=(e.clientX-d.rect.left)*sc,sy=(e.clientY-d.rect.top)*sc,v;if(d.polar)v=(Math.hypot(sx-d.cx,sy-d.cy)-d.r0)/(d.r1-d.r0)*d.ymax;else if(d.horiz)v=(sx-d.l)/d.pw*d.ymax;else v=(1-(sy-d.t)/d.ph)*d.ymax;v=clamp(v,0.1,d.ymax);st.bands[d.i]=Math.round(v*100)/100;st.hint='decay';st.note=null;schedule();}
+function applyDecay(e){var d=drag,sc=d.w/d.rect.width,sx=(e.clientX-d.rect.left)*sc,sy=(e.clientY-d.rect.top)*sc,v;if(d.polar)v=(Math.hypot(sx-d.cx,sy-d.cy)-d.r0)/(d.r1-d.r0)*d.ymax;else if(d.horiz)v=(sx-d.l)/d.pw*d.ymax;else v=(1-(sy-d.t)/d.ph)*d.ymax;v=clamp(v,0.1,d.ymax);curBands(st)[d.i]=Math.round(v*100)/100;st.hint='decay';st.note=null;schedule();}
 live.addEventListener('pointermove',function(e){if(!drag)return;
  if(drag.type==='knob'){var k=live.firstElementChild.getBoundingClientRect().width/W,dn=drag.h?(e.clientX-drag.x0)/k/Math.max(drag.w,60):(drag.y0-e.clientY)/k/220;if(e.shiftKey)dn/=10;setParam(st,drag.k,from01(drag.k,drag.n0+dn));schedule();}
  else if(drag.type==='decay')applyDecay(e);
@@ -359,7 +365,7 @@ live.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,Arrow
   else if(ek==='Home'||ek==='End'){var nx=ek==='End'?EQ_N-1:0;st.eqCur=nx;renderLive();var nn=live.querySelector('[data-fid="eqn-'+nx+'"]');if(nn)nn.focus({preventScroll:true});e.preventDefault();return;}
   else return;st.note=null;e.preventDefault();schedule();}
  else if(t.matches('[data-node]')){var i=+t.getAttribute('data-node');if(e.key==='ArrowLeft'||e.key==='ArrowRight'){var ni=clamp(i+(e.key==='ArrowRight'?1:-1),0,7);st.lastBand=ni;e.preventDefault();renderLive();var n2=live.querySelector('[data-fid="nd-'+ni+'"]');if(n2)n2.focus({preventScroll:true});return;}
-  if(e.key==='ArrowUp'||e.key==='ArrowDown'){st.bands[i]=clamp(Math.round((st.bands[i]+(e.key==='ArrowUp'?1:-1)*(e.shiftKey?0.01:0.1))*100)/100,0.1,20);st.lastBand=i;st.hint='decay';st.note=null;e.preventDefault();schedule();}}
+  if(e.key==='ArrowUp'||e.key==='ArrowDown'){var cb=curBands(st);cb[i]=clamp(Math.round((cb[i]+(e.key==='ArrowUp'?1:-1)*(e.shiftKey?0.01:0.1))*100)/100,0.1,20);st.lastBand=i;st.hint='decay';st.note=null;e.preventDefault();schedule();}}
  else if(t.matches('[data-drag="src"]')){if(e.key==='ArrowLeft'||e.key==='ArrowRight')st.sx=clamp(st.sx+(e.key==='ArrowRight'?3:-3),6,94);else return;st.hint='sx';st.note=null;e.preventDefault();schedule();}
  else if(t.matches('[data-drag]')){if(e.key==='ArrowUp'||e.key==='ArrowDown')st.dist=clamp(st.dist+(e.key==='ArrowDown'?2:-2),0,100);else if(e.key==='ArrowLeft'||e.key==='ArrowRight')st.lx=clamp(st.lx+(e.key==='ArrowRight'?3:-3),6,94);else return;st.hint='dist';st.note=null;e.preventDefault();schedule();}});
 live.addEventListener('change',function(e){var t=e.target;
@@ -370,7 +376,7 @@ live.addEventListener('change',function(e){var t=e.target;
  if(!t.matches('input[data-type]'))return;var ty=t.getAttribute('data-type'),raw=t.value.replace(/\u2212/g,'-'),nums=raw.match(/-?\d+(\.\d+)?/g);
  if((ty==='lx'||ty==='sx')&&/cent/i.test(raw)){setParam(st,ty,50);st.note=null;renderLive();sync();return;}
  if(!nums){if(/off/i.test(raw)&&P[ty]&&(P[ty].min===0||ty==='dLvl'))setParam(st,ty,P[ty].min);st.note=null;renderLive();sync();return;}var v=parseFloat(nums[nums.length-1]);
- if(ty==='band'){var i=+t.getAttribute('data-i');st.bands[i]=clamp(v,0.1,20);st.lastBand=i;st.hint='decay';}
+ if(ty==='band'){var i=+t.getAttribute('data-i');curBands(st)[i]=clamp(v,0.1,20);st.lastBand=i;st.hint='decay';}
  else if(ty==='dist'){st.dist=Math.round(distFromM(st,v));st.hint='dist';}
  else if((ty==='lx'||ty==='sx')&&/left|right/i.test(raw)){setParam(st,ty,50+(/left/i.test(raw)?-v:v)/2);}
  else if((ty==='hicut'||/^eq\df$/.test(ty))&&/k/i.test(raw)){setParam(st,ty,v*1000);}
@@ -389,6 +395,10 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'toggle':var tk=b.getAttribute('data-k');st[tk]=st[tk]>=0.5?0:1;st.hint=tk;st.note=null;break;
   case 'adv':st.adv=!st.adv;st.hint=null;st.note=st.adv?'<b>All parameters</b> opens in place, so the space and graph stay in view.':null;break;
   case 'match':st.hint=null;if(JUCE){JUCE.emitEvent('match',{});st.note='<b>Match a room.</b> Choose a recording made in the room you want to match: a voice, a band or a drum kit, with pauses where the sound stops and the room rings on.';}else st.note='<b>Match a room</b> listens to a recording made in a room and sets the decay to match it.';break;
+  /* unlinking first gives the right the curve it already plays, so nothing changes at that moment */
+  case 'dlink':st.hint=null;if(st.link){st.rbands=st.bands.slice();sync();st.link=false;st.side='L';st.note='<b>Unlinked.</b> The left and right now decay at their own curves. Choose a side and drag its points; the other side shows faintly.';}
+   else{st.link=true;st.side='L';st.note='<b>Linked.</b> Both sides decay at the left curve again.';}break;
+  case 'dside':st.side=v==='R'?'R':'L';st.hint=null;st.note='<b>'+sideName(st)+' side.</b> The graph, its points and the values now edit the '+sideName(st).toLowerCase()+' decay; the '+(st.side==='R'?'left':'right')+' shows faintly.';break;
   case 'lock':var lk=b.getAttribute('data-k');st.locks[lk]=!st.locks[lk];st.hint=null;st.note=(st.locks[lk]?'<b>Locked.</b> ':'<b>Unlocked.</b> ')+P[lk].l+(st.locks[lk]?' now holds when you change space.':' follows each space again.');break;
   case 'view':st.view=v;break;
   case 'browse':if(st.browse)st.browse=false;else openBrowser();break;
@@ -443,7 +453,7 @@ live.addEventListener('contextmenu',function(e){e.preventDefault();});
 /* ---- start ---- */
 var init=null;
 try{var d=window.__JUCE__&&window.__JUCE__.initialisationData&&window.__JUCE__.initialisationData.drenched;if(d&&d.length)init=d[0];}catch(_){}
-if(init){setLibrary(init.library);Object.assign(st,{sp:0,bands:SPACES[0].bands.slice(),pre:SPACES[0].pre});applyFromHost(init);if(init.licence)Object.assign(st.licence,init.licence);st.bits=+init.bits||64;}
+if(init){setLibrary(init.library);Object.assign(st,{sp:0,bands:SPACES[0].bands.slice(),rbands:SPACES[0].bands.slice(),pre:SPACES[0].pre});applyFromHost(init);if(init.licence)Object.assign(st.licence,init.licence);st.bits=+init.bits||64;}
 try{var hs=(location.hash||'').slice(1);if(SKINS.some(function(x){return x.id===hs;}))st.skin=hs;}catch(_){}
 Object.assign(lastSent,paramValues(st));Object.assign(lastUi,uiState(st));
 renderLive();
