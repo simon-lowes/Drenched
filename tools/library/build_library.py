@@ -8,13 +8,15 @@ collection, assembled into one FLAC file the plugin reads:
   4 channels: true stereo, left-to-left, left-to-right, right-to-left, right-to-right,
               made from a source on each side of the stage.
 
-The sources come in five shapes:
+The sources come in six shapes:
 
   - mono files, one per microphone (MAIR, ChurchIR): paired into stereo, a Decca
     tree's centre folded into both sides;
   - a stereo file (OpenAIR ORTF pairs, dummy heads, WDR's stereo pairs): used as it is;
   - a first-order B-format file (OpenAIR): decoded to a coincident pair of virtual
     supercardioids 110 degrees apart;
+  - two B-format files of one microphone, with the source on either side: each
+    decoded as above, and made into true stereo;
   - two stereo files of one microphone, with the source on either side: true stereo;
   - two files of an array of cardioid capsules (ARVERIR), with the source on either
     side: each encoded to first-order B-format from the capsule positions, decoded
@@ -161,6 +163,44 @@ SOURCES = {
     "r1-reactor":       {"file": openair ("c0caa95a-76a0-e477-b6b2-1facbce061fc", "422deb49e20926f742dc1db95ea6cd5e",
                                           "r1_nuclear_reactor_hall__stereo__r1_ortf-48k.wav")},
 
+    # Rooms. Genesis 6: the microphone faces the drum kit, measured from where each
+    # drum stands; the ride (to the microphone's left, from the direct sound's
+    # direction) and the hi-hat (to its right) make true stereo. Guildhall: receiver 1,
+    # in the public pews, with sources 2 and 3 on either side of the council pews
+    # (left and right, from the direct sound's direction).
+    "york-genesis-studio": {"left_bformat": openair ("91e300e3-a5e8-72bf-3564-1dbc3e286675", "466495b6262ff0b9ef4e1fe98ec59a7c",
+                                                     "genesis_6_studio_live_room_drum_set__b-format__ride_ir.wav"),
+                            "right_bformat": openair ("58722005-382f-ea68-065d-b48afd504967", "6c24e5929af2be69e5e0ecc30235cfd2",
+                                                      "genesis_6_studio_live_room_drum_set__b-format__hh_ir.wav")},
+    "elveden-smoking-room": {"file": openair ("32dd5b26-8785-cfc5-0875-a85cc8f4f8ba", "17ca5ee736c2812a6c432e562d0287c0",
+                                              "elveden_hall_suffolk_england__stereo__18a_smoking_room.wav"),
+                             "seconds": 1.5},
+    "york-guildhall":   {"left_bformat": openair ("bb62ac94-2cbd-7d5e-3247-503c92d0373b", "2c870d83f16a25e77139f51828e87a54",
+                                                  "york_guildhall_council_chamber__b-format__councilchamber_s2_r1_ir_1_96000.wav"),
+                         "right_bformat": openair ("9d7aa0c8-d4cb-1792-8804-1f2e5378bc9b", "1036cdb1d51d5f610389d318599d278c",
+                                                   "york_guildhall_council_chamber__b-format__councilchamber_s3_r1_ir_1_96000.wav")},
+
+    # Odd spaces and open air. Where OpenAIR has a response made with one loudspeaker
+    # and one made with an array of two or four pointing different ways (to come
+    # closer to an omni source), the array's is used.
+    "edinburgh-tunnel": {"bformat": openair ("3deb645b-c18d-609a-302e-34bf9118fbd6", "4e28663cd85e48d9f9eeee3e9d4aa73b",
+                                             "innocent_railway_tunnel__b-format__middle_tunnel_4way_bformat.wav")},
+    "gillheads-mine":   {"bformat": openair ("2b7a3aa5-26e0-59ee-4c5b-9ba395cd25d3", "4aff9f69f241b6c3e91dcb67a86e0125",
+                                             "gill_heads_mine__b-format__mine_site2_2way_bformat.wav"),
+                         "seconds": 2.5},
+    "hoffmann-kiln":    {"bformat": openair ("64adfe47-790d-11fd-8452-e5c284e8516b", "90e1197aca514fc9f79ededb77e90e6d",
+                                             "hoffmann_lime_kiln_langcliffeuk__b-format__ir_p2.wav")},
+    "newgrange":        {"bformat": openair ("96812303-b2d1-bca0-f07b-20223e1c768c", "dab6841cd1991af3f0e5430321adba42",
+                                             "newgrange__b-format__newgrange_s1r1.wav")},
+    "york-sports-hall": {"file": openair ("512cb966-2ba4-9c45-bfcf-3e4563ee9b3c", "2b725b94e9e1f9a6cc782a7f2d9bcb9b",
+                                          "sports_centre_university_york__stereo__sportscentre_ortf.wav")},
+    "falkland-tennis-court": {"file": openair ("a803eb1d-2c85-d831-65a5-1ae6222e66bb", "99633af8a825809da96a308745bbc154",
+                                               "falkland_palace_royal_tennis_court__stereo__falkland_tennis_court_ortf.wav")},
+    "york-alcuin-courtyard": {"bformat": openair ("b4ad5e35-4737-157f-a6f9-349c03295c44", "ff194ab86994cc1f374f143d4df6b13a",
+                                                  "alcuin_college_university_york__b-format__alcuin_s2r1_bformat.wav")},
+    "trollers-gill":    {"bformat": openair ("a85a85b5-3b73-0c18-a35f-d10c7725e2ee", "76522c55005d74d18ace256993bfaf2a",
+                                             "trollers_gill__b-format__dales_site2_4way_bformat.wav")},
+
     # AIR: the dummy head at the third position, turned so the source is 45 degrees to
     # its left (azimuth 45: the left ear hears it first and 12 dB louder) and to its
     # right (azimuth 135). The 16-bit copies end in digital silence, so their last
@@ -169,6 +209,15 @@ SOURCES = {
                                            "air_binaural_aula_carolina_1_3_45_3.wav"),
                          "right_file": air ("13589139-f0c4-23b7-2ac0-b8a940f40060", "990c198b98f807a46051795a2a612dfd",
                                             "air_binaural_aula_carolina_1_3_135_3.wav"),
+                         "fadeTail": True},
+
+    # AIR office and lecture room: the dummy head with the source straight ahead
+    # (azimuth 90), 3 m away in the office and 7.1 m in the lecture room.
+    "aachen-office":    {"file": air ("0481688a-18a1-d6b9-ea88-056d539ce8c3", "2e3d11c458cef4fcfabd238c3b289e02",
+                                      "air_binaural_office_1_3.wav"),
+                         "fadeTail": True},
+    "aachen-lecture":   {"file": air ("7e0ce2f1-3ef0-c82a-bf45-c8f8ec06537e", "f8852be5af780f85f4035ef2c04a89ca",
+                                      "air_binaural_lecture_1_4.wav"),
                          "fadeTail": True},
 
     # Detmold. Konzerthaus (set C): a dummy head in the hall with a pair of the
@@ -396,6 +445,11 @@ def build (space_id, recipe, source_dir):
     elif "bformat" in recipe:
         audio, rate = read (local (source_dir, recipe["bformat"]), 4)
         channels, trimmed = decode_bformat (audio, rate), True
+    elif "left_bformat" in recipe:
+        (left, rate), (right, other) = (read (local (source_dir, recipe[side]), 4) for side in ("left_bformat", "right_bformat"))
+        if other != rate:
+            sys.exit (f"{space_id}: mixed sample rates")
+        channels, trimmed = decode_bformat (left, rate) + decode_bformat (right, rate), True
     else:
         (ll, lr), rate = read (local (source_dir, recipe["left_file"]), 2)
         (rl, rr), other = read (local (source_dir, recipe["right_file"]), 2)
@@ -407,7 +461,9 @@ def build (space_id, recipe, source_dir):
     audio = np.stack ([np.pad (c, (0, n - len (c))) for c in channels])
 
     if trimmed:
-        n = tail_end (audio, rate)
+        # A noise floor that wanders by more than the margin keeps the whole file;
+        # "seconds" then gives where the tail has been seen to reach the floor.
+        n = min (tail_end (audio, rate), int (recipe.get ("seconds", 30) * rate))
         audio = audio[:, :n]
 
     # A short fade at the end, in case the recording stops mid-tail; a long one where
