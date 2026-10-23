@@ -350,7 +350,7 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .se-box button:last-child{border-right:0}.se-box button[aria-pressed="true"]{background:var(--line);color:var(--g)}
 .se-box .cap{padding:0 8px;font:10px var(--fnum);color:var(--tx2);letter-spacing:.1em;border-right:1px solid var(--line);height:100%;display:flex;align-items:center}
 .se-plan{position:absolute;left:30px;top:76px;width:664px;height:620px}
-.se-plan .legend{position:absolute;left:0;top:0;display:flex;gap:16px;font:11px var(--fnum);color:var(--tx2)}
+.se-plan .legend{position:absolute;left:0;right:0;top:0;display:flex;flex-wrap:wrap;gap:4px 16px;font:11px var(--fnum);color:var(--tx2);white-space:nowrap}
 .se-plan .legend i{display:inline-block;width:7px;height:7px;margin-right:6px;border:1.5px solid var(--ac);border-radius:50%;vertical-align:0}.se-plan .legend i.r{background:var(--ac)}
 .se-photo{position:absolute;left:0;bottom:0;width:214px;border:1px solid var(--line);background:var(--g)}
 .se-photo .phi{filter:url(#duo-sec)}
@@ -815,3 +815,141 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .adv .ph .ph-r{display:flex;gap:6px}
 .adv .row button.tg{border:1px solid var(--ln);background:transparent;color:var(--num);font:12px var(--fnum);height:20px;padding:0 8px;border-radius:var(--rad);cursor:pointer}
 
+
+/* ===== captured positions: the recordings of one room, chosen from the room view in each
+   look's own language. The markup is shared (.cp, .cp-p a position, .cp-b its button, .cp-mk
+   its mark, .cp-mics the microphones recorded there, .cp-m one of them); the looks differ. */
+.cp .cp-p{display:flex;flex-wrap:wrap;align-items:center}
+.cp button{font-family:inherit;color:inherit;cursor:pointer;background:transparent;border:0;padding:0;transition:color .15s,border-color .15s,background-color .15s}
+.cp .cp-mics{display:inline-flex;flex-wrap:wrap;align-items:center}
+.cp-mk{display:inline-block;flex-shrink:0;transition:background-color .15s,border-color .15s}
+.cp-h{display:block}
+@media (prefers-reduced-motion: reduce){.cp button,.cp-mk,.pl-st,.si-px rect,.co-cp .cp-b svg{transition:none}}
+/* Anodised: a column of lamp buttons on the slab, lit where you are */
+.an-cp{position:absolute;left:26px;top:22px;display:flex;flex-direction:column;gap:6px;max-width:320px}
+.an-cp .cp-h{font:500 11px var(--fui);letter-spacing:.18em;text-transform:uppercase;color:#8F8B82;text-shadow:0 1px 0 rgba(0,0,0,.8);margin-bottom:2px}
+.an-cp .cp-p{flex-direction:column;align-items:flex-start;gap:4px}
+.an-cp .cp-b{height:30px;border-radius:4px;border:1px solid #34363A;background:linear-gradient(180deg,rgba(35,37,40,.94),rgba(26,27,29,.94));color:#CFC9BD;font-size:12px;display:flex;align-items:center;gap:9px;padding:0 12px;box-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 2px 4px rgba(0,0,0,.5);text-align:left}
+.an-cp .cp-b b{font-weight:400}.an-cp .cp-b small{font:11px var(--fnum);color:#8F8B82}
+.an-cp .cp-b[aria-pressed="true"]{color:var(--tx)}
+.an-cp .cp-mk{width:6px;height:6px;border-radius:3px;background:#3A3C40;box-shadow:inset 0 1px 1px rgba(0,0,0,.8)}
+.an-cp .cp-b[aria-pressed="true"] .cp-mk{background:#FFB547;box-shadow:0 0 6px rgba(255,181,71,.8)}
+.an-cp .cp-mics{gap:4px;padding-left:20px}
+.an-cp .cp-m{height:22px;padding:0 9px;border-radius:3px;border:1px solid #2E3034;background:rgba(18,19,20,.88);color:#9E9A91;font-size:11px}
+.an-cp .cp-m[aria-pressed="true"]{color:#FFB547;border-color:#6A5428}
+/* Section: station marks on the drawing, and a schedule in the sheet's corner */
+.pl-pos{cursor:pointer}.pl-pos:focus{outline:none}.pl-pos:focus-visible .pl-hit{stroke:var(--focus);stroke-width:2}
+.pl-st{fill:var(--g);stroke:var(--ac);stroke-width:1.5;transition:fill .15s}.pl-pos.cur .pl-st{fill:var(--ac)}.pl-st2{fill:none;stroke:var(--ac);stroke-width:1}
+.pl-pos:hover .pl-st{fill:var(--ac)}
+.pl-pos text{paint-order:stroke;stroke:var(--g);stroke-width:3px;stroke-linejoin:round}
+.se-plan .legend i.st{border-radius:0;transform:rotate(45deg);width:6px;height:6px}
+.se-cp{position:absolute;right:0;top:24px;width:176px;border:1px solid var(--line);background:var(--g);font:10px var(--fnum);letter-spacing:.06em}
+.se-cp-h{display:block;padding:3px 8px 2px;border-bottom:1px solid var(--line);color:var(--tx2);font-size:9px;letter-spacing:.12em}
+.se-cp .cp-p{flex-direction:column;align-items:stretch;border-bottom:1px solid var(--ln)}.se-cp .cp-p:last-child{border-bottom:0}
+.se-cp .cp-b{display:flex;align-items:center;gap:7px;height:20px;padding:0 8px;text-align:left;color:var(--tx2);width:100%}
+.se-cp .cp-b b{font-weight:500;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.se-cp .cp-b small{color:var(--tx2);font-size:10px}
+.se-cp .cp-b[aria-pressed="true"]{color:var(--tx)}
+.se-cp .cp-mk{width:6px;height:6px;border:1px solid var(--ac);transform:rotate(45deg)}.se-cp .cp-b[aria-pressed="true"] .cp-mk{background:var(--ac)}
+.se-cp .cp-mics{padding:0 8px 3px 21px;gap:2px}
+.se-cp .cp-m{height:16px;padding:0 6px;border:1px solid var(--line);color:var(--tx2);font-size:9px;letter-spacing:.08em}
+.se-cp .cp-m[aria-pressed="true"]{background:var(--line);color:var(--g)}
+/* Catalogue: a line of the entry, the places as links */
+.ca-cp{display:flex;flex-wrap:wrap;gap:0 14px;line-height:1.5}
+.ca-cp .cp-p{gap:0 4px}.ca-cp .cp-mics{display:inline;color:var(--tx2);font-size:12px}
+.ca-cur{font-weight:600;color:var(--ac)}
+/* Field: a key beside the plot, in the plot's own hand */
+.fi-cp{position:absolute;left:656px;top:28px;width:140px;display:flex;flex-direction:column;gap:3px;font:10.5px var(--fnum)}
+.fi-cp .cp-h{color:var(--tx2);font-size:10px;margin-bottom:2px}
+.fi-cp .cp-p{flex-direction:column;align-items:flex-start;gap:2px}
+.fi-cp .cp-b{display:flex;align-items:center;gap:6px;color:var(--tx2);text-align:left;line-height:1.3}
+.fi-cp .cp-b b{font-weight:400;flex:1}.fi-cp .cp-b small{color:var(--tx2);font-size:10px;white-space:nowrap}
+.fi-cp .cp-b[aria-pressed="true"]{color:var(--tx)}
+.fi-cp .cp-mk{width:6px;height:6px;border:1px solid var(--tx2)}.fi-cp .cp-b[aria-pressed="true"] .cp-mk{background:var(--ac);border-color:var(--ac)}
+.fi-cp .cp-mics{gap:3px;padding:1px 0 2px 12px}
+.fi-cp .cp-m{height:16px;padding:0 5px;border:1px solid rgba(255,255,255,.14);border-radius:2px;background:rgba(7,8,11,.6);color:var(--tx2);font-size:9.5px}
+.fi-cp .cp-m[aria-pressed="true"]{color:var(--ac);border-color:var(--ac)}
+/* Vitrine: glass pills under the name, the microphones inside the pill */
+.vi-cp{position:absolute;left:36px;top:232px;display:flex;flex-wrap:wrap;gap:8px;max-width:720px}
+.vi-cp .cp-p{flex-wrap:nowrap;height:32px;border-radius:999px;border:1px solid rgba(255,255,255,.16);background:rgba(18,19,22,.45);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);color:#EEF1F2;font-size:12px;padding:0 12px;gap:6px}
+.vi-cp .cp-p:has(.cp-mics){padding-right:4px}
+.vi-cp .cp-p[aria-current="true"]{border-color:rgba(143,211,200,.55)}
+.vi-cp .cp-b{display:inline-flex;align-items:center;gap:7px;height:100%;color:#C9D1D4}
+.vi-cp .cp-b[aria-pressed="true"]{color:#fff}.vi-cp .cp-b b{font-weight:500}.vi-cp .cp-b small{color:#9AA3A8;font-size:11px}
+.vi-cp .cp-mk{width:6px;height:6px;border-radius:3px;border:1px solid #C9D1D4}.vi-cp .cp-b[aria-pressed="true"] .cp-mk{background:var(--ac);border-color:var(--ac)}
+.vi-cp .cp-mics{gap:2px;border-left:1px solid rgba(255,255,255,.16);padding-left:4px;margin-left:2px;height:24px;flex-wrap:nowrap}
+.vi-cp .cp-m{height:24px;padding:0 9px;border-radius:999px;font-size:11px;color:#C9D1D4;white-space:nowrap}
+.vi-cp .cp-m[aria-pressed="true"]{background:rgba(255,255,255,.16);color:#fff}
+/* Signal: hollow cells in the pixel room, and blocks of type under it */
+.si-px{cursor:pointer}.si-px rect{transition:stroke-width .15s}.si-px:hover rect{stroke-width:2.5}
+.si-cp{flex:1;min-height:0;border-top:1px solid var(--tx);display:flex;flex-wrap:wrap;align-content:flex-start;gap:4px;padding:6px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;overflow:hidden}
+.si-cp .cp-p{gap:4px}
+.si-cp .cp-b{height:24px;border:1px solid var(--tx);padding:0 8px;display:inline-flex;align-items:center;gap:6px;background:var(--g);color:var(--tx);white-space:nowrap}
+.si-cp .cp-b[aria-pressed="true"]{background:var(--tx);color:var(--g)}
+.si-cp .cp-b small{font-size:10px;opacity:.7;margin-left:2px}
+.si-cp .cp-mk{width:7px;height:7px;border:1.5px solid var(--ac)}.si-cp .cp-b[aria-pressed="true"] .cp-mk{background:var(--wet);border-color:var(--wet)}
+.si-cp .cp-mics{gap:4px}
+.si-cp .cp-m{height:24px;border:1px solid var(--tx2);padding:0 7px;color:var(--tx2);background:var(--p);font-size:10px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
+.si-cp .cp-m[aria-pressed="true"]{background:var(--wet);color:#111;border-color:var(--tx)}
+.s-signal.stage .si-cp .cp-m[aria-pressed="true"]{background:var(--ac);color:#fff}
+/* Aperture: a line of light type under the name */
+.ap-cp{margin-top:8px;display:flex;flex-wrap:wrap;gap:4px 18px;font-size:14px;color:#D9D4C8;max-width:760px;text-shadow:0 2px 24px rgba(0,0,0,.7)}
+.ap-cp .cp-p{gap:0 6px}.ap-cp .cp-mics{display:inline;font-size:13px;color:#B5B0A6}
+.ap-cur{font-weight:500;color:var(--ac)}
+/* Contact: a strip of frames on the mount, one per recording, the chosen one marked */
+.co-cp{display:flex;flex-wrap:wrap;gap:4px 22px;padding-top:2px}
+.co-cp .cp-p{flex-direction:column;align-items:flex-start;gap:4px}
+.co-cp-l{font:11px var(--fnum);letter-spacing:.04em;color:var(--tx2)}
+.co-cp .cp-mics{gap:8px;align-items:flex-start}
+.co-cp .cp-b{display:flex;flex-direction:column;align-items:center;gap:3px;width:72px;color:var(--tx2);font:9.5px/1.2 var(--fnum);letter-spacing:.03em;text-align:center}
+.co-cp .cp-b svg{display:block;border:1px solid var(--ln);background:var(--r);transition:border-color .15s,box-shadow .15s}
+.co-cp .cp-b svg rect{fill:var(--p);stroke:var(--tx);stroke-width:1}.co-cp .cp-b svg line{stroke:var(--tx2);stroke-width:1}.co-cp .cp-b svg circle{fill:var(--ac)}
+.co-cp .cp-b:hover svg{border-color:var(--tx2)}
+.co-cp .cp-b[aria-pressed="true"]{color:var(--tx)}.co-cp .cp-b[aria-pressed="true"] svg{border-color:var(--ac);box-shadow:0 0 0 1px var(--ac)}
+.co-cp .cp-b small{font-size:9.5px}
+/* Strata: a stratum per position, the microphones' place a point on it */
+.st-cp{display:flex;flex-direction:column;gap:2px;margin-bottom:10px;text-shadow:0 1px 8px rgba(0,0,0,.7)}
+.st-cp .cp-p{flex-direction:column;align-items:stretch;gap:3px}
+.st-cp .cp-b{display:grid;grid-template-columns:auto 1fr 44px;align-items:center;gap:10px;height:26px;color:#C9CFC6;font-size:12px;text-align:left;width:100%}
+.st-cp .cp-b b{font-weight:400;white-space:nowrap}.st-cp .cp-b small{font:11px var(--fnum);color:#C9CFC6;text-align:right}
+.st-cp-ln{position:relative;height:1px;background:rgba(239,235,225,.35)}
+.st-cp .cp-mk{position:absolute;top:-4px;width:9px;height:9px;margin-left:-4px;border-radius:50%;border:1.5px solid #EFEBE1;background:var(--g)}
+.st-cp .cp-b[aria-pressed="true"]{color:var(--tx)}.st-cp .cp-b[aria-pressed="true"] .st-cp-ln{background:rgba(221,184,104,.6)}
+.st-cp .cp-b[aria-pressed="true"] .cp-mk{background:var(--ac);border-color:var(--ac)}
+.st-cp .cp-mics{gap:6px;padding-bottom:4px}
+.st-cp .cp-m{height:22px;padding:0 10px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:rgba(17,22,19,.5);color:#C9CFC6;font-size:11px}
+.st-cp .cp-m[aria-pressed="true"]{background:var(--ac);color:var(--onac);border-color:var(--ac)}
+/* Rotunda: rounds, the microphones as segments of the round */
+.rt-cp{display:flex;flex-wrap:wrap;gap:8px}
+.rt-cp .cp-p{flex-wrap:nowrap;height:32px;border-radius:999px;border:1px solid var(--ln);background:var(--p);padding:0 12px;gap:6px}
+.rt-cp .cp-p:has(.cp-mics){padding-right:4px}
+.rt-cp .cp-p[aria-current="true"]{border-color:var(--ac)}
+.rt-cp .cp-b{display:inline-flex;align-items:center;gap:7px;height:100%;font-size:12px;color:var(--tx2)}
+.rt-cp .cp-b[aria-pressed="true"]{color:var(--tx)}.rt-cp .cp-b b{font-weight:500}.rt-cp .cp-b small{font:11px var(--fnum);color:var(--tx2)}
+.rt-cp .cp-mk{width:7px;height:7px;border-radius:50%;border:1px solid var(--tx2)}.rt-cp .cp-b[aria-pressed="true"] .cp-mk{background:var(--ac);border-color:var(--ac)}
+.rt-cp .cp-mics{gap:2px;border-left:1px solid var(--ln);padding-left:4px;margin-left:2px;height:24px;flex-wrap:nowrap}
+.rt-cp .cp-m{height:24px;padding:0 9px;border-radius:999px;font-size:11px;color:var(--tx2);white-space:nowrap}
+.rt-cp .cp-m[aria-pressed="true"]{background:var(--ac);color:var(--onac)}
+/* Material: sample labels pinned to the photograph */
+.ma-cp{position:absolute;left:14px;top:12px;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.ma-cp .cp-p{flex-direction:column;align-items:flex-start;gap:4px}
+.ma-cp .cp-b{display:inline-flex;align-items:center;gap:7px;height:24px;padding:0 9px;border-radius:3px;background:rgba(0,0,0,.5);color:#fff;font:11px var(--fnum);letter-spacing:.06em;text-transform:uppercase}
+.ma-cp .cp-b b{font-weight:400}.ma-cp .cp-b small{opacity:.75;font-size:11px}
+.ma-cp .cp-b[aria-pressed="true"]{background:var(--ac);color:var(--onac)}
+.ma-cp .cp-mk{width:7px;height:7px;border-radius:1px;border:1px solid rgba(255,255,255,.7)}.ma-cp .cp-b[aria-pressed="true"] .cp-mk{background:currentColor;border-color:currentColor}
+.ma-cp .cp-mics{gap:4px;padding-left:14px}
+.ma-cp .cp-m{height:20px;padding:0 7px;border-radius:3px;background:rgba(0,0,0,.5);color:#fff;font:10px var(--fnum);letter-spacing:.04em;text-transform:uppercase}
+.ma-cp .cp-m[aria-pressed="true"]{background:var(--ac);color:var(--onac)}
+/* Folio: a column of entries beside the title, like a contents list */
+.fo-side{display:flex;flex-direction:column;align-items:flex-end;gap:12px;flex-shrink:0}
+.fo-cp{display:flex;flex-direction:column;align-items:flex-end;gap:3px;font-size:12px;color:#E5E1D8}
+.fo-cp .cp-p{flex-direction:column;align-items:flex-end;gap:2px}
+.fo-cp .cp-b{display:inline-flex;align-items:baseline;gap:6px;color:#E5E1D8;text-decoration:underline;text-underline-offset:3px;text-decoration-color:rgba(255,255,255,.35)}
+.fo-cp .cp-b b{font-weight:400}.fo-cp .cp-b small{font:11px var(--fnum);color:#C9C4B8}
+.fo-cp .cp-b[aria-pressed="true"]{color:#fff;text-decoration:underline 2px #fff;text-underline-offset:4px}.fo-cp .cp-b[aria-pressed="true"] b{font-weight:600}
+.fo-cp .cp-mics{gap:10px;font-size:11px}
+.fo-cp .cp-m{color:#C9C4B8;text-decoration:underline;text-underline-offset:3px;text-decoration-color:rgba(255,255,255,.3)}
+.fo-cp .cp-m[aria-pressed="true"]{color:#fff;text-decoration:none;font-weight:600}
+/* the stage view, shared: a chip per recording under the room */
+.stg-cp{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.stg-cp .cp-b{height:20px;padding:0 8px;border:1px solid var(--ln);border-radius:var(--rad);color:var(--tx2);font-size:11px;white-space:nowrap}
+.stg-cp .cp-b[aria-pressed="true"]{color:var(--ac);border-color:var(--ac)}

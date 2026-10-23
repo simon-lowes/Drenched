@@ -303,7 +303,7 @@ function snap(s){var o={sp:s.sp,bands:s.bands.slice()};for(var k in PID)if(k!=='
 function changeSpace(i){var old=snap(st),sp=SPACES[i],held=[];st.sp=i;st.bands=sp.bands.slice();st.pre=sp.pre;st.size=100;
  if(st.locks.decay){var f=decayOf(old.bands)/decayOf(sp.bands);st.bands=st.bands.map(function(b){return clamp(b*f,0.1,20);});held.push('Decay');}
  if(st.locks.pre){st.pre=old.pre;held.push('Pre-delay');}if(st.locks.mix)held.push('Mix');
- st.hint=null;st.note='<b>'+esc(sp.name)+'</b> loaded.'+(held.length?' Locked and held: '+held.join(', ')+'.':' Lock a value to hold it when you change space.')+(sp.credit?' Recording: '+esc(sp.credit)+', '+esc(sp.licence)+'.':'');}
+ st.hint=null;st.note='<b>'+esc(sp.name)+'</b> loaded.'+(held.length?' Locked and held: '+held.join(', ')+'.':' Lock a value to hold it when you change space.')+(sp.credit?' Recording: '+esc(sp.credit)+', '+esc(sp.licence)+'.':'');return held;}
 var drag=null,eqTap=null;
 live.addEventListener('pointerdown',function(e){var t=e.target;if(t.closest('input,button'))return;
  var kn=t.closest('[data-knob]'),lis=t.closest('[data-drag]'),dg=t.closest('svg[data-decay]'),en=t.closest('[data-eqn]');
@@ -350,6 +350,8 @@ live.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,Arrow
  if(e.key==='Enter'&&t.id==='lic-key'){e.preventDefault();licActivate();renderLive();return;}
  if(e.key==='Enter'&&t.matches('input[data-scn]')){e.preventDefault();t.blur();return;}
  if(t.matches('.sk')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.click();return;}
+ // a captured position marked on a drawing is an SVG button: Enter and Space press it
+ if(t.matches('svg [data-act="pos"]')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));return;}
  if(t.matches('[data-knob]')){var k=t.getAttribute('data-knob'),p=P[k];if(e.key==='Home')setParam(st,k,p.min);else if(e.key==='End')setParam(st,k,p.max);else if(keys[e.key])setParam(st,k,from01(k,to01(k,getV(st,k))+keys[e.key]*(e.shiftKey?0.002:0.02)));else return;e.preventDefault();schedule();}
  else if(t.matches('[data-eqn]')){var qi=+t.getAttribute('data-eqn'),fine=e.shiftKey,ek=e.key;st.eqCur=qi;
   if(ek==='ArrowLeft'||ek==='ArrowRight')eqSet(qi,'f',st[eqKey(qi,'f')]*Math.pow(2,(ek==='ArrowRight'?1:-1)/(fine?48:12)));
@@ -421,6 +423,9 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'liccopy':if(JUCE)JUCE.emitEvent('copyText',{text:st.licence.machine});st.licence.message='Computer code copied.';st.licence.error=false;break;
   case 'licpaste':if(JUCE)JUCE.emitEvent('pasteText',{target:v});break;
   case 'pick':st.browse=false;changeSpace(+v);break;
+  /* another captured position of the same room: the engine lets the old one ring out while
+     the new one takes the sound; standing still does nothing */
+  case 'pos':if(+v!==st.sp){var ps=SPACES[+v],held=changeSpace(+v);if(ps&&ps.position)st.note='<b>'+esc(ps.position)+(ps.atM!=null?', '+f1(ps.atM)+' m from the stage':'')+'.</b> '+esc(ps.mics)+(ps.mics?', ':'')+esc(ps.name)+'. '+(held.length?'Locked and held: '+held.join(', ')+'.':'The old position rings out while this one takes the sound.');}break;
   case 'prev':changeSpace((st.sp+SPACES.length-1)%SPACES.length);break;
   case 'next':changeSpace((st.sp+1)%SPACES.length);break;
   case 'skins':st.skins=!st.skins;break;
@@ -441,9 +446,25 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
 live.addEventListener('contextmenu',function(e){e.preventDefault();});
 
 /* ---- start ---- */
+/* Without the plugin (a browser preview) a few recorded spaces stand in for the library, as
+   the plugin would pass them from library/library.json: the rooms captured from more than
+   one place, so the positions can be seen. */
+var PREVIEW_CREDIT={credit:'Hyunkook Lee and Connor Millns, Applied Psychoacoustics Lab, University of Huddersfield: MAIR library (2017)',licence:'CC BY 4.0',source:'https://github.com/APL-Huddersfield/MAIR-Library-and-Renderer',kind:'hall',img:'hall',place:'Concert hall, University of Huddersfield',mat:'Size estimated from the recording',date:'MAIR library, 2017',no:'Hall 01',W:13.6,D:19,H:7.5,pre:0,room:'stpauls'};
+var PREVIEW_LIBRARY=[
+ Object.assign({id:'stpauls-ortf',name:'St Paul\u2019s Hall, ORTF',rec:'ORTF pair, 3.9 m from the stage, true stereo',bands:[2.11,2.48,2.53,2.35,2.16,1.88,1.35,0.72],position:'Stage front',mics:'ORTF pair',atM:3.9},PREVIEW_CREDIT),
+ Object.assign({id:'stpauls-spaced',name:'St Paul\u2019s Hall, Spaced omnis',rec:'Spaced omni pair, 3.9 m from the stage, true stereo',bands:[2.18,2.44,2.51,2.36,2.14,1.83,1.34,0.79],position:'Stage front',mics:'Spaced omnis',atM:3.9},PREVIEW_CREDIT),
+ Object.assign({id:'stpauls-decca',name:'St Paul\u2019s Hall, Decca tree',rec:'Decca tree, 3.9 m from the stage, true stereo',bands:[2.43,2.43,2.44,2.31,2.16,1.84,1.34,0.72],position:'Stage front',mics:'Decca tree',atM:3.9},PREVIEW_CREDIT),
+ Object.assign({id:'stpauls-back',name:'St Paul\u2019s Hall, Back of stage',rec:'Decca tree, sources at the back of the stage, true stereo',bands:[3.16,2.4,2.49,2.34,2.15,1.85,1.37,0.84],position:'Players at the back of the stage',mics:'Decca tree'},PREVIEW_CREDIT),
+ Object.assign({id:'stpauls-hall',name:'St Paul\u2019s Hall, In the hall',rec:'Rear-facing cardioids, 7 m from the stage',bands:[2.45,2.47,2.5,2.39,2.09,1.81,1.34,0.77],position:'In the hall',mics:'Rear-facing cardioids',atM:7},PREVIEW_CREDIT),
+ {id:'detmold-konzerthaus',name:'Detmold Konzerthaus, Front stalls',no:'Hall 04',rec:'Dummy head (binaural), front stalls, sources 4 m apart, true stereo',kind:'hall',img:'hall',place:'Concert hall, about 600 seats, Detmold University of Music',mat:'Size estimated from the recording',date:'Detmold SRIR database, 2020',credit:'Sebastia Vicenc Amengual Gari, Banu Sahin, Dusty Eddy and Malte Kob, Detmold University of Music: Detmold SRIR database (2020)',licence:'CC BY 4.0',source:'https://zenodo.org/records/4116247',bands:[2.07,1.8,1.6,1.59,1.6,1.51,1.3,0.87],W:15.4,D:21.6,H:8.5,pre:0,room:'detmold-konzerthaus',position:'Front stalls',mics:'Dummy head'},
+ {id:'detmold-konzerthaus-mid',name:'Detmold Konzerthaus, Mid hall',no:'Hall 04',rec:'Dummy head (binaural), middle of the hall, sources 8 m apart, true stereo',kind:'hall',img:'hall',place:'Concert hall, about 600 seats, Detmold University of Music',mat:'Size estimated from the recording',date:'Detmold SRIR database, 2020',credit:'Sebastia Vicenc Amengual Gari, Banu Sahin, Dusty Eddy and Malte Kob, Detmold University of Music: Detmold SRIR database (2020)',licence:'CC BY 4.0',source:'https://zenodo.org/records/4116247',bands:[1.86,1.78,1.57,1.57,1.58,1.45,1.26,0.84],W:12.3,D:17.3,H:6.8,pre:0,room:'detmold-konzerthaus',position:'Middle of the hall',mics:'Dummy head'},
+ {id:'wdr-large-ortf',name:'WDR Gro\u00dfer Sendesaal, ORTF',no:'Hall 07',rec:'ORTF pair (Schoeps MK4)',kind:'hall',img:'hall',place:'Broadcast concert hall (Klaus-von-Bismarck-Saal), WDR, Cologne',mat:'Size estimated from the recording',date:'WDR studios compilation, 2012',credit:'P. Stade, B. Bernsch\u00fctz and M. R\u00fchl, TH K\u00f6ln: WDR broadcast studios impulse response compilation (2012)',licence:'CC BY 4.0',source:'https://zenodo.org/records/3930833',bands:[1.31,1.64,1.69,1.76,1.87,1.86,1.45,0.92],W:24.4,D:34.2,H:13.4,pre:0,room:'wdr-large',position:'Main microphones',mics:'ORTF pair'},
+ {id:'wdr-large-ab',name:'WDR Gro\u00dfer Sendesaal, Spaced omnis',no:'Hall 07',rec:'Large AB pair of omnis (Schoeps MK2)',kind:'hall',img:'hall',place:'Broadcast concert hall (Klaus-von-Bismarck-Saal), WDR, Cologne',mat:'Size estimated from the recording',date:'WDR studios compilation, 2012',credit:'P. Stade, B. Bernsch\u00fctz and M. R\u00fchl, TH K\u00f6ln: WDR broadcast studios impulse response compilation (2012)',licence:'CC BY 4.0',source:'https://zenodo.org/records/3930833',bands:[1.39,1.61,1.7,1.78,1.86,1.84,1.46,1.0],W:19.1,D:26.7,H:10.5,pre:0,room:'wdr-large',position:'Main microphones',mics:'Spaced omnis'}
+];
 var init=null;
 try{var d=window.__JUCE__&&window.__JUCE__.initialisationData&&window.__JUCE__.initialisationData.drenched;if(d&&d.length)init=d[0];}catch(_){}
 if(init){setLibrary(init.library);Object.assign(st,{sp:0,bands:SPACES[0].bands.slice(),pre:SPACES[0].pre});applyFromHost(init);if(init.licence)Object.assign(st.licence,init.licence);st.bits=+init.bits||64;}
+else{setLibrary(PREVIEW_LIBRARY);Object.assign(st,{sp:0,bands:SPACES[0].bands.slice(),pre:SPACES[0].pre});}
 try{var hs=(location.hash||'').slice(1);if(SKINS.some(function(x){return x.id===hs;}))st.skin=hs;}catch(_){}
 Object.assign(lastSent,paramValues(st));Object.assign(lastUi,uiState(st));
 renderLive();
