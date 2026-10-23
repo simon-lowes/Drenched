@@ -116,7 +116,9 @@ function isOver(s,k){if(k==='decay'){var sp=spOf(s);return s.bands.some(function
 /* Distance in metres. The parameter runs 0 to 100 across the room; where the recording says
    how far from the stage it was made (atM), its natural value, 40, lands there, so the readout
    and the room drawings say where the microphones stood until Distance is moved. */
-function distRange(s){var sp=spOf(s),ss=s.size/100,D=sp.D*ss,lo=Math.min(1.5,D*0.15),hi=D*0.85;return {lo:lo,hi:hi,at:sp.atM!=null?clamp(sp.atM*ss,lo+0.1,hi-0.1):null};}
+function distRange(s){var sp=spOf(s),ss=s.size/100,D=sp.D*ss,lo=Math.min(1.5,D*0.15),hi=D*0.85;return {lo:lo,hi:hi,at:sp.atM!=null?clamp((stageDepth(sp)+sp.atM)*ss,lo+0.1,hi-0.1):null};}
+/* atM is measured from the front of the stage, which the plan and section draw this deep */
+function stageDepth(sp){return sp.kind==='hall'?6:sp.kind==='chapel'?4:0;}
 function distM(s){var r=distRange(s),d=s.dist;if(r.at==null)return lerp(r.lo,r.hi,d/100);return d<=40?lerp(r.lo,r.at,d/40):lerp(r.at,r.hi,(d-40)/60);}
 function distFromM(s,m){var r=distRange(s);if(r.at==null)return clamp((m-r.lo)/(r.hi-r.lo)*100,0,100);return clamp(m<=r.at?(m-r.lo)/(r.at-r.lo)*40:40+(m-r.at)/(r.hi-r.at)*60,0,100);}
 /* ---- captured positions: the recordings of one room, grouped by where they were made ---- */
@@ -142,7 +144,8 @@ function posLinks(s,CP,cls,cur){return CP.groups.map(function(g,k){var lab=esc(g
  return '<span class="cp-p" aria-current="'+g.cur+'">'+(g.cur?'<b class="'+cur+'" aria-current="true">'+lab+'</b>':posBtn(s,g,k,cls,lab))+(g.items.length>1?' <span class="cp-mics" role="group" aria-label="Microphones at '+esc(g.label.toLowerCase())+'">('+g.items.map(function(it){return it.cur?'<b class="'+cur+'" aria-current="true">'+esc(it.mics)+'</b>':'<button class="'+cls+'" data-act="pos" data-v="'+it.i+'" data-fid="pos-'+it.i+'" aria-pressed="false" aria-label="'+esc(it.mics)+' at '+esc(g.label.toLowerCase())+'">'+esc(it.mics)+'</button>';}).join(', ')+')</span>':'')+'</span>';}).join('');}
 /* where a position sits along the room, 0 at the stage edge, for the drawings; null when the
    recording does not say */
-function posFrac(s,g){if(g.atM==null)return null;var r=distRange(s);return clamp((g.atM*s.size/100-r.lo)/(r.hi-r.lo),0,1);}
+function posDepth(s,g){return (stageDepth(spOf(s))+g.atM)*s.size/100;}
+function posFrac(s,g){if(g.atM==null)return null;var r=distRange(s);return clamp((posDepth(s,g)-r.lo)/(r.hi-r.lo),0,1);}
 function eqp(el){var a=el/100*Math.PI/2;function d(x){return x<0.001?'\u2212\u221e':(20*Math.log10(x)).toFixed(1).replace('-','\u2212');}return {e:d(Math.cos(a)),t:d(Math.sin(a))};}
 function hzText(v){return v<1000?Math.round(v)+' Hz':(+(v/1000).toFixed(2))+' kHz';}
 function dbSigned(v){return (v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+' dB';}
@@ -271,7 +274,7 @@ function photoEl(s,w,h,extra){var z=1+(1-s.dist/100)*0.22,st2=w?'width:'+w+'px;h
 
 /* the captured positions on the drawing: a station mark where each recording was made, the
    current one ringed, labelled unless the drawing is small. at(metres) gives the point. */
-function planMarks(s,cp,at,lab){var CP=positionsOf(s);if(!CP)return '';var out='',d=0;CP.groups.forEach(function(g,k){if(g.atM==null)return;var p=at(g.atM*s.size/100),x=p[0].toFixed(1),y=p[1].toFixed(1);
+function planMarks(s,cp,at,lab){var CP=positionsOf(s);if(!CP)return '';var out='',d=0;CP.groups.forEach(function(g,k){if(g.atM==null)return;var p=at(posDepth(s,g)),x=p[0].toFixed(1),y=p[1].toFixed(1);
  out+='<g class="pl-pos'+(g.cur?' cur':'')+'" data-act="pos" data-v="'+posTarget(s,g)+'" data-fid="posg-'+k+'" tabindex="0" role="button" aria-pressed="'+g.cur+'" aria-label="'+esc(posAria(g))+'"><rect class="pl-hit" x="'+(p[0]-12).toFixed(1)+'" y="'+(p[1]-12).toFixed(1)+'" width="24" height="24"/><rect class="pl-st" x="-4.5" y="-4.5" width="9" height="9" transform="translate('+x+' '+y+') rotate(45)"/>'+(g.cur?'<rect class="pl-st2" x="-8.5" y="-8.5" width="17" height="17" transform="translate('+x+' '+y+') rotate(45)"/>':'')+
   (cp?'':'<text class="pl-t" '+lab(p,d++)+'>'+esc(g.label.toUpperCase())+'</text>')+'</g>';});return out;}
 /* plan drawing (Section) */
@@ -326,7 +329,7 @@ function pixelRoom(s,w,h){var sp=spOf(s),ss=s.size/100,cell=12,cols=Math.floor((
   if(fill)out+='<rect x="'+(x+1)+'" y="'+(y+1)+'" width="'+(cell-2)+'" height="'+(cell-2)+'" fill="'+fill+'"'+(c===lc&&r===lr?' stroke="var(--tx)" stroke-width="1.5"':'')+'/>';
   else out+='<rect x="'+(x+cell/2-1)+'" y="'+(y+cell/2-1)+'" width="2" height="2" fill="var(--ln)"/>';}
  /* the captured positions: hollow cells down the middle of the room, the current one doubled */
- var CP=positionsOf(s);if(CP)CP.groups.forEach(function(g){if(g.atM==null)return;var pc=c0+1+Math.round(0.5*(rw-3)),pr=r0+1+Math.round(clamp(g.atM*ss/D,0,1)*(rh-3)),px=ox+pc*cell,py=oy+pr*cell;
+ var CP=positionsOf(s);if(CP)CP.groups.forEach(function(g){if(g.atM==null)return;var pc=c0+1+Math.round(0.5*(rw-3)),pr=r0+1+Math.round(clamp(posDepth(s,g)/D,0,1)*(rh-3)),px=ox+pc*cell,py=oy+pr*cell;
   out+='<g class="si-px'+(g.cur?' cur':'')+'" data-act="pos" data-v="'+posTarget(s,g)+'"><title>'+esc(posAria(g))+'</title><rect x="'+(px-cell/2)+'" y="'+(py-cell/2)+'" width="'+(cell*2)+'" height="'+(cell*2)+'" fill="transparent"/><rect x="'+(px+1.5)+'" y="'+(py+1.5)+'" width="'+(cell-3)+'" height="'+(cell-3)+'" fill="none" stroke="var(--ac)" stroke-width="1.5"/>'+(g.cur?'<rect x="'+(px-2.5)+'" y="'+(py-2.5)+'" width="'+(cell+5)+'" height="'+(cell+5)+'" fill="none" stroke="var(--ac)" stroke-width="1.5"/>':'')+'</g>';});
  out+='<rect x="'+ox+'" y="'+(h-24)+'" width="10" height="10" fill="var(--ac)"/><text x="'+(ox+16)+'" y="'+(h-15)+'" font-size="10" font-family="var(--fnum)" fill="var(--tx2)" style="letter-spacing:.1em">SOURCE</text><rect x="'+(ox+88)+'" y="'+(h-24)+'" width="10" height="10" fill="var(--wet)" stroke="var(--tx)" stroke-width="1.5"/><text x="'+(ox+104)+'" y="'+(h-15)+'" font-size="10" font-family="var(--fnum)" fill="var(--tx2)" style="letter-spacing:.1em">LISTENER '+f1(distM(s))+' M</text>';
  if(CP)out+='<rect x="'+(ox+230)+'" y="'+(h-23)+'" width="8" height="8" fill="none" stroke="var(--ac)" stroke-width="1.5"/><text x="'+(ox+246)+'" y="'+(h-15)+'" font-size="10" font-family="var(--fnum)" fill="var(--tx2)" style="letter-spacing:.1em">CAPTURED</text>';
