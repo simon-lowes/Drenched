@@ -10,8 +10,9 @@ namespace drenched
 {
 
 /** Parameter ids. The interface (source/ui/js/app.js) uses the same strings, so a change here
-    is a change there too. The eight band decays are the decay-by-frequency graph; the rest are
-    the macros and the deep parameters behind "All parameters". */
+    is a change there too. The eight band decays are the decay-by-frequency graph (the left side's
+    while the sides are unlinked, with decayRight the right's); the rest are the macros and the
+    deep parameters behind "All parameters". */
 namespace ParamIDs
 {
     inline constexpr auto mix = "mix";
@@ -50,6 +51,14 @@ namespace ParamIDs
     inline constexpr std::array<const char*, 8> decayNames { "Decay 63 Hz",  "Decay 125 Hz", "Decay 250 Hz", "Decay 500 Hz",
                                                              "Decay 1 kHz",  "Decay 2 kHz",  "Decay 4 kHz",  "Decay 8 kHz" };
 
+    // The right-hand side's own decay curve, played while the two sides are unlinked.
+    inline constexpr auto decayLink = "decayLink";
+    inline constexpr std::array<const char*, 8> decayRight { "decayR63", "decayR125", "decayR250", "decayR500",
+                                                             "decayR1k", "decayR2k",  "decayR4k",  "decayR8k" };
+    inline constexpr std::array<const char*, 8> decayRightNames { "Right decay 63 Hz", "Right decay 125 Hz", "Right decay 250 Hz",
+                                                                  "Right decay 500 Hz", "Right decay 1 kHz", "Right decay 2 kHz",
+                                                                  "Right decay 4 kHz", "Right decay 8 kHz" };
+
     // The wet EQ: a low shelf, four bells and a high shelf. The shelves have no Q.
     inline constexpr std::array<const char*, 6> eqFrequency { "eq1Freq", "eq2Freq", "eq3Freq", "eq4Freq", "eq5Freq", "eq6Freq" };
     inline constexpr std::array<const char*, 6> eqGain { "eq1Gain", "eq2Gain", "eq3Gain", "eq4Gain", "eq5Gain", "eq6Gain" };
@@ -57,7 +66,7 @@ namespace ParamIDs
     inline constexpr std::array<const char*, 6> eqNames { "EQ low", "EQ 2", "EQ 3", "EQ 4", "EQ 5", "EQ high" };
 
     /** Every id, in a fixed order, for code that keeps per-parameter state. */
-    inline constexpr std::array<const char*, 54> ordered { mix, output, predelay, size, brightness, earlyLate, distance, freeze,
+    inline constexpr std::array<const char*, 63> ordered { mix, output, predelay, size, brightness, earlyLate, distance, freeze,
                                                            predelaySync, crossover, wetLowCut, wetHighCut, width, ducking, monoBelow,
                                                            decay[0], decay[1], decay[2], decay[3], decay[4], decay[5], decay[6], decay[7],
                                                            living, movement, movementRate, reverse, gate, attack, directLevel, directDelay,
@@ -65,7 +74,9 @@ namespace ParamIDs
                                                            eqFrequency[0], eqGain[0],
                                                            eqFrequency[1], eqGain[1], eqQ[0], eqFrequency[2], eqGain[2], eqQ[1],
                                                            eqFrequency[3], eqGain[3], eqQ[2], eqFrequency[4], eqGain[4], eqQ[3],
-                                                           eqFrequency[5], eqGain[5] };
+                                                           eqFrequency[5], eqGain[5], decayLink,
+                                                           decayRight[0], decayRight[1], decayRight[2], decayRight[3],
+                                                           decayRight[4], decayRight[5], decayRight[6], decayRight[7] };
 
     /** The same, as strings. */
     inline const juce::StringArray& all()
@@ -279,6 +290,14 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
             layout.add (std::make_unique<Float> (ParameterID { ParamIDs::eqQ[band - 1], 1 }, name + " Q",
                                                  logRange (WetEqualiser::minQ, WetEqualiser::maxQ, 0.01f), flat.q));
     }
+
+    // One decay curve for both sides unless unlinked (linked is how every earlier
+    // version played); unlinked, the decays above are the left side's and these the right's.
+    layout.add (std::make_unique<Bool> (ParameterID { ParamIDs::decayLink, 1 }, "Decay linked", true));
+
+    for (size_t band = 0; band < ParamIDs::decayRight.size(); ++band)
+        layout.add (std::make_unique<Float> (ParameterID { ParamIDs::decayRight[band], 1 }, ParamIDs::decayRightNames[band],
+                                             logRange (0.1f, 20.0f, 0.01f), defaultDecay[band], seconds));
 
     return layout;
 }

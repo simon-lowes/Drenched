@@ -193,3 +193,59 @@ TEST_CASE ("Moving the source across the stage moves its direct sound and early 
     for (const auto& path : atWall.paths)
         CHECK (std::all_of (path.begin(), path.end(), [] (float v) { return std::isfinite (v); }));
 }
+
+TEST_CASE ("Left and right outputs decay at their own curves", "[irsynth][channels]")
+{
+    auto request = requestFor (0);
+    const auto linked = synthesiseImpulseResponse (request);
+
+    // The same curve given for the right plays exactly as one linked curve.
+    request.rightDecaySeconds = request.decaySeconds;
+    const auto same = synthesiseImpulseResponse (request);
+
+    for (std::size_t p = 0; p < 4; ++p)
+        REQUIRE (same.paths[p] == linked.paths[p]);
+
+    // A right side half as long, a left side unchanged.
+    for (auto& d : request.rightDecaySeconds)
+        d *= 0.5f;
+
+    const auto split = synthesiseImpulseResponse (request);
+
+    for (std::size_t band : { 2u, 4u, 6u })
+    {
+        const auto f = decayBandCentres[band];
+        const auto wantedLeft = request.decaySeconds[band], wantedRight = request.rightDecaySeconds[band];
+
+        for (const auto p : { ImpulseResponseSet::leftToLeft, ImpulseResponseSet::rightToLeft })
+        {
+            const auto rt = measureRt60 (split.paths[p], request.sampleRate, f);
+            INFO (f << " Hz, left output path " << p << ": " << rt << " s, wanted " << wantedLeft << " s");
+            CHECK (std::abs (rt - wantedLeft) <= 0.2 * wantedLeft);
+        }
+
+        for (const auto p : { ImpulseResponseSet::leftToRight, ImpulseResponseSet::rightToRight })
+        {
+            const auto rt = measureRt60 (split.paths[p], request.sampleRate, f);
+            INFO (f << " Hz, right output path " << p << ": " << rt << " s, wanted " << wantedRight << " s");
+            CHECK (std::abs (rt - wantedRight) <= 0.2 * wantedRight);
+        }
+    }
+}
+
+TEST_CASE ("A centred output decays at the mean rate of the two sides", "[irsynth][channels]")
+{
+    auto request = requestFor (0);
+    request.decaySeconds.fill (2.0f);
+    request.rightDecaySeconds.fill (1.0f);
+
+    // 30 dB/s on the left and 60 dB/s on the right meet at 45 dB/s: 1.33 s.
+    const auto centre = decayFor (request, 0.5);
+    CHECK (std::abs (centre[4] - 4.0 / 3.0) < 1.0e-6);
+    CHECK (decayFor (request, 0.0)[4] == 2.0);
+    CHECK (decayFor (request, 1.0)[4] == 1.0);
+
+    // Without a right-hand curve every output plays the one curve.
+    request.rightDecaySeconds = {};
+    CHECK (decayFor (request, 1.0)[4] == 2.0);
+}

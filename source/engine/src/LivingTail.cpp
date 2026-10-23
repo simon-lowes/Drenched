@@ -541,10 +541,8 @@ LivingTailDesign designLivingTail (const ImpulseResponseRequest& request, const 
         d.delays[i] = previous = length;
     }
 
-    std::array<double, 8> rt {};
-
-    for (std::size_t b = 0; b < 8; ++b)
-        rt[b] = std::clamp (static_cast<double> (request.decaySeconds[b]), 0.05, 20.0);
+    // One network feeds both sides, so it decays at the mean of their rates.
+    const auto rt = decayFor (request, 0.5);
 
     d.releaseSeconds = static_cast<float> (std::clamp (0.5 * (rt[3] + rt[4]), 0.3, 10.0));
 

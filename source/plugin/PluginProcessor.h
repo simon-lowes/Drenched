@@ -249,7 +249,8 @@ private:
         std::atomic<float>* sourceX = nullptr;
         std::atomic<float>* lowCpu = nullptr;
         std::atomic<float>* scene = nullptr;
-        std::array<std::atomic<float>*, 8> decay {};
+        std::atomic<float>* decayLink = nullptr;
+        std::array<std::atomic<float>*, 8> decay {}, decayRight {};
         std::array<std::atomic<float>*, 6> eqFrequency {}, eqGain {};
         std::array<std::atomic<float>*, 4> eqQ {};
     } params;

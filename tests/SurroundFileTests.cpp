@@ -9,6 +9,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <cmath>
+#include <utility>
 #include <vector>
 
 using namespace drenched;
@@ -333,5 +334,49 @@ TEST_CASE ("Editing the decay reshapes every channel of a surround recording", "
         const auto rt = testing::measureRt60 (channels[k], rate, 1000.0);
         INFO ("speaker " << k << ": " << rt << " s, asked " << request.decaySeconds[4] << " s");
         CHECK (std::abs (rt / request.decaySeconds[4] - 1.0) < 0.15);
+    }
+}
+
+TEST_CASE ("A surround recording's left, right and centre channels take their side's decay", "[surround][builder][channels]")
+{
+    const auto layout = layouts::fivePointOne();
+    const auto recorded = prepareRecordedResponse (surroundFile (layout), rate, "5.1 room", layout);
+
+    ConvolutionReverb reverb;
+    reverb.prepare (rate, layout, layout);
+    KernelBuilder builder (reverb);
+    auto request = requestFor (recorded, layout);
+    request.rightDecaySeconds = request.decaySeconds;
+
+    for (auto& d : request.decaySeconds)
+        d *= 0.5f;
+
+    builder.buildNow (request);
+
+    std::vector<std::vector<float>> channels (layout.size(), std::vector<float> (static_cast<std::size_t> (0.8 * rate), 0.0f));
+    channels[0][0] = 1.0f;
+    ReverbControls c;
+    c.mix = 1.0f;
+
+    for (std::size_t pos = 0; pos < channels[0].size(); pos += 256)
+    {
+        std::vector<float*> block;
+
+        for (auto& ch : channels)
+            block.push_back (ch.data() + pos);
+
+        reverb.process (block.data(), block.size(), std::min<std::size_t> (256, channels[0].size() - pos), c);
+    }
+
+    const auto onLeft = static_cast<double> (request.decaySeconds[4]);
+    const auto onRight = static_cast<double> (request.rightDecaySeconds[4]);
+    const auto centred = 2.0 / (1.0 / onLeft + 1.0 / onRight);
+
+    for (const auto& [k, wanted] : { std::pair { 0u, onLeft }, std::pair { 4u, onLeft }, std::pair { 1u, onRight },
+                                     std::pair { 5u, onRight }, std::pair { 2u, centred } })
+    {
+        const auto rt = testing::measureRt60 (channels[k], rate, 1000.0);
+        INFO ("speaker " << k << ": " << rt << " s, wanted " << wanted << " s");
+        CHECK (std::abs (rt / wanted - 1.0) < 0.15);
     }
 }

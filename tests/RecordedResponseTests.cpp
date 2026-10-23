@@ -247,6 +247,31 @@ TEST_CASE ("Editing the decay reshapes a loaded response band by band", "[record
     CHECK (std::abs (totalEnergy (out) - 1.0) < 1.0e-3);
 }
 
+TEST_CASE ("A loaded response's left and right outputs take their own decay", "[recorded][channels]")
+{
+    const auto recorded = prepareRecordedResponse (fileOf (synthesiseImpulseResponse (requestFor (0))), 48000.0, "hall");
+    auto request = requestForRecorded (recorded, 48000.0);
+    request.rightDecaySeconds = request.decaySeconds;
+
+    for (auto& d : request.rightDecaySeconds)
+        d *= 0.6f;
+
+    const auto out = renderImpulseResponse (request);
+    using P = ImpulseResponseSet;
+    const auto left = measureDecay ({ out.paths[P::leftToLeft], out.paths[P::rightToLeft], out.paths[P::leftToLeft], out.paths[P::rightToLeft] }, 48000.0);
+    const auto right = measureDecay ({ out.paths[P::leftToRight], out.paths[P::rightToRight], out.paths[P::leftToRight], out.paths[P::rightToRight] }, 48000.0);
+
+    for (std::size_t b = 1; b < 8; ++b)
+    {
+        const auto wantedLeft = static_cast<double> (request.decaySeconds[b]);
+        const auto wantedRight = static_cast<double> (request.rightDecaySeconds[b]);
+        INFO ("band " << decayBandCentres[b] << " Hz: left " << left[b] << " s (wanted " << wantedLeft << "), right "
+                      << right[b] << " s (wanted " << wantedRight << ")");
+        CHECK (std::abs (left[b] - wantedLeft) / wantedLeft < 0.15);
+        CHECK (std::abs (right[b] - wantedRight) / wantedRight < 0.15);
+    }
+}
+
 TEST_CASE ("Early/late balance works on a loaded response", "[recorded]")
 {
     const auto recorded = prepareRecordedResponse (fileOf (synthesiseImpulseResponse (requestFor (0))), 48000.0, "hall");
