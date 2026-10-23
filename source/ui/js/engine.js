@@ -347,7 +347,64 @@ function licChip(s){var L=s.licence;if(!L||L.state==='licensed')return '';
 function dbText(v){return v<=-60?'\u2212\u221e':v.toFixed(1).replace('-','\u2212');}
 function meterPct(v){return clamp(1+v/60,0,1)*100;}
 function meters(){var i=Math.max(st.inL,st.inR),o=Math.max(st.outL,st.outR);return '<div class="mm">In<span class="bar"><i data-m="in" style="width:'+meterPct(i).toFixed(0)+'%"></i></span><em data-mt="in">'+dbText(i)+'</em></div><div class="mm">Out<span class="bar"><i data-m="out" style="width:'+meterPct(o).toFixed(0)+'%"></i></span><em data-mt="out">'+dbText(o)+'</em></div>';}
-function menuHTML(s){return '<div class="menu" role="menu"><div class="mh"><span>'+(LIBRARY.length?'Recorded':'Spaces')+'</span><span>RT60, volume</span></div>'+SPACES.map(function(sp,i){return (LIBRARY.length&&i===LIBRARY.length?'<div class="mh"><span>Modelled</span></div>':'')+'<button role="menuitem" data-act="pick" data-v="'+i+'" aria-current="'+(i===s.sp)+'"><span>'+esc(sp.name)+'</span><small>'+f1(decayOf(sp.bands))+' s, '+vol(sp)+'</small></button>';}).join('')+'<button role="menuitem" class="mload" data-act="loadir"><span>Load your own IR\u2026</span><small>WAV, AIFF, FLAC</small></button><button role="menuitem" class="mcap" data-act="capture"><span>Capture a space\u2026</span><small>Sweep or clap, and record</small></button><button role="menuitem" class="mspk" data-act="speakers"><span>Reverb speakers\u2026</span><small>Level and delay each</small></button><button role="menuitem" class="meq" data-act="eq"><span>Wet EQ\u2026</span><small>'+(eqFlat(s)?'Six bands, flat':eqUsed(s)+(eqUsed(s)===1?' band':' bands')+' in use')+'</small></button><button role="menuitem" class="mwf" data-act="wf"><span>Waterfall\u2026</span><small>Decay and live spectrum</small></button><button role="menuitem" class="mscn" data-act="scenes"><span>Scenes\u2026</span><small>'+(s.scenes&&s.scenes.length?s.scenes.length+' stored':'For each shot')+'</small></button>'+(LIBRARY.length?'<button role="menuitem" class="mcred" data-act="credits"><span>Recording credits\u2026</span><small>'+LIBRARY.length+' recorded</small></button>':'')+(s.licence&&s.licence.state==='beta'?'':'<button role="menuitem" class="mlic" data-act="licence"><span>Licence\u2026</span><small>'+(s.licence&&s.licence.state==='licensed'?'Activated':s.licence&&s.licence.state==='ended'?'Trial ended':'Trial')+'</small></button>')+'</div>';}
+/* ---- the space browser: search, kinds, Similar, and the tools in a strip of their own ---- */
+/* The kinds the browser filters by. A recorded space goes under its own kind, the modelled
+   ones and a loaded impulse response get a group each, so every space is in exactly one and
+   the counts add up. */
+var BRW_KINDS=[['all','All'],['hall','Halls'],['chapel','Churches'],['room','Rooms'],['modelled','Modelled'],['user','Your IR']];
+function brwKind(sp){return sp.kind==='user'?'user':sp.recorded?(sp.kind==='garage'?'room':sp.kind):'modelled';}
+/* words a search finds a space by, beyond what its row says */
+var BRW_WORDS={hall:'hall',chapel:'church chapel cathedral',garage:'room garage industrial',room:'room',user:'your own impulse response file'};
+function brwText(sp){return (sp.name+' '+sp.place+' '+sp.mat+' '+sp.rec+' '+sp.date+' '+sp.no+' '+(BRW_WORDS[sp.kind]||'')+' '+(sp.recorded?'recorded':sp.kind==='user'?'':'modelled')).toLowerCase();}
+function brwMatch(sp,q){var t=brwText(sp),w=q.toLowerCase().split(/\s+/);for(var i=0;i<w.length;i++)if(w[i]&&t.indexOf(w[i])<0)return false;return true;}
+/* How far apart two spaces sound, for the Similar ordering. Each octave band's decay is
+   compared on a log scale, so 1 s against 2 s counts as much as 4 s against 8 s, and the mid
+   bands from 250 Hz to 2 kHz count double because they carry most of a reverb's character; a
+   band at the 20 s ceiling is one the measurement could not resolve, so it is left out. Then
+   the volume, also on a log scale but at a low weight (the size shows in the echo density and
+   the sense of distance, far less than the decay does), and the spectral tilt, 4 and 8 kHz
+   against 500 Hz and 1 kHz, so a dark room and a bright one of the same length stay apart. */
+var SIM_W=[1,1,2,2,2,2,1,1],SIM_VOL=0.05,SIM_TILT=0.35;
+function tiltOf(b){return Math.log((b[6]+b[7])/(b[3]+b[4]));}
+function cubic(sp){return sp.W*sp.D*sp.H;}
+function spaceDistance(a,b){var d=0,w=0;for(var i=0;i<8;i++){if(a.bands[i]>=20||b.bands[i]>=20)continue;var x=Math.log(a.bands[i]/b.bands[i]);d+=SIM_W[i]*x*x;w+=SIM_W[i];}
+ var v=Math.log(cubic(a)/cubic(b)),t=tiltOf(a.bands)-tiltOf(b.bands);return Math.sqrt((w?d/w:0)+SIM_VOL*v*v+SIM_TILT*t*t);}
+/* a few plain words on how b differs from a: length first, then tone, then size */
+function similarWhy(a,b){var out=[],r=Math.log(decayOf(b.bands)/decayOf(a.bands)),t=tiltOf(b.bands)-tiltOf(a.bands),v=Math.log(cubic(b)/cubic(a)),ar=Math.abs(r),at=Math.abs(t),av=Math.abs(v);
+ if(ar>=0.08)out.push((ar<0.3?'a little ':ar<0.8?'':'much ')+(r>0?'longer':'shorter'));
+ if(at>=0.12)out.push((at<0.4?'a little ':'')+(t<0?'darker':'brighter'));
+ if(av>=0.5)out.push((av<1.5?'':'much ')+(v>0?'bigger':'smaller'));
+ var s=out.length?out.join(', '):'much the same';return s.charAt(0).toUpperCase()+s.slice(1);}
+/* the rows the browser shows: the search and the kind applied, in library order, or by
+   distance from the reference space when Similar is on, the reference itself left out */
+function browseResults(s){var q=(s.brwQ||'').trim(),kind=s.brwKind||'all',ref=s.brwSim!=null&&SPACES[s.brwSim]?SPACES[s.brwSim]:null,rows=[],counts={};
+ SPACES.forEach(function(sp,i){if(ref&&i===s.brwSim)return;if(q&&!brwMatch(sp,q))return;rows.push({i:i,sp:sp,k:brwKind(sp),d:ref?spaceDistance(ref,sp):0});});
+ if(ref)rows.sort(function(a,b){return a.d-b.d;});
+ rows.forEach(function(r){counts[r.k]=(counts[r.k]||0)+1;});counts.all=rows.length;
+ return {rows:kind==='all'?rows:rows.filter(function(r){return r.k===kind;}),counts:counts,ref:ref};}
+/* decay by band at a glance: eight bars on a log scale from 0.25 s to 16 s, so a dark room
+   slopes down to the right and a bright one stays level */
+function sparkSVG(b){var out='<svg class="brw-spk" width="47" height="22" viewBox="0 0 47 22" aria-hidden="true">';for(var i=0;i<8;i++){var h=Math.max(1.5,clamp(Math.log(b[i]/0.25)/Math.log(64),0,1)*22);out+='<rect x="'+(i*6)+'" y="'+(22-h).toFixed(1)+'" width="5" height="'+h.toFixed(1)+'"/>';}return out+'</svg>';}
+function browserHTML(s){var R=browseResults(s),n=R.rows.length,cur=clamp(s.brwCur||0,0,Math.max(0,n-1)),q=s.brwQ||'',user=SPACES.length>USER;
+ var chips=BRW_KINDS.map(function(k){var c=R.counts[k[0]]||0;if(k[0]==='user'&&!user)return '';return '<button data-act="brwkind" data-v="'+k[0]+'" aria-pressed="'+((s.brwKind||'all')===k[0])+'">'+k[1]+'<em>'+c+'</em></button>';}).join('');
+ var rows=R.rows.map(function(r,j){var x=r.sp,on=r.i===s.sp,key=j===cur;
+  return '<div class="brw-row'+(on?' on':'')+(key?' key':'')+'"><button class="brw-pick" role="option" id="brw-r'+j+'" aria-selected="'+key+'" aria-current="'+on+'" data-act="pick" data-v="'+r.i+'"><span class="brw-ph"><i class="ph-'+x.img+'"></i></span>'+
+   '<span class="brw-nm"><b>'+esc(x.name)+'</b><small>'+esc(x.place)+'</small></span>'+(R.ref?'<span class="brw-why">'+similarWhy(R.ref,x)+'</span>':'')+
+   '<span class="brw-rt">'+f1(decayOf(x.bands))+' s</span><span class="brw-vol">'+vol(x)+'</span>'+sparkSVG(x.bands)+'</button>'+
+   '<button class="brw-sim" data-act="brwsim" data-v="'+r.i+'" tabindex="-1" aria-label="Spaces that sound like '+esc(x.name)+'" title="Spaces that sound like this one">\u2248</button></div>';}).join('');
+ if(!n)rows='<div class="brw-empty">'+(q?'Nothing matches \u201c'+esc(q)+'\u201d. Try a place, a kind such as church, or a microphone such as ORTF.':'Nothing of this kind'+(R.ref?' sounds like '+esc(R.ref.name)+'.':' is here.'))+'<br><button data-act="brwclear">Show every space</button></div>';
+ var simb=R.ref?'<button class="brw-simb" data-act="brwsim" data-v="off" aria-pressed="true" title="Back to the whole list">Sounding like '+esc(R.ref.name)+'</button>'
+  :'<button class="brw-simb" data-act="brwsim" data-v="'+s.sp+'" aria-pressed="false" title="Order the list by how close each space sounds to '+esc(spOf(s).name)+'">Similar to this space</button>';
+ var tool=function(act,cls,l,sm){return '<button data-act="'+act+'" class="'+cls+'"><b>'+l+'</b><small>'+sm+'</small></button>';};
+ var tools=tool('loadir','mload','Load your own IR\u2026','WAV, AIFF, FLAC')+tool('capture','mcap','Capture a space\u2026','Sweep or clap, and record')+tool('speakers','mspk','Reverb speakers\u2026','Level and delay each')+
+  tool('eq','meq','Wet EQ\u2026',eqFlat(s)?'Six bands, flat':eqUsed(s)+(eqUsed(s)===1?' band':' bands')+' in use')+tool('wf','mwf','Waterfall\u2026','Decay and live spectrum')+tool('scenes','mscn','Scenes\u2026',s.scenes&&s.scenes.length?s.scenes.length+' stored':'For each shot')+
+  (LIBRARY.length?tool('credits','mcred','Recording credits\u2026',LIBRARY.length+' recorded'):'')+(s.licence&&s.licence.state==='beta'?'':tool('licence','mlic','Licence\u2026',s.licence&&s.licence.state==='licensed'?'Activated':s.licence&&s.licence.state==='ended'?'Trial ended':'Trial'));
+ return '<div class="cap brw'+(R.ref?' sim':'')+'" role="dialog" aria-modal="true" aria-labelledby="brw-h"><div class="cbox"><div class="chd"><h2 id="brw-h">Spaces</h2><span class="brw-n">'+SPACES.length+' to choose from. Type to search, the arrow keys move, Enter picks, and Shift with Enter lists the ones that sound like the highlighted space.</span><button class="cx" data-act="browse" aria-label="Close">Close</button></div>'+
+  '<div class="brw-top"><input id="brw-q" data-fid="brw-q" type="text" value="'+esc(q)+'" placeholder="Search by name, place, kind or microphone" autocomplete="off" spellcheck="false" role="combobox" aria-label="Search the spaces" aria-autocomplete="list" aria-expanded="true" aria-controls="brw-list"'+(n?' aria-activedescendant="brw-r'+cur+'"':'')+'>'+simb+'</div>'+
+  '<div class="brw-kinds" role="group" aria-label="Kind">'+chips+'</div>'+
+  '<div class="brw-hd" aria-hidden="true"><span>'+(R.ref?'Closest first':'Space')+'</span>'+(R.ref?'<span>Next to '+esc(R.ref.name)+'</span>':'')+'<span>RT60</span><span>Volume</span><span>By band</span></div>'+
+  '<div class="brw-list" id="brw-list" role="listbox" aria-label="Spaces">'+rows+'</div>'+
+  '<div class="brw-tools">'+tools+'</div></div></div>';}
 function advRows(s){
  var deepRow=function(k){if(TOGGLES.indexOf(k)>=0)return '<div class="row"><span>'+P[k].l+'</span><button class="tg" data-act="toggle" data-k="'+k+'" aria-pressed="'+(s[k]>=0.5)+'">'+fmt(s,k)+'</button></div>';return '<div class="row"><span>'+P[k].l+'</span>'+roEl(s,k)+'</div>';};
  return '<div class="ph"><span class="lbl">All parameters</span><span class="ph-r"><button data-act="skins" aria-expanded="'+s.skins+'">Look: '+esc(skinOf(s.skin).name)+'</button><button data-act="adv" aria-label="Close all parameters">Close</button></span></div>'+MAIN.map(function(k){return '<div class="row"><span>'+P[k].l+'</span>'+roEl(s,k)+'</div>';}).join('')+DEEP.map(deepRow).join('')+'<div class="row"><span>Early pattern</span><em>As captured</em></div>';}
@@ -482,4 +539,4 @@ var COMPOSE={
    '<div class="fo-foot"><span class="no">DRENCHED, '+esc(sp.no.toUpperCase())+'</span>'+hintText(s)+meters()+'</div>';}
 
 };
-function screenHTML(id,s){return '<div class="sys s-'+id+' screen'+(s.mode==='stage'?' stage':'')+'" data-sys="'+id+'"'+(STYLE[id]?' style="'+STYLE[id](s)+'"':'')+'>'+(s.mode==='stage'?stageHTML(id,s):COMPOSE[id](s))+(s.browse?menuHTML(s):'')+'</div>';}
+function screenHTML(id,s){return '<div class="sys s-'+id+' screen'+(s.mode==='stage'?' stage':'')+'" data-sys="'+id+'"'+(STYLE[id]?' style="'+STYLE[id](s)+'"':'')+'>'+(s.mode==='stage'?stageHTML(id,s):COMPOSE[id](s))+(s.browse?browserHTML(s):'')+'</div>';}
