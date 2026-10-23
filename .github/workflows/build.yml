@@ -190,6 +190,22 @@ jobs:
           path: dist
           if-no-files-found: warn
 
+      # The beta installer: one .pkg with each format as a component (not signed yet).
+      - name: Build installer (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          VERSION=$(sed -n 's/^project(Drenched VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          bash packaging/macos/build-pkg.sh dist "$VERSION" "Drenched-$VERSION-macOS.pkg"
+
+      - name: Upload installer (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Drenched-macOS-Installer
+          path: Drenched-*-macOS.pkg
+          if-no-files-found: error
+
   linux-i686:
     name: Linux (i686, 32-bit)
     runs-on: ubuntu-24.04
@@ -257,3 +273,34 @@ jobs:
         with:
           name: Drenched-Windows
           path: dist
+
+  windows-installer:
+    # The beta installer for Windows, from the merged download: both builds on 64-bit
+    # Windows (for 64-bit hosts and 32-bit hosts or bridges), the 32-bit build on 32-bit Windows.
+    name: Windows installer
+    needs: windows-bundle
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Drenched-Windows
+          path: dist
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path CMakeLists.txt -Pattern '^project\(Drenched VERSION ([0-9.]+)').Matches[0].Groups[1].Value
+          Copy-Item NOTICE.md "dist/Third-party notices.txt"
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          & $iscc "/DAppVersion=$version" "/DSource=$PWD\dist" "/O$PWD\installer" packaging\windows\Drenched.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem installer
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Drenched-Windows-Installer
+          path: installer/*.exe
+          if-no-files-found: error
