@@ -44,10 +44,20 @@ What the script does to each kind of source:
 - OpenAIR B-format files (W, X, Y, Z): decoded to a coincident pair of virtual
   supercardioids 110 degrees apart. W is matched to X, Y and Z from the diffuse
   part of each file's tail, since the captures differ in how W is scaled.
+- OpenAIR B-format pairs: Genesis 6 Studio (the ride's and the hi-hat's
+  positions in the drum kit) and York Guildhall (sources 2 and 3, either side
+  of the council pews, heard from receiver 1 in the public pews) are each two
+  B-format responses, decoded as above, with the source to the microphone's
+  left and to its right (from the direct sound's direction), made into one
+  true-stereo file.
+- OpenAIR open-air and underground spaces: where a site has a response made
+  with one loudspeaker and one made with an array of two or four loudspeakers
+  pointing different ways, the array's is used.
 - AIR: two dummy-head responses from one position, with the head turned so the
   source is 45 degrees to its left and to its right, make one true-stereo file.
   The 16-bit copies end in digital silence, so the last 30 % of the kept tail is
-  faded out.
+  faded out. The office and lecture room are one dummy-head response each,
+  with the source straight ahead, faded the same way.
 - Detmold: dummy-head responses. The Konzerthaus spaces (set C, measured with
   the hall's enhancement system off) pair two sources of the loudspeaker
   orchestra into true stereo: S2 and S3 (4 m apart) for the front stalls (seat
@@ -66,7 +76,10 @@ What the script does to each kind of source:
   stage, used as recorded.
 - Files above 48 kHz are resampled to 48 kHz (soxr). Every space except St
   Paul's Hall is cut a quarter of a second after its tail sinks into the noise
-  floor (or 100 dB below its loudest). Every file is peak-normalised to -1 dBFS.
+  floor (or 100 dB below its loudest). Elveden Hall's Smoking Room and Gill
+  Heads Mine, whose noise floors wander too much for that test, are cut at 1.5
+  and 2.5 s, where their tails have reached the floor. Every file is
+  peak-normalised to -1 dBFS.
 
 ## Credits
 
@@ -83,11 +96,23 @@ What the script does to each kind of source:
 | Heslington Church, York | Marc Ciufo Green, Michael Lovedee-Turner and Yuchen Gong, AudioLab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=508). Changes: B-format decoded to stereo, resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Aula Carolina, Aachen | Marco Jeub, Magnus Schäfer, Hauke Krüger, Christoph M. Nelke, Christophe Beaugeant and Peter Vary, Institute of Communication Systems, RWTH Aachen University: [AIR database](https://www.iks.rwth-aachen.de/en/research/tools-downloads/databases/aachen-impulse-response-database/) (Jeub, Schäfer and Vary, "A Binaural Room Impulse Response Database for the Evaluation of Dereverberation Algorithms", DSP 2009). Changes: two dummy-head responses combined into a true-stereo file, the end of the tail faded where the 16-bit copy runs out of resolution, level normalised. | [MIT](https://opensource.org/licenses/MIT) (see [NOTICE.md](../NOTICE.md)) |
 | Spring Lane Stairwell, University of York | Gavin Davies, Ignacio Gomez-Lanzaco, James Geary and Thomas Wood, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=670). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Genesis 6 Studio, Live Room, University of York | Daniel Johnston and Panagiotis Kompotis, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=483). Changes: B-format decoded to stereo, two responses (sources on the left and right) combined into a true-stereo file, resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Office and Lecture Room, Aachen | Marco Jeub, Magnus Schäfer, Hauke Krüger, Christoph M. Nelke, Christophe Beaugeant and Peter Vary, Institute of Communication Systems, RWTH Aachen University: [AIR database](https://www.iks.rwth-aachen.de/en/research/tools-downloads/databases/aachen-impulse-response-database/) (Jeub, Schäfer and Vary, 2009). Changes: silence after the tail removed, the end of the tail faded where the 16-bit copy runs out of resolution, level normalised. | [MIT](https://opensource.org/licenses/MIT) (see [NOTICE.md](../NOTICE.md)) |
+| Elveden Hall, Smoking Room, Suffolk | Matt Rogalsky: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=459). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| York Guildhall, Council Chamber | Benjamin Tsui, Oliver McIntyre and Elizabeth Wilson, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=790). Changes: B-format decoded to stereo, two responses (sources on the left and right) combined into a true-stereo file, resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Hamilton Mausoleum | Damian T. Murphy, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=502). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Tyndall Bruce Monument | Damian T. Murphy, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=764). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Terry's Factory Warehouse, York | Damian T. Murphy, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=735). Changes: level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Terry's Typing Room, York | Damian T. Murphy, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=740). Changes: resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | R1 Reactor Hall | [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=626) (www.openairlib.net). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Innocent Railway Tunnel, Edinburgh | Andrew Chadwick and Simon Shelley: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=525). Changes: B-format decoded to stereo, resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Gill Heads Mine, Yorkshire Dales | Andrew Chadwick and Simon Shelley: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=494). Changes: B-format decoded to stereo, resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Hoffmann Lime Kiln, Langcliffe | Jack Smith, Juan García, Hashim Riaz and Pau Rosell, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=518). Changes: B-format decoded to stereo, resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Newgrange, County Meath | Francis Stevens: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=611). Changes: B-format decoded to stereo, resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Sports Hall, University of York | Aglaia Foteinou and Simon Shelley, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=665). Changes: resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Falkland Palace Royal Tennis Court | Damian T. Murphy, Audiolab, University of York: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=476). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Alcuin College Courtyard, University of York | Francis Stevens and Simon Shelley: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=416). Changes: B-format decoded to stereo, resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Troller's Gill, Yorkshire Dales | Andrew Chadwick and Simon Shelley: [OpenAIR library](https://www.openair.hosted.york.ac.uk/?page_id=745). Changes: B-format decoded to stereo, resampled from 96 to 48 kHz, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Detmold Konzerthaus (front stalls, mid hall) | Sebastia Vicenc Amengual Gari, Banu Sahin, Dusty Eddy and Malte Kob, Detmold University of Music: [Detmold SRIR database](https://zenodo.org/records/4116247) (Amengual Gari, Sahin, Eddy and Kob, "Open Database of Spatial Room Impulse Responses at Detmold University of Music", AES 149th Convention, 2020). Changes: two dummy-head responses (a source on the left and on the right) combined into a true-stereo file, silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Brahmssaal, Detmold | As above: [Detmold SRIR database](https://zenodo.org/records/4116247). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Detmold Sommertheater | As above: [Detmold SRIR database](https://zenodo.org/records/4116247). Changes: silence after the tail removed, level normalised. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
