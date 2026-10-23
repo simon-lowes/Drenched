@@ -191,6 +191,7 @@ private:
 
     /** Decodes and prepares a file. On failure returns null and says why in `error`. */
     static std::shared_ptr<const RecordedResponse> readImpulseResponse (const juce::File& file, juce::String& error);
+    static std::shared_ptr<const RecordedResponse> readSofaFile (const juce::File& file, juce::String& error);
 
     /** After a session loads: reloads the impulse response it names, if it isn't loaded already. */
     void restoreImpulseResponse();

@@ -6,6 +6,7 @@
 #include <drenched/ClapCapture.h>
 #include <drenched/Mix.h>
 #include <drenched/RoomMatch.h>
+#include <drenched/SofaResponse.h>
 #include <drenched/Spaces.h>
 
 #include <algorithm>
@@ -240,6 +241,42 @@ float DrenchedProcessor::predelayMs (float requested)
 }
 
 //==============================================================================
+std::shared_ptr<const RecordedResponse> DrenchedProcessor::readSofaFile (const juce::File& file, juce::String& error)
+{
+    // SOFA files of many room measurements can be large; this keeps the
+    // whole file and its decoded responses within reason.
+    constexpr juce::int64 maxBytes = 512 * 1024 * 1024;
+
+    if (file.getSize() > maxBytes)
+    {
+        error = file.getFileName() + " is too large to load.";
+        return nullptr;
+    }
+
+    juce::MemoryBlock data;
+
+    if (! file.loadFileAsData (data) || data.getSize() == 0)
+    {
+        error = "Drenched couldn't read " + file.getFileName() + ".";
+        return nullptr;
+    }
+
+    try
+    {
+        return prepareSofaResponse (data.getData(), data.getSize(), file.getFileNameWithoutExtension().toStdString());
+    }
+    catch (const std::invalid_argument& e)
+    {
+        error = juce::String (e.what());
+    }
+    catch (const std::exception&)
+    {
+        error = file.getFileName() + " is too large to load.";
+    }
+
+    return nullptr;
+}
+
 std::shared_ptr<const RecordedResponse> DrenchedProcessor::readImpulseResponse (const juce::File& file, juce::String& error)
 {
     if (! file.existsAsFile())
@@ -247,6 +284,9 @@ std::shared_ptr<const RecordedResponse> DrenchedProcessor::readImpulseResponse (
         error = "Drenched can't find " + file.getFileName() + ".";
         return nullptr;
     }
+
+    if (file.hasFileExtension ("sofa"))
+        return readSofaFile (file, error);
 
     juce::AudioFormatManager formats;
     formats.registerBasicFormats();
@@ -258,7 +298,7 @@ std::shared_ptr<const RecordedResponse> DrenchedProcessor::readImpulseResponse (
 
     if (reader == nullptr)
     {
-        error = file.getFileName() + " isn't an audio file Drenched can read. Use WAV, AIFF or FLAC.";
+        error = file.getFileName() + " isn't an audio file Drenched can read. Use WAV, AIFF, FLAC or SOFA.";
         return nullptr;
     }
 

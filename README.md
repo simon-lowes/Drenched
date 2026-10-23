@@ -22,8 +22,8 @@ separate reverbs). Listener position and Source position place you and the sound
 the room (drag them on the room map, or automate them). Cloud size lets the reverb follow where the sound is
 panned: lower it and a voice panned to one side, or to a rear speaker,
 keeps its reverb gathered around it. Low CPU runs the convolution on about a third of the
-processing by playing everything 21 ms late, which the DAW makes up. You can load your own impulse response (WAV, AIFF
-or FLAC; mono, stereo, four-channel true stereo, surround up to 9.1.6, or B-format): it is resampled to the
+processing by playing everything 21 ms late, which the DAW makes up. You can load your own impulse response (WAV, AIFF,
+FLAC or SOFA; mono, stereo, four-channel true stereo, surround up to 9.1.6, or B-format): it is resampled to the
 session rate, its decay is measured into the graph, dragging the graph
 reshapes it, and Size makes the room bigger or smaller by moving its
 reflections later or sooner while keeping its decay and tone. A B-format
@@ -32,7 +32,11 @@ stereo a pair of hypercardioids aimed 60 degrees left and right, which keeps
 the room wide, and on surround one aimed at each speaker. Drenched knows a
 B-format file by its ambisonic metadata, the .amb type, or "AmbiX",
 "B-format" or "FuMa" in its name (higher-order AmbiX files play at first
-order); a four-channel file without any of these is true stereo. A surround
+order); a four-channel file without any of these is true stereo. A SOFA file of room
+measurements plays a pair of its sources about 30 degrees either side of the
+listener as true stereo, heard by its leftmost and rightmost receivers (a
+dummy head's ears, say); without such a pair it plays the source closest to
+straight ahead. Ambisonic SOFA files play as B-format. A surround
 file plays its own channels on a surround track: each speaker plays the
 channel recorded nearest it, channels with no speaker nearby join the
 nearest one, and speakers the recording lacks get reverb made from its

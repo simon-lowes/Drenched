@@ -395,7 +395,7 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'brwkind':st.brwKind=v;st.brwCur=0;break;
   case 'brwsim':st.brwSim=v==='off'?null:+v;st.brwCur=0;break;
   case 'brwclear':st.brwQ='';st.brwKind='all';st.brwCur=0;break;
-  case 'loadir':st.browse=false;st.hint=null;if(JUCE){JUCE.emitEvent('loadIr',{});st.note='Choose a WAV, AIFF or FLAC impulse response: mono, stereo, true stereo, surround up to 9.1.6, or B-format.';}else st.note='<b>Load your own IR</b> opens a file chooser in the plugin.';break;
+  case 'loadir':st.browse=false;st.hint=null;if(JUCE){JUCE.emitEvent('loadIr',{});st.note='Choose a WAV, AIFF, FLAC or SOFA impulse response: mono, stereo, true stereo, surround up to 9.1.6, or B-format.';}else st.note='<b>Load your own IR</b> opens a file chooser in the plugin.';break;
   case 'credits':st.credits=!st.credits;st.browse=false;st.hint=null;break;
   case 'speakers':st.spk=!st.spk;st.browse=false;st.hint=null;break;
   case 'spkreset':st.speakers=[];break;
