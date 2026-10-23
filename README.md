@@ -21,7 +21,9 @@ input reaches the other side of the room (at 0 the left and right get
 separate reverbs). Listener position and Source position place you and the sound across
 the room (drag them on the room map, or automate them). Cloud size lets the reverb follow where the sound is
 panned: lower it and a voice panned to one side, or to a rear speaker,
-keeps its reverb gathered around it. Low CPU runs the convolution on about a third of the
+keeps its reverb gathered around it. Unlink the decay graph and the left and right
+sides each get their own decay curve (surround speakers follow their side, centre
+speakers the mean of the two). Low CPU runs the convolution on about a third of the
 processing by playing everything 21 ms late, which the DAW makes up. You can load your own impulse response (WAV, AIFF,
 FLAC or SOFA; mono, stereo, four-channel true stereo, surround up to 9.1.6, or B-format): it is resampled to the
 session rate, its decay is measured into the graph, dragging the graph
