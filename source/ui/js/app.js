@@ -18,8 +18,10 @@ function paramValues(s){var o={};for(var k in PID)o[PID[k]]=k==='freeze'?(s.free
 function uiState(s){return {spaceId:SPACES[s.sp]?SPACES[s.sp].id:'',locks:Object.keys(s.locks).filter(function(k){return s.locks[k];}).join(','),mode:s.mode,view:s.view,skin:s.skin,speakers:speakersText(s)};}
 
 var lastSent={},lastUi={};
-function sync(){var cur=paramValues(st),out={},n=0;for(var id in cur){if(lastSent[id]!==cur[id]){out[id]=cur[id];lastSent[id]=cur[id];n++;}}if(n&&JUCE)JUCE.emitEvent('params',out);}
-function syncUi(){var cur=uiState(st),out={},n=0;for(var k in cur){if(lastUi[k]!==cur[k]){out[k]=cur[k];lastUi[k]=cur[k];n++;}}if(n&&JUCE)JUCE.emitEvent('ui',out);}
+function sync(){var cur=paramValues(st),out={},n=0,stale=false;for(var id in cur){if(lastSent[id]!==cur[id]){out[id]=cur[id];lastSent[id]=cur[id];n++;stale=stale||rebuilds(id);}}if(n&&JUCE)JUCE.emitEvent('params',out);if(stale&&JUCE)staleAnalysis();}
+function syncUi(){var cur=uiState(st),out={},n=0;for(var k in cur){if(lastUi[k]!==cur[k]){out[k]=cur[k];lastUi[k]=cur[k];n++;}}if(n&&JUCE)JUCE.emitEvent('ui',out);if(out.spaceId!=null&&JUCE)staleAnalysis();}
+/* a change that rebuilds the response: the displays keep the last analysis, dimmed, until the new one arrives */
+function staleAnalysis(){if(!anaStale&&ana){anaStale=true;wfNote();}}
 function gesture(ids,begin){if(JUCE)JUCE.emitEvent('gesture',{ids:ids,begin:!!begin});}
 
 /* state pushed by the plugin: parameter values (host automation, preset recall) and the
@@ -134,7 +136,7 @@ function eqHTML(){var cur=st.eqCur,cols=function(f){var o='';for(var i=0;i<EQ_N;
  var row=function(c){return cols(function(i){return eqBell(i)||c!=='q'?roEl(st,eqKey(i,c)):'<em title="The shelves have a fixed slope">\u2013</em>';});};
  return '<div class="cap eqd" role="dialog" aria-modal="true" aria-labelledby="eq-h"><div class="cbox"><div class="chd"><h2 id="eq-h">Wet EQ</h2><button class="cx" data-act="eq" aria-label="Close">Close</button></div>'+
   '<p>Six bands shape the reverb alone: a low shelf, four bells and a high shelf, after the wet low cut and high cut. The dry sound is not changed, and each value can be automated.</p>'+
-  eqSVG(st,728,236,cur)+
+  '<div class="eqw"><canvas class="eqs" data-cv="eqspec" data-w="678" data-h="200" aria-hidden="true"></canvas>'+eqSVG(st,728,236,cur)+'</div>'+
   '<div class="eqt" role="group" aria-label="Band values"><span></span>'+heads+'<span>Frequency</span>'+row('f')+'<span>Gain</span>'+row('g')+'<span>Q</span>'+row('q')+'</div>'+
   '<div class="cft"><button class="cgo stop" data-act="eqreset"'+(eqFlat(st)?' disabled':'')+'>Reset to flat</button><span class="ct">Drag a point sideways for frequency and up or down for gain. Scroll over a bell, or drag it with Alt held, for Q. Shift gives fine steps; double-click a point to return it to 0 dB.</span></div></div></div>';}
 function eqSet(i,c,v){setParam(st,eqKey(i,c),v);st.eqCur=i;}
@@ -145,6 +147,89 @@ function applyEq(e){var d=drag,sc=d.w/d.rect.width,dx=(e.clientX-d.x0)*sc,dy=(e.
  if(d.alt){eqSet(d.i,'q',d.q0*Math.pow(EQ_Q_SPAN,-dy/d.ph*fine));}
  else{eqSet(d.i,'f',d.f0*Math.pow(EQ_MAX/EQ_MIN,dx/d.pw*fine));eqSet(d.i,'g',d.g0-dy/d.ph*2*EQ_DB*fine);}
  st.note=null;schedule();}
+
+/* ---- the waterfall window: the playing response analysed (energy over time per third-octave
+   band, the broadband decay, RT60 per octave) and the live spectrum of the reverb. The plugin
+   sends 'analysis' when a new response plays and 'spectrum' each tick while a display is open;
+   the live spectrum also sits behind the curve in the Wet EQ window. ---- */
+st.wf=false;var ana=null,anaStale=false,dispOpen=false,specCur=[],previewTimer=0;
+for(var sb=0;sb<31;sb++)specCur.push(-100);
+var SPEC_FALL=1.5; /* dB per tick at 25 Hz, so a bar takes about two seconds to fall away */
+/* the parameters whose change rebuilds the response, so a new analysis is on its way */
+var REBUILD={lx:1,sx:1,size:1,dist:1,el:1,living:1,rev:1,gate:1,attack:1,dLvl:1,dDel:1,dCol:1,xfeed:1,cpu:1};
+function rebuilds(id){var k=keyOf(id);return BAND_ID.indexOf(id)>=0||!!(k&&REBUILD[k]);}
+function wfHTML(){if(!JUCE){var sig=st.sp+'|'+st.bands.join(',');if(!ana||ana.sig!==sig){ana=fakeAnalysis(st);ana.sig=sig;}}
+ var rt=ana?ana.rt60:null,cells='';for(var i=0;i<8;i++){var v=rt?+rt[i]:0,ok=v>0;cells+='<div'+(ok?'':' class="na" title="Not measurable in this response"')+' aria-label="'+BAND_NAMES[i]+', '+(ok?v.toFixed(2)+' seconds':'not measurable')+'"><b>'+(ok?v.toFixed(2):'\u2013')+'</b><span>'+BAND_NAMES[i]+'</span></div>';}
+ return '<div class="cap wfd" role="dialog" aria-modal="true" aria-labelledby="wf-h"><div class="cbox"><div class="chd"><h2 id="wf-h">Waterfall</h2><button class="cx" data-act="wf" aria-label="Close">Close</button></div>'+
+  '<p>The response you are hearing: each third-octave band falling away over time, the broadband decay with the RT60 measured in each octave, and the live spectrum of the reverb.</p>'+
+  '<div class="wfg"><div class="wfp wfw"><div class="wfh"><b>Energy over time</b><span>A ridge per moment, the start at the back, 0 to \u221272 dB</span></div><canvas data-cv="wf" data-w="538" data-h="262" style="width:538px;height:262px" role="img" aria-label="Waterfall of the response: level in each third-octave band from 20 Hz to 20 kHz, one ridge per slice of time"></canvas></div>'+
+  '<div class="wfp"><div class="wfh"><b>Decay</b><span>Broadband, dB</span></div>'+decayCurveSVG(ana,292,136)+'</div>'+
+  '<div class="wfp"><div class="wfh"><b>RT60 by octave</b><span>Seconds to \u221260 dB</span></div><div class="wfn" role="group" aria-label="Measured RT60 per octave band">'+cells+'</div></div>'+
+  '<div class="wfp wfs"><div class="wfh"><b>Live spectrum</b><span>The reverb alone, dB</span></div><canvas data-cv="spec" data-w="848" data-h="100" style="width:848px;height:100px" role="img" aria-label="Live spectrum of the reverb in third-octave bands"></canvas></div></div>'+
+  '<div class="cft"><span class="ct" data-wf="note" aria-live="polite"></span></div></div></div>';}
+function onAnalysis(m){if(!m||!Array.isArray(m.waterfall)||!Array.isArray(m.decay)||!Array.isArray(m.rt60))return;ana=m;anaStale=false;if(st.wf)schedule();}
+function onSpectrum(m){if(!m||!Array.isArray(m.levels))return;for(var i=0;i<31;i++){var v=+m.levels[i];if(!isFinite(v))v=-100;specCur[i]=Math.max(v,specCur[i]-SPEC_FALL);}drawSpectra();}
+/* the plugin only analyses and taps the reverb while a display is open */
+function syncDisplays(){var want=!!(st.wf||st.eq);if(want===dispOpen)return;dispOpen=want;if(JUCE)JUCE.emitEvent('displays',{open:want});
+ if(!JUCE){if(want&&!previewTimer)previewTimer=setInterval(fakeSpectrum,40);else if(!want&&previewTimer){clearInterval(previewTimer);previewTimer=0;}}
+ if(!want)for(var i=0;i<31;i++)specCur[i]=-100;}
+/* canvases are drawn at the page's real pixel size, so they stay crisp at any editor size */
+function cvCtx(cv){var w=+cv.getAttribute('data-w'),h=+cv.getAttribute('data-h'),el=live.firstElementChild,sc=Math.min(3,(window.devicePixelRatio||1)*(el?el.getBoundingClientRect().width/W:1)),bw=Math.max(1,Math.round(w*sc)),bh=Math.max(1,Math.round(h*sc));
+ if(cv.width!==bw||cv.height!==bh){cv.width=bw;cv.height=bh;}var c=cv.getContext('2d');c.setTransform(bw/w,0,0,bh/h,0,0);c.clearRect(0,0,w,h);return c;}
+function tok(el,name){return getComputedStyle(el).getPropertyValue(name).trim()||'#888';}
+function drawDisplays(){var wc=live.querySelector('canvas[data-cv="wf"]');if(wc)drawWaterfall(wc);drawSpectra();wfNote();}
+function drawSpectra(){var cs=live.querySelectorAll('canvas[data-cv="spec"],canvas[data-cv="eqspec"]');for(var i=0;i<cs.length;i++)drawSpectrum(cs[i],cs[i].getAttribute('data-cv')==='eqspec');}
+function wfNote(){var el=live.querySelector('[data-wf="note"]');if(!el)return;var cv=live.querySelector('canvas[data-cv="wf"]');if(cv)cv.style.opacity=anaStale?'.5':'';
+ el.textContent=!ana?'Waiting for the response to play.':anaStale?'Measuring the new response.':'Measured from the response now playing: '+f1(ana.seconds)+' s to \u221260 dB. The spectrum shows the reverb alone, whatever the mix.';}
+/* the waterfall: one ridge per slice of time, the start at the back and the tail coming
+   forward, so every quieter ridge is in front of the louder one behind it; a nearer ridge
+   hides what is behind it, and the accent is strongest where the energy is */
+function drawWaterfall(cv){var a=ana,c=cvCtx(cv),w=+cv.getAttribute('data-w'),h=+cv.getAttribute('data-h'),box=cv.closest('.cbox'),ac=tok(box,'--ac'),tx2=tok(box,'--tx2'),p=tok(box,'--p'),ln=tok(box,'--ln');
+ var L=36,R=44,T=12,B=20,pw=w-L-R,ph=h-T-B,RANGE=72;c.font='10px '+tok(box,'--fnum');c.textBaseline='middle';
+ if(!a){c.fillStyle=tx2;c.textAlign='center';c.fillText('Waiting for the response to play',L+pw/2,T+ph/2);return;}
+ var rows=a.waterfall.length,n=a.waterfall[0].length,depth=ph*0.46,amp=ph*0.54,skew=pw*0.14,rw=pw-skew,secs=a.sliceSeconds*(rows-1);
+ /* f runs from 0 at the front (the end of the tail) to 1 at the back (the start) */
+ function F(r){return rows>1?1-r/(rows-1):1;}function X(f,i){return L+f*skew+rw*i/(n-1);}function BY(f){return T+ph-f*depth;}
+ /* the time axis runs down the receding right edge, where no ridge can cover it */
+ c.textAlign='left';c.fillStyle=tx2;c.strokeStyle=ln;c.lineWidth=1;
+ for(var t=0,stp=timeStep(secs);t<=secs+1e-6;t+=stp){var f=secs?1-t/secs:1,x=X(f,n-1),y=BY(f);c.beginPath();c.moveTo(x,y+0.5);c.lineTo(x+5,y+0.5);c.stroke();c.fillText(t?(+t.toFixed(2))+' s':'0',x+8,y);}
+ c.textAlign='right';c.fillText('0 dB',X(1,0)-8,BY(1)-amp);
+ for(var r=0;r<rows;r++){var fr=F(r),row=a.waterfall[r],by=BY(fr),top=[],on=[];
+  for(var i=0;i<n;i++){var v=clamp((+row[i]+RANGE)/RANGE,0,1);top.push(by-amp*v);on.push(v>0.004);}
+  c.beginPath();c.moveTo(X(fr,0),by);for(i=0;i<n;i++)c.lineTo(X(fr,i),top[i]);c.lineTo(X(fr,n-1),by);c.closePath();
+  c.globalAlpha=1;c.fillStyle=p;c.fill();c.globalAlpha=0.05+0.13*fr;c.fillStyle=ac;c.fill();
+  /* the ridge line stops where the band has reached the floor, so a silent tail stays clean */
+  c.beginPath();for(i=0;i<n;i++)c[i&&on[i-1]?'lineTo':'moveTo'](X(fr,i),top[i]);c.globalAlpha=0.35+0.65*fr;c.strokeStyle=ac;c.lineWidth=r?1:1.25;c.stroke();}
+ c.globalAlpha=1;c.textAlign='center';c.textBaseline='alphabetic';c.fillStyle=tx2;
+ WF_LAB.forEach(function(l){c.fillText(l[1],X(0,l[0]),h-6);});}
+/* the live spectrum: a bar per third-octave band; behind the EQ curve it is drawn faintly on
+   the curve's own frequency axis */
+function drawSpectrum(cv,eq){var c=cvCtx(cv),w=+cv.getAttribute('data-w'),h=+cv.getAttribute('data-h'),box=cv.closest('.cbox'),ac=tok(box,'--ac'),tx2=tok(box,'--tx2'),ln=tok(box,'--ln');
+ if(eq){var span=Math.log(1000),ew=w/30*0.55;c.fillStyle=tok(box,'--tx');c.globalAlpha=0.12;
+  for(var j=0;j<31;j++){var ex=w*Math.log(BANDS31[j]/20)/span,ey=h*clamp(-specCur[j]/90,0,1);if(ey<h-0.5)c.fillRect(ex-ew/2,ey,ew,h-ey);}return;}
+ var L=40,R=12,T=8,B=20,pw=w-L-R,ph=h-T-B,RANGE=80,slot=pw/31,bw=slot*0.62;
+ c.font='10px '+tok(box,'--fnum');c.textAlign='right';c.textBaseline='middle';c.strokeStyle=ln;c.lineWidth=1;c.fillStyle=tx2;
+ for(var g=0;g>=-RANGE;g-=20){var y=Math.round(T+ph*(-g/RANGE))+0.5;c.beginPath();c.moveTo(L,y);c.lineTo(L+pw,y);c.stroke();c.fillText(g?'\u2212'+(-g):'0',L-8,y);}
+ c.fillStyle=ac;for(var i=0;i<31;i++){var yy=T+ph*clamp(-specCur[i]/RANGE,0,1);if(yy<T+ph-0.5)c.fillRect(L+slot*i+(slot-bw)/2,yy,bw,T+ph-yy);}
+ c.textAlign='center';c.textBaseline='alphabetic';c.fillStyle=tx2;WF_LAB.forEach(function(l){c.fillText(l[1],L+slot*(l[0]+0.5),h-6);});}
+/* Without the plugin (a browser preview) the displays show a plausible response made from the
+   decay graph: an exponential fall per band, and a spectrum that swells and settles. */
+function fakeAnalysis(s){var b=s.bands,rt=BANDS31.map(function(f){var x=Math.log(f/63)/Math.LN2;return Math.max(0.1,rtAt(b,x)*(x>7?1-(x-7)*0.2:1));}),secs=Math.max.apply(null,rt)*1.05,sl=secs/39,step=secs/199,wf=[],dec=[],e0=0;
+ var shape=function(i){return -Math.abs(i-15)*0.35-(i>24?(i-24)*1.2:0);};
+ for(var r=0;r<40;r++){var row=[];for(var i=0;i<31;i++)row.push(Math.round(10*clamp(shape(i)-60*r*sl/rt[i]+(hash(i,r)-0.5)*3,-90,0))/10);wf.push(row);}
+ for(var k=0;k<200;k++){var e=0;for(i=0;i<31;i++)e+=Math.pow(10,(shape(i)-60*k*step/rt[i])/10);if(!k)e0=e;dec.push(Math.round(10*10*Math.log10(e/e0))/10);}
+ return {seconds:secs,bands:BANDS31.slice(),waterfall:wf,sliceSeconds:sl,decay:dec,decayStep:step,rt60:b.slice()};}
+function fakeSpectrum(){var t=Date.now()/1000,env=0.5+0.5*Math.sin(t*0.9),lv=[];for(var i=0;i<31;i++)lv.push(-24-Math.abs(i-14)*1.4-14*(1-env)+(hash(i,Math.floor(t*12))-0.5)*5);onSpectrum({levels:lv});}
+
+/* ---- the space browser: the search, the kind, the reference space of Similar (an index into
+   SPACES, or null) and the row the keyboard is on (a position in the results) ---- */
+st.brwQ='';st.brwKind='all';st.brwSim=null;st.brwCur=0;
+/* the row the keyboard is on, scrolled into view inside the list */
+function brwReveal(){var l=live.querySelector('.brw-list'),r=live.querySelector('.brw-row.key');if(!l||!r)return;var t=r.offsetTop,b=t+r.offsetHeight;if(t<l.scrollTop)l.scrollTop=t;else if(b>l.scrollTop+l.clientHeight)l.scrollTop=b-l.clientHeight;}
+function brwFocus(){var q=live.querySelector('#brw-q');if(q)q.focus({preventScroll:true});}
+/* opening starts a fresh search; the kind and the Similar reference stay, so the next of the
+   same kind, or the next closest, is one keypress away */
+function openBrowser(){st.browse=true;st.brwQ='';if(st.brwSim!=null&&!SPACES[st.brwSim])st.brwSim=null;var rows=browseResults(st).rows;st.brwCur=0;for(var j=0;j<rows.length;j++)if(rows[j].i===st.sp)st.brwCur=j;}
 
 /* ---- scenes: every setting and the space under a name, recalled here or by automating Scene ---- */
 st.scn=false;st.scenes=[];st.scene=0;st.scnLocal={};
@@ -198,13 +283,16 @@ function licActivate(){if(JUCE)JUCE.emitEvent('licenceActivate',{licence:st.licK
 /* ---- rendering ---- */
 function fit(){var w=live.clientWidth,h=live.clientHeight,sc=Math.min(w/W,h/H),el=live.firstElementChild;if(!el)return;
  el.style.transform='translate('+((w-W*sc)/2).toFixed(2)+'px,'+((h-H*sc)/2).toFixed(2)+'px) scale('+sc.toFixed(5)+')';
- var frs=live.querySelectorAll('.skins .fr');for(var i=0;i<frs.length;i++){var s2=frs[i].firstElementChild;if(s2)s2.style.transform='scale('+(frs[i].clientWidth/W).toFixed(5)+')';}}
-function renderLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAttribute('data-fid'):null;
- var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';
- live.innerHTML=html;fit();
+ var frs=live.querySelectorAll('.skins .fr');for(var i=0;i<frs.length;i++){var s2=frs[i].firstElementChild;if(s2)s2.style.transform='scale('+(frs[i].clientWidth/W).toFixed(5)+')';}
+ if(st.wf||st.eq)drawDisplays();}
+function renderLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAttribute('data-fid'):null,bl=live.querySelector('.brw-list'),blt=bl?bl.scrollTop:0;
+ var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.wf)html=html.slice(0,-6)+wfHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';
+ live.innerHTML=html;fit();syncDisplays();
+ if(blt){var bl2=live.querySelector('.brw-list');if(bl2)bl2.scrollTop=blt;}
  if(fid){var n=live.querySelector('[data-fid="'+fid+'"]');if(n){n.focus({preventScroll:true});if(n.matches('input,textarea'))n.selectionStart=n.selectionEnd=n.value.length;}}
  // A dialog keeps the keyboard even when the control that had it is redrawn away.
- if((st.lic||st.capture||st.credits||st.spk||st.scn||st.eq)&&!live.contains(document.activeElement)){var d=live.querySelector('.cap .cgo:not([disabled])')||live.querySelector('.cap .cx');if(d)d.focus({preventScroll:true});}}
+ if(st.browse&&!live.contains(document.activeElement))brwFocus();
+ if((st.lic||st.capture||st.credits||st.spk||st.scn||st.eq||st.wf)&&!live.contains(document.activeElement)){var d=live.querySelector('.cap .cgo:not([disabled])')||live.querySelector('.cap .cx');if(d)d.focus({preventScroll:true});}}
 var raf=0;function schedule(){if(!raf)raf=requestAnimationFrame(function(){raf=0;renderLive();sync();syncUi();});}
 window.schedule=schedule;
 window.addEventListener('resize',fit);
@@ -252,7 +340,13 @@ live.addEventListener('wheel',function(e){var en=e.target.closest&&e.target.clos
  eqSet(i,'q',st[eqKey(i,'q')]*Math.pow(e.shiftKey?1.015:1.06,e.deltaY<0?1:-1));st.note=null;schedule();},{passive:false});
 
 live.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1,PageUp:10,PageDown:-10};
- if(e.key==='Escape'&&(st.skins||st.browse||st.capture||st.lic||st.credits||st.spk||st.scn||st.eq)){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.eq)st.eq=false;else if(st.scn)st.scn=false;else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
+ if(e.key==='Escape'&&(st.skins||st.browse||st.capture||st.lic||st.credits||st.spk||st.scn||st.eq||st.wf)){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.wf)st.wf=false;else if(st.eq)st.eq=false;else if(st.scn)st.scn=false;else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
+ var bw=st.browse&&t.closest&&t.closest('.brw');
+ if(bw){var R=browseResults(st),n=R.rows.length,bc=clamp(st.brwCur||0,0,Math.max(0,n-1)),mv={ArrowDown:1,ArrowUp:-1,PageDown:8,PageUp:-8}[e.key];
+  if(mv){if(n){st.brwCur=clamp(bc+mv,0,n-1);renderLive();brwReveal();}e.preventDefault();return;}
+  if(e.key==='Enter'&&t.id==='brw-q'){e.preventDefault();if(!n)return;var br=R.rows[bc];
+   if(e.shiftKey){st.brwSim=br.i;st.brwCur=0;renderLive();brwReveal();}
+   else{st.browse=false;changeSpace(br.i);renderLive();sync();syncUi();var ob=live.querySelector('[data-act="browse"]');if(ob)ob.focus({preventScroll:true});}return;}}
  if(e.key==='Enter'&&t.id==='lic-key'){e.preventDefault();licActivate();renderLive();return;}
  if(e.key==='Enter'&&t.matches('input[data-scn]')){e.preventDefault();t.blur();return;}
  if(t.matches('.sk')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.click();return;}
@@ -282,11 +376,12 @@ live.addEventListener('change',function(e){var t=e.target;
  else if((ty==='hicut'||/^eq\df$/.test(ty))&&/k/i.test(raw)){setParam(st,ty,v*1000);}
  else setParam(st,ty,v);
  st.note=null;renderLive();sync();});
-live.addEventListener('input',function(e){var k=e.target.getAttribute&&e.target.getAttribute('data-in');if(k==='licKey'||k==='licCode')st[k]=e.target.value;});
+live.addEventListener('input',function(e){var k=e.target.getAttribute&&e.target.getAttribute('data-in');if(k==='licKey'||k==='licCode')st[k]=e.target.value;
+ if(e.target.id==='brw-q'){var ss=e.target.selectionStart;st.brwQ=e.target.value;st.brwCur=0;renderLive();var q=live.querySelector('#brw-q');if(q){q.focus({preventScroll:true});q.selectionStart=q.selectionEnd=ss;}brwReveal();}});
 live.addEventListener('focusin',function(e){if(e.target.matches('input.ro'))e.target.select();});
 live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
- if(!b){if(st.browse&&!e.target.closest('.menu')){st.browse=false;renderLive();}return;}
- var a=b.getAttribute('data-act'),v=b.getAttribute('data-v');if(a!=='browse'&&a!=='pick')st.browse=false;
+ if(!b){if(st.browse&&!e.target.closest('.brw .cbox')){st.browse=false;renderLive();}return;}
+ var a=b.getAttribute('data-act'),v=b.getAttribute('data-v');if(a!=='browse'&&a!=='pick'&&a.indexOf('brw')!==0)st.browse=false;
  switch(a){
   case 'mode':st.mode=v;st.note=v==='stage'?'<b>Stage view</b> for post: large numerals, channel meters and locks, on the same tokens.':'<b>Studio view</b>: the space and its decay lead.';st.hint=null;break;
   case 'slot':if(v!==st.slot){st.slots[st.slot]=snap(st);var nx=st.slots[v]||snap(st);Object.keys(nx).forEach(function(k){st[k]=Array.isArray(nx[k])?nx[k].slice():nx[k];});st.slot=v;st.hint=null;st.note='<b>Snapshot '+v+'.</b> Changes now go to '+v+'. Switch back to compare.';}break;
@@ -296,13 +391,17 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'match':st.hint=null;if(JUCE){JUCE.emitEvent('match',{});st.note='<b>Match a room.</b> Choose a recording made in the room you want to match: a voice, a band or a drum kit, with pauses where the sound stops and the room rings on.';}else st.note='<b>Match a room</b> listens to a recording made in a room and sets the decay to match it.';break;
   case 'lock':var lk=b.getAttribute('data-k');st.locks[lk]=!st.locks[lk];st.hint=null;st.note=(st.locks[lk]?'<b>Locked.</b> ':'<b>Unlocked.</b> ')+P[lk].l+(st.locks[lk]?' now holds when you change space.':' follows each space again.');break;
   case 'view':st.view=v;break;
-  case 'browse':st.browse=!st.browse;break;
+  case 'browse':if(st.browse)st.browse=false;else openBrowser();break;
+  case 'brwkind':st.brwKind=v;st.brwCur=0;break;
+  case 'brwsim':st.brwSim=v==='off'?null:+v;st.brwCur=0;break;
+  case 'brwclear':st.brwQ='';st.brwKind='all';st.brwCur=0;break;
   case 'loadir':st.browse=false;st.hint=null;if(JUCE){JUCE.emitEvent('loadIr',{});st.note='Choose a WAV, AIFF or FLAC impulse response: mono, stereo, true stereo, surround up to 9.1.6, or B-format.';}else st.note='<b>Load your own IR</b> opens a file chooser in the plugin.';break;
   case 'credits':st.credits=!st.credits;st.browse=false;st.hint=null;break;
   case 'speakers':st.spk=!st.spk;st.browse=false;st.hint=null;break;
   case 'spkreset':st.speakers=[];break;
   case 'scenes':st.scn=!st.scn;st.browse=false;st.hint=null;break;
   case 'eq':st.eq=!st.eq;st.browse=false;st.hint=null;break;
+  case 'wf':st.wf=!st.wf;st.browse=false;st.hint=null;break;
   case 'eqreset':eqReset();break;
   case 'scstore':sceneAct('store',0,'');st.hint=null;st.note='<b>Stored.</b> Automate Scene to recall it on the cut.';break;
   case 'scupdate':sceneAct('store',+v,'');st.hint=null;st.note='<b>'+esc((sceneOf(+v)||{}).name||'Scene '+v)+'</b> now holds the current settings.';break;
@@ -328,11 +427,13 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'skin':if(SKINS.some(function(x){return x.id===v;})){st.skin=v;st.note='<b>'+esc(skinOf(v).name)+'.</b> Click the Drenched name to change the look again.';st.hint=null;}st.skins=false;break;
  }
  renderLive();sync();syncUi();
- if(a==='browse'&&st.browse){var mi=live.querySelector('.menu button[aria-current="true"]');if(mi)mi.focus({preventScroll:true});}
+ if(a==='browse'&&st.browse){brwFocus();brwReveal();}
+ else if(a==='brwsim'||a==='brwclear'){brwFocus();brwReveal();}
  else if(a==='skins'&&st.skins){var sk=live.querySelector('.skins .sk[aria-current="true"]');if(sk)sk.focus({preventScroll:true});}
  else if(a==='capture'&&st.capture){var cf=live.querySelector('.cap .cgo');if(cf)cf.focus({preventScroll:true});}
  else if(a==='speakers'&&st.spk){var sf=live.querySelector('.spkd input');if(sf)sf.focus({preventScroll:true});}
  else if(a==='eq'&&st.eq){var ef=live.querySelector('.eqd [data-eqn="'+(st.eqCur||0)+'"]');if(ef)ef.focus({preventScroll:true});}
+ else if(a==='wf'&&st.wf){var wfc=live.querySelector('.wfd .cx');if(wfc)wfc.focus({preventScroll:true});}
  else if(a==='licence'&&st.lic){var lf=live.querySelector('#lic-key')||live.querySelector('.lic .cgo');if(lf)lf.focus({preventScroll:true});}
  else if(a==='capstart'||a==='capstop'){var cg=live.querySelector('.cap .cgo:not([disabled])')||live.querySelector('.cap .cx');if(cg)cg.focus({preventScroll:true});}
  else{var same=live.querySelector('[data-act="'+a+'"]'+(v!=null?'[data-v="'+v+'"]':'')+(a==='lock'||a==='toggle'||a==='capopt'?'[data-k="'+b.getAttribute('data-k')+'"]':''));if(same)same.focus({preventScroll:true});}});
@@ -346,6 +447,8 @@ if(init){setLibrary(init.library);Object.assign(st,{sp:0,bands:SPACES[0].bands.s
 try{var hs=(location.hash||'').slice(1);if(SKINS.some(function(x){return x.id===hs;}))st.skin=hs;}catch(_){}
 Object.assign(lastSent,paramValues(st));Object.assign(lastUi,uiState(st));
 renderLive();
-if(JUCE){JUCE.addEventListener('state',applyFromHost);JUCE.addEventListener('meters',onMeters);JUCE.addEventListener('capture',onCapture);JUCE.addEventListener('licence',onLicence);JUCE.addEventListener('pasted',onPasted);JUCE.addEventListener('matched',onMatched);JUCE.emitEvent('ready',{});}
+if(JUCE){JUCE.addEventListener('state',applyFromHost);JUCE.addEventListener('meters',onMeters);JUCE.addEventListener('capture',onCapture);JUCE.addEventListener('licence',onLicence);JUCE.addEventListener('pasted',onPasted);JUCE.addEventListener('matched',onMatched);JUCE.addEventListener('analysis',onAnalysis);JUCE.addEventListener('spectrum',onSpectrum);JUCE.emitEvent('ready',{});
+ // after a reload the plugin has forgotten which displays were open, so it is told again
+ dispOpen=false;syncDisplays();}
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);
 })();

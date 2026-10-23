@@ -7,6 +7,7 @@
 #include "drenched/ReverbCloud.h"
 #include "drenched/SpeakerLayout.h"
 #include "drenched/SpeakerTrim.h"
+#include "drenched/SpectrumTap.h"
 #include "drenched/SurroundResponse.h"
 #include "drenched/WetEqualiser.h"
 
@@ -171,6 +172,10 @@ public:
         the host; infinite while frozen. */
     double tailSeconds() const noexcept { return tail.load (std::memory_order_relaxed); }
 
+    /** The reverberation alone, as it leaves the wet path (before the mix), for
+        a live spectrum. Read it from one thread other than the audio thread. */
+    SpectrumTap& wetSpectrum() noexcept { return wetTap; }
+
     /** True once a kernel for the current sample rate is running. */
     bool isReady() const noexcept { return ready.load (std::memory_order_relaxed); }
 
@@ -230,6 +235,7 @@ private:
     // Each speaker's reverb level and delay.
     SpeakerTrim speakerTrim;
     WetEqualiser equaliser;
+    SpectrumTap wetTap;
     ReverbCloud cloud;
 
     // The dry sound's delay, matching the running kernel's latency: a line

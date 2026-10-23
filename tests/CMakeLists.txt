@@ -13,6 +13,7 @@ add_executable(drenched_tests
     RoomMatchTests.cpp
     SpeakerTrimTests.cpp
     WetEqualiserTests.cpp
+    AnalysisTests.cpp
     ClapCaptureTests.cpp
     SweepCaptureTests.cpp
     SurroundTests.cpp

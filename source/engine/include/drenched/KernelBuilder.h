@@ -5,6 +5,8 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -55,6 +57,14 @@ public:
         sample budget, or 0 if it plays in full. From any thread. */
     double shortenedTo() const noexcept { return shortened.load (std::memory_order_relaxed); }
 
+    /** The stereo response the newest kernel plays (for surround outputs, the
+        stereo response its speakers are spread from), for the decay displays.
+        From any thread. */
+    std::shared_ptr<const ImpulseResponseSet> lastResponses() const;
+
+    /** Changes every time a kernel is built. From any thread. */
+    std::uint64_t buildCount() const noexcept { return builds.load (std::memory_order_acquire); }
+
 private:
     void run();
     void build (const ImpulseResponseRequest& wanted);
@@ -64,10 +74,12 @@ private:
     const std::chrono::milliseconds debounceTime;
     const std::size_t budget;
     std::atomic<double> shortened { 0.0 };
+    std::atomic<std::uint64_t> builds { 0 };
 
     mutable std::mutex mutex;
     std::condition_variable wake;
     std::optional<ImpulseResponseRequest> pending, built;
+    std::shared_ptr<const ImpulseResponseSet> builtResponses;
     std::chrono::steady_clock::time_point pendingSince;
     bool quit = false;
 
