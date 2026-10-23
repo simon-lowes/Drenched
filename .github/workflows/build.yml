@@ -143,6 +143,39 @@ jobs:
             ./${{ matrix.pluginval_bin }} --strictness-level 10 --skip-gui-tests --validate-in-process --validate "$VST3"
           fi
 
+      # Logic and GarageBand only load Audio Units that pass Apple's auval.
+      - name: Validate Audio Unit (auval)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          AU=$(find build -type d -name "Drenched.component" -path "*Release*" | head -n 1)
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$AU" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          auval -a | grep -i drenched || true
+          auval -strict -v aufx Drn1 Drnc
+
+      # clap-validator (MIT) ships 64-bit only, so the 32-bit CLAP is left to pluginval's
+      # VST3 checks of the same code.
+      - name: Validate CLAP (clap-validator)
+        if: matrix.pluginval != 'source' || runner.os == 'Linux'
+        shell: bash
+        run: |
+          V=0.3.2
+          case "$RUNNER_OS" in
+            Linux)   curl -fsSL -o cv.tgz "https://github.com/free-audio/clap-validator/releases/download/$V/clap-validator-$V-ubuntu-18.04.tar.gz"; tar xzf cv.tgz ;;
+            macOS)   curl -fsSL -o cv.tgz "https://github.com/free-audio/clap-validator/releases/download/$V/clap-validator-$V-macos-universal.tar.gz"; tar xzf cv.tgz ;;
+            Windows) curl -fsSL -o cv.zip "https://github.com/free-audio/clap-validator/releases/download/$V/clap-validator-$V-windows.zip"; unzip -q cv.zip ;;
+          esac
+          CV=$(find . -maxdepth 3 -type f \( -name clap-validator -o -name clap-validator.exe \) | head -n 1)
+          CLAP=$(find build -name "Drenched.clap" -path "*Release*" -prune | head -n 1)
+          echo "Validating $CLAP with $CV"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a "$CV" validate "$CLAP"
+          else
+            "$CV" validate "$CLAP"
+          fi
+
       - name: Collect plugins
         shell: bash
         run: |
