@@ -59,6 +59,16 @@ DrenchedProcessor::DrenchedProcessor()
     params.listenerX = raw (ParamIDs::listenerX);
     params.sourceX = raw (ParamIDs::sourceX);
     params.lowCpu = raw (ParamIDs::lowCpu);
+    params.scene = raw (ParamIDs::scene);
+
+    for (size_t band = 0; band < params.eqFrequency.size(); ++band)
+    {
+        params.eqFrequency[band] = raw (ParamIDs::eqFrequency[band]);
+        params.eqGain[band] = raw (ParamIDs::eqGain[band]);
+    }
+
+    for (size_t band = 0; band < params.eqQ.size(); ++band)
+        params.eqQ[band] = raw (ParamIDs::eqQ[band]);
 
     // A new instance opens on the first recorded space, with the graph on its measured decay.
     if (const auto& recordings = library::spaces(); ! recordings.empty())
@@ -197,6 +207,7 @@ void DrenchedProcessor::updateLatency (double sampleRate)
 
 void DrenchedProcessor::timerCallback()
 {
+    followSceneParameter();
     cacheUiState();
     pollCapture();
 
@@ -367,6 +378,26 @@ void DrenchedProcessor::loadImpulseResponseAsync (const juce::File& file)
     });
 }
 
+void DrenchedProcessor::loadSceneImpulseResponseAsync (const juce::File& file)
+{
+    std::weak_ptr<int> alive = lifetime;
+
+    loader.addJob ([this, file, alive]
+    {
+        juce::String error;
+        auto loaded = readImpulseResponse (file, error);
+
+        juce::MessageManager::callAsync ([this, file, alive, loaded = std::move (loaded), error]() mutable
+        {
+            // Another scene, or the person, may have chosen something else meanwhile.
+            if (alive.expired() || getUiState().getProperty (UiIDs::irPath, "").toString() != file.getFullPathName())
+                return;
+
+            applyLoadedImpulseResponse (file, std::move (loaded), error, false);
+        });
+    });
+}
+
 //==============================================================================
 juce::var DrenchedProcessor::matchRecording (const juce::File& file)
 {
@@ -491,8 +522,66 @@ void DrenchedProcessor::matchRoomAsync (const juce::File& file, std::function<vo
     });
 }
 
+void DrenchedProcessor::analyseResponseAsync (std::function<void (const juce::var&)> done)
+{
+    std::weak_ptr<int> alive = lifetime;
+    auto responses = builder->lastResponses();
+
+    analyser.addJob ([responses = std::move (responses), alive, done = std::move (done)]() mutable
+    {
+        auto result = responses != nullptr ? analysisToVar (analyseResponse (*responses)) : juce::var();
+
+        juce::MessageManager::callAsync ([alive, done = std::move (done), result = std::move (result)]
+        {
+            if (! alive.expired())
+                done (result);
+        });
+    });
+}
+
+juce::var DrenchedProcessor::analysisToVar (const ResponseAnalysis& analysis)
+{
+    const auto tenths = [] (double v) { return std::round (v * 10.0) / 10.0; };
+    const auto list = [&tenths] (const auto& values)
+    {
+        juce::Array<juce::var> out;
+
+        for (const auto v : values)
+            out.add (tenths (static_cast<double> (v)));
+
+        return juce::var (out);
+    };
+
+    juce::Array<juce::var> waterfall;
+
+    for (const auto& slice : analysis.waterfall)
+        waterfall.add (list (slice));
+
+    auto object = std::make_unique<juce::DynamicObject>();
+    object->setProperty ("seconds", std::round (analysis.seconds * 1000.0) / 1000.0);
+    object->setProperty ("bands", list (analysisBands));
+    object->setProperty ("waterfall", waterfall);
+    object->setProperty ("sliceSeconds", analysis.sliceSeconds);
+    object->setProperty ("decay", list (analysis.decayDb));
+    object->setProperty ("decayStep", analysis.decayStepSeconds);
+
+    juce::Array<juce::var> rt60;
+
+    for (const auto v : analysis.rt60)
+        rt60.add (std::round (static_cast<double> (v) * 1000.0) / 1000.0);
+
+    object->setProperty ("rt60", rt60);
+    return juce::var (object.release());
+}
+
+SpectrumTap::Levels DrenchedProcessor::wetSpectrum()
+{
+    const auto rate = getSampleRate();
+    return reverb.wetSpectrum().read (rate > 0.0 ? rate : 48000.0);
+}
+
 void DrenchedProcessor::applyLoadedImpulseResponse (const juce::File& file, std::shared_ptr<const RecordedResponse> loaded,
-                                                    const juce::String& error)
+                                                    const juce::String& error, bool measuredDecay)
 {
     auto ui = getUiState();
     ui.setProperty (UiIDs::irEvent, static_cast<int> (ui.getProperty (UiIDs::irEvent, 0)) + 1, nullptr);
@@ -516,8 +605,9 @@ void DrenchedProcessor::applyLoadedImpulseResponse (const juce::File& file, std:
     ui.setProperty (UiIDs::irPath, file.getFullPathName(), nullptr);
     ui.setProperty (UiIDs::irName, file.getFileNameWithoutExtension(), nullptr);
 
-    // The graph opens on the room's own decay, so editing it reshapes from there.
-    for (size_t band = 0; band < measured.size(); ++band)
+    // The graph opens on the room's own decay, so editing it reshapes from there; a
+    // scene brings its own.
+    for (size_t band = 0; band < (measuredDecay ? measured.size() : 0); ++band)
     {
         if (auto* parameter = state.getParameter (ParamIDs::decay[band]))
         {
@@ -820,6 +910,184 @@ juce::var DrenchedProcessor::impulseResponseInfo()
     return juce::var (object.release());
 }
 
+//==============================================================================
+juce::ValueTree DrenchedProcessor::scenes()
+{
+    return state.state.getOrCreateChildWithName (SceneIDs::tree, nullptr);
+}
+
+juce::ValueTree DrenchedProcessor::findScene (int number)
+{
+    return number > 0 ? scenes().getChildWithProperty (SceneIDs::number, number) : juce::ValueTree();
+}
+
+juce::String DrenchedProcessor::spaceName (const juce::String& id, const juce::String& irName) const
+{
+    if (id == "user")
+        return irName.isNotEmpty() ? irName : juce::String ("Your impulse response");
+
+    if (const auto* space = library::find (id))
+        return space->info["name"].toString();
+
+    for (const auto& space : bundledSpaces)
+        if (id == space.id)
+            return space.name;
+
+    return id;
+}
+
+juce::var DrenchedProcessor::sceneList()
+{
+    juce::Array<juce::var> list;
+
+    for (int number = 1; number <= SceneIDs::maxScenes; ++number)
+    {
+        if (const auto scene = findScene (number); scene.isValid())
+        {
+            auto object = std::make_unique<juce::DynamicObject>();
+            object->setProperty ("number", number);
+            object->setProperty ("name", scene.getProperty (SceneIDs::name).toString());
+            object->setProperty ("space", spaceName (scene.getProperty (SceneIDs::spaceId).toString(),
+                                                     scene.getProperty (SceneIDs::irName).toString()));
+            list.add (juce::var (object.release()));
+        }
+    }
+
+    return list;
+}
+
+int DrenchedProcessor::storeScene (int number, const juce::String& name)
+{
+    if (number == 0)
+        for (int free = 1; free <= SceneIDs::maxScenes && number == 0; ++free)
+            if (! findScene (free).isValid())
+                number = free;
+
+    if (number < 1 || number > SceneIDs::maxScenes)
+        return 0;
+
+    auto scene = findScene (number);
+    const auto oldName = scene.isValid() ? scene.getProperty (SceneIDs::name).toString() : juce::String();
+    juce::ValueTree stored (SceneIDs::scene);
+    stored.setProperty (SceneIDs::number, number, nullptr);
+    stored.setProperty (SceneIDs::name, name.trim().isNotEmpty() ? name.trim().substring (0, 64)
+                                        : oldName.isNotEmpty() ? oldName : "Scene " + juce::String (number), nullptr);
+
+    for (const auto& id : ParamIDs::all())
+        if (SceneIDs::isStored (id))
+            if (auto* raw = state.getRawParameterValue (id))
+                stored.setProperty (id, static_cast<double> (raw->load()), nullptr);
+
+    auto ui = getUiState();
+    const auto spaceId = chosenSpaceId();
+    stored.setProperty (SceneIDs::spaceId, spaceId, nullptr);
+    stored.setProperty (SceneIDs::speakers, ui.getProperty (UiIDs::speakers, "").toString(), nullptr);
+
+    if (spaceId == "user")
+    {
+        stored.setProperty (SceneIDs::irPath, ui.getProperty (UiIDs::irPath, "").toString(), nullptr);
+        stored.setProperty (SceneIDs::irName, ui.getProperty (UiIDs::irName, "").toString(), nullptr);
+    }
+
+    if (scene.isValid())
+        scene.copyPropertiesFrom (stored, nullptr);
+    else
+        scenes().appendChild (stored, nullptr);
+
+    return number;
+}
+
+void DrenchedProcessor::renameScene (int number, const juce::String& name)
+{
+    if (auto scene = findScene (number); scene.isValid() && name.trim().isNotEmpty())
+        scene.setProperty (SceneIDs::name, name.trim().substring (0, 64), nullptr);
+}
+
+void DrenchedProcessor::deleteScene (int number)
+{
+    // Other scenes keep their numbers, so automation that recalls them still does.
+    if (auto scene = findScene (number); scene.isValid())
+        scenes().removeChild (scene, nullptr);
+}
+
+void DrenchedProcessor::recallScene (int number)
+{
+    const auto scene = findScene (number);
+
+    if (! scene.isValid())
+        return;
+
+    followedScene = number;
+
+    if (auto* parameter = state.getParameter (ParamIDs::scene); parameter != nullptr && juce::roundToInt (params.scene->load()) != number)
+    {
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost (parameter->convertTo0to1 (static_cast<float> (number)));
+        parameter->endChangeGesture();
+    }
+
+    for (const auto& id : ParamIDs::all())
+    {
+        auto* parameter = state.getParameter (id);
+
+        if (! SceneIDs::isStored (id) || parameter == nullptr)
+            continue;
+
+        // A parameter newer than the scene goes to its default, which is how the scene
+        // sounded when it was stored.
+        const auto value = static_cast<float> (static_cast<double> (scene.getProperty (id, juce::var())));
+
+        if (! scene.hasProperty (id))
+            parameter->setValueNotifyingHost (parameter->getDefaultValue());
+        else if (std::isfinite (value))
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 (value));
+    }
+
+    auto ui = getUiState();
+    const auto spaceId = scene.getProperty (SceneIDs::spaceId, "").toString();
+    ui.setProperty (UiIDs::speakers, scene.getProperty (SceneIDs::speakers, "").toString(), nullptr);
+
+    if (spaceId == "user")
+    {
+        const auto path = scene.getProperty (SceneIDs::irPath, "").toString();
+        bool loaded = false;
+
+        {
+            const std::lock_guard lock (recordedLock);
+            loaded = path == recordedPath && recorded != nullptr;
+        }
+
+        if (! loaded && juce::File::isAbsolutePath (path))
+        {
+            ui.setProperty (UiIDs::irPath, path, nullptr);
+            ui.setProperty (UiIDs::irName, scene.getProperty (SceneIDs::irName, "").toString(), nullptr);
+            loadSceneImpulseResponseAsync (juce::File (path));
+        }
+    }
+
+    if (spaceId.isNotEmpty())
+        ui.setProperty (UiIDs::spaceId, spaceId, nullptr);
+
+    cacheUiState();
+
+    if (const auto rate = preparedRate.load(); rate > 0.0)
+    {
+        updateLatency (rate);
+
+        if (auto request = currentRequest (rate))
+            builder->request (*request);
+    }
+}
+
+void DrenchedProcessor::followSceneParameter()
+{
+    if (const auto number = juce::roundToInt (params.scene->load()); number != followedScene)
+    {
+        followedScene = number;
+        recallScene (number);
+    }
+}
+
 juce::ValueTree DrenchedProcessor::getUiState()
 {
     return state.state.getOrCreateChildWithName (UiIDs::tree, nullptr);
@@ -971,6 +1239,16 @@ void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     controls.movement = params.movement->load() / 100.0f;
     controls.movementRateHz = params.movementRate->load();
 
+    for (size_t band = 0; band < WetEqualiser::numBands; ++band)
+    {
+        auto& eq = controls.eq[band];
+        eq.frequencyHz = params.eqFrequency[band]->load();
+        eq.gainDb = params.eqGain[band]->load();
+
+        if (WetEqualiser::shapeOf (band) == WetEqualiser::Shape::bell)
+            eq.q = params.eqQ[band - 1]->load();
+    }
+
     for (size_t k = 0; k < maxChannels; ++k)
     {
         controls.speakerLevelDb[k] = speakerLevelDb[k].load (std::memory_order_relaxed);
@@ -1052,6 +1330,10 @@ void DrenchedProcessor::setStateInformation (const void* data, int sizeInBytes)
     restoreImpulseResponse();
     loadLibrarySpace (chosenSpaceId(), true);
     cacheUiState();
+
+    // The session already holds the settings it was saved with, which may have been
+    // changed since the scene it names was recalled; only a move of the parameter recalls.
+    followedScene = juce::roundToInt (params.scene->load());
 
     if (const auto rate = preparedRate.load(); rate > 0.0)
     {

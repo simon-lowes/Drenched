@@ -116,6 +116,12 @@ std::optional<ImpulseResponseRequest> KernelBuilder::lastBuilt() const
     return built;
 }
 
+std::shared_ptr<const ImpulseResponseSet> KernelBuilder::lastResponses() const
+{
+    const std::lock_guard lock (mutex);
+    return builtResponses;
+}
+
 void KernelBuilder::build (const ImpulseResponseRequest& wanted)
 {
     const std::lock_guard buildLock (buildMutex);
@@ -216,8 +222,12 @@ void KernelBuilder::build (const ImpulseResponseRequest& wanted)
     reverb.submit (std::move (kernel));
     shortened.store (shortenedSeconds, std::memory_order_relaxed);
 
+    auto played = std::make_shared<const ImpulseResponseSet> (std::move (responses));
+
     const std::lock_guard lock (mutex);
     built = wanted;
+    builtResponses = std::move (played);
+    builds.fetch_add (1, std::memory_order_release);
 }
 
 void KernelBuilder::freeRetired()

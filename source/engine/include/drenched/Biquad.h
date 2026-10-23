@@ -57,6 +57,14 @@ public:
                           (A + 1.0) - (A - 1.0) * cosw - s);
     }
 
+    /** A bell around `frequency`: `gainDb` at the centre, `q` its narrowness. */
+    static Coefficients peak (double sampleRate, double frequency, double gainDb, double q) noexcept
+    {
+        const auto A = std::pow (10.0, gainDb / 40.0);
+        const auto [w, cosw, alpha] = prewarp (sampleRate, frequency, q);
+        return normalise (1.0 + alpha * A, -2.0 * cosw, 1.0 - alpha * A, 1.0 + alpha / A, -2.0 * cosw, 1.0 - alpha / A);
+    }
+
     void setCoefficients (const Coefficients& c) noexcept { coeffs = c; }
     void reset() noexcept { z1 = z2 = 0.0f; }
 
