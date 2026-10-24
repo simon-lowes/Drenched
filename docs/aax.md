@@ -28,8 +28,8 @@ instead of JUCE's copy, add `-DDRENCHED_AAX_SDK=/path/to/aax-sdk`. On Linux
 and in 32-bit builds the option is ignored.
 
 The same plug-in also appears in Pro Tools' AudioSuite menu for rendering
-a clip offline. Drenched reports its tail length, so AudioSuite renders
-the whole tail past the end of the clip.
+a clip offline. Select past the end of the clip so the reverb tail has
+room to render.
 
 ## Signing
 
