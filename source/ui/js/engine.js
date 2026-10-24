@@ -431,7 +431,7 @@ function hintText(s){var t;if(s.note)t=s.note;else if(s.hint){var k=s.hint,ov=is
 function days(n){return n+' day'+(n===1?'':'s');}
 /* the trial, in the strip beside the hint until Drenched is activated */
 function licChip(s){var L=s.licence;if(!L||L.state==='licensed')return '';
- if(L.state==='beta')return '<span class="licchip">Beta'+(s.bits===32?' \u00b7 32-bit':'')+'</span>';
+ if(L.state==='beta')return '<button class="licchip" data-act="report" title="Copy the details a bug report needs">Beta'+(s.bits===32?' \u00b7 32-bit':'')+'. <u>Report a bug</u></button>';
  return '<button class="licchip'+(L.state==='ended'?' end':'')+'" data-act="licence" aria-haspopup="dialog">'+(L.state==='ended'?'Trial ended, reverb muted. <u>Activate</u>':'Trial: '+days(L.daysLeft)+' left. <u>Activate</u>')+'</button>';}
 function dbText(v){return v<=-60?'\u2212\u221e':v.toFixed(1).replace('-','\u2212');}
 function meterPct(v){return clamp(1+v/60,0,1)*100;}
@@ -488,7 +488,7 @@ function browserHTML(s){var R=browseResults(s),n=R.rows.length,cur=clamp(s.brwCu
  var tool=function(act,cls,l,sm){return '<button data-act="'+act+'" class="'+cls+'"><b>'+l+'</b><small>'+sm+'</small></button>';};
  var tools=tool('loadir','mload','Load your own IR\u2026','WAV, AIFF, FLAC, SOFA')+tool('capture','mcap','Capture a space\u2026','Sweep or clap, and record')+tool('speakers','mspk','Reverb speakers\u2026','Level and delay each')+
   tool('eq','meq','Wet EQ\u2026',eqFlat(s)?'Six bands, flat':eqUsed(s)+(eqUsed(s)===1?' band':' bands')+' in use')+tool('wf','mwf','Waterfall\u2026','Decay and live spectrum')+tool('scenes','mscn','Scenes\u2026',s.scenes&&s.scenes.length?s.scenes.length+' stored':'For each shot')+
-  (LIBRARY.length?tool('credits','mcred','Recording credits\u2026',LIBRARY.length+' recorded'):'')+(s.licence&&s.licence.state==='beta'?'':tool('licence','mlic','Licence\u2026',s.licence&&s.licence.state==='licensed'?'Activated':s.licence&&s.licence.state==='ended'?'Trial ended':'Trial'));
+  (LIBRARY.length?tool('credits','mcred','Recording credits\u2026',LIBRARY.length+' recorded'):'')+tool('report','mrep','Report a bug','Copy this setup\u2019s details')+(s.licence&&s.licence.state==='beta'?'':tool('licence','mlic','Licence\u2026',s.licence&&s.licence.state==='licensed'?'Activated':s.licence&&s.licence.state==='ended'?'Trial ended':'Trial'));
  return '<div class="cap brw'+(R.ref?' sim':'')+'" role="dialog" aria-modal="true" aria-labelledby="brw-h"><div class="cbox"><div class="chd"><h2 id="brw-h">Spaces</h2><span class="brw-n">'+SPACES.length+' to choose from. Type to search, the arrow keys move, Enter picks, and Shift with Enter lists the ones that sound like the highlighted space.</span><button class="cx" data-act="browse" aria-label="Close">Close</button></div>'+
   '<div class="brw-top"><input id="brw-q" data-fid="brw-q" type="text" value="'+esc(q)+'" placeholder="Search by name, place, kind or microphone" autocomplete="off" spellcheck="false" role="combobox" aria-label="Search the spaces" aria-autocomplete="list" aria-expanded="true" aria-controls="brw-list"'+(n?' aria-activedescendant="brw-r'+cur+'"':'')+'>'+simb+'</div>'+
   '<div class="brw-kinds" role="group" aria-label="Kind">'+chips+'</div>'+
