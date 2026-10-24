@@ -878,6 +878,38 @@ void DrenchedProcessor::restoreImpulseResponse()
     recordedMissing = recorded == nullptr;
 }
 
+juce::String DrenchedProcessor::bugReportDetails()
+{
+   #ifdef JucePlugin_VersionString
+    const juce::String version (JucePlugin_VersionString);
+   #else
+    const juce::String version ("unknown");
+   #endif
+
+    const auto layout = getBusesLayout();
+    const auto ui = getUiState();
+    const auto irName = ui.getProperty (UiIDs::irName, "").toString();
+    const auto space = chosenSpaceId();
+
+    juce::StringArray lines;
+    lines.add ("Drenched " + version + (LicenceManager::isBeta() ? " beta" : "") + ", "
+               + juce::String (static_cast<int> (sizeof (void*) * 8)) + "-bit");
+    lines.add ("Format: " + juce::String (getWrapperTypeDescription (wrapperType)));
+    lines.add ("Host: " + juce::String (juce::PluginHostType().getHostDescription()));
+    lines.add ("System: " + juce::SystemStats::getOperatingSystemName() + ", "
+               + juce::SystemStats::getCpuModel().trim() + ", "
+               + juce::String (juce::SystemStats::getMemorySizeInMegabytes() / 1024.0, 1) + " GB");
+    lines.add ("Audio: " + juce::String (getSampleRate(), 0) + " Hz, buffer " + juce::String (getBlockSize())
+               + ", latency " + juce::String (getLatencySamples()) + " samples"
+               + (*params.lowCpu > 0.5f ? " (Low CPU)" : ""));
+    lines.add ("Channels: " + layout.getMainInputChannelSet().getDescription() + " in, "
+               + layout.getMainOutputChannelSet().getDescription() + " out");
+    lines.add ("Space: " + (space == "user" ? "your IR " + irName : space));
+    lines.add ("Look: " + ui.getProperty (UiIDs::skin, settings::loadDefaultSkin()).toString()
+               + ", view " + ui.getProperty (UiIDs::mode, "studio").toString());
+    return lines.joinIntoString ("\n");
+}
+
 juce::var DrenchedProcessor::impulseResponseInfo()
 {
     auto ui = getUiState();

@@ -120,6 +120,7 @@ juce::WebBrowserComponent::Options DrenchedEditor::makeOptions()
         // Some hosts keep copy and paste shortcuts from reaching a plugin window, so the page
         // has its own buttons for them, served by the system clipboard.
         .withEventListener ("copyText", [] (const juce::var& v) { juce::SystemClipboard::copyTextToClipboard (v["text"].toString()); })
+        .withEventListener ("copyReport", [this] (const juce::var&) { juce::SystemClipboard::copyTextToClipboard (processor.bugReportDetails()); })
         .withEventListener ("pasteText", [this] (const juce::var& v)
         {
             auto reply = std::make_unique<juce::DynamicObject>();
