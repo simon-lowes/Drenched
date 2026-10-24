@@ -291,12 +291,12 @@ Every feature is in both the 32-bit and 64-bit versions, and sessions move freel
 
 ## Reporting bugs
 
-Send reports to whoever sent you the beta. Please include:
+Send reports to whoever sent you the beta. Click **Report a bug** (on the
+Beta chip at the top, or in the Spaces window's tools) and Drenched copies
+your setup to the clipboard: its version, format, host, system, sample rate,
+buffer size, channels, space and look. Paste that into your message, then
+add:
 
-- Your host and its version, and your macOS or Windows version.
-- The format (VST3, AU, CLAP or the app), and 32 or 64-bit.
-- The sample rate and buffer size, and the track layout if it's surround.
-- The look you were using.
 - What you did, step by step, what you expected, and what happened.
 - If you can, the session, any IR file you loaded, and a screenshot or recording.
 
