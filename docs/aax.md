@@ -27,6 +27,10 @@ as `Drenched.aaxplugin`. To build against an SDK downloaded from Avid
 instead of JUCE's copy, add `-DDRENCHED_AAX_SDK=/path/to/aax-sdk`. On Linux
 and in 32-bit builds the option is ignored.
 
+The same plug-in also appears in Pro Tools' AudioSuite menu for rendering
+a clip offline. Drenched reports its tail length, so AudioSuite renders
+the whole tail past the end of the clip.
+
 ## Signing
 
 An unsigned AAX plug-in loads only in Pro Tools Developer, a free build
