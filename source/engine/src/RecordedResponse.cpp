@@ -293,6 +293,18 @@ std::vector<float> tiltDecay (const std::vector<float>& x, const std::array<doub
 
     const auto norm = 1.0f / (static_cast<float> (frame) * 2.0f); // inverse FFT scale and Hann overlap sum
 
+    // Each bin's gain, 10^(offset + tilt * seconds) up to the ceiling. Once the
+    // frames are past the lead, seconds grows by one hop per frame, so the gain
+    // grows by a fixed factor per frame: a multiply instead of a pow per bin.
+    const auto hopSeconds = static_cast<double> (hop) / sampleRate;
+    const auto most = std::pow (10.0, ceiling);
+    std::vector<double> gain (bins + 1), growth (bins + 1);
+
+    for (std::size_t k = 0; k <= bins; ++k)
+        growth[k] = std::pow (10.0, perBin[k] * hopSeconds);
+
+    auto started = false;
+
     for (std::size_t pos = 0; pos + frame <= padded.size(); pos += hop)
     {
         for (std::size_t n = 0; n < frame; ++n)
@@ -302,7 +314,21 @@ std::vector<float> tiltDecay (const std::vector<float>& x, const std::array<doub
 
         const auto centre = static_cast<double> (pos + frame / 2) - static_cast<double> (frame) - lead;
         const auto seconds = std::max (0.0, centre / sampleRate);
-        const auto gainAt = [&] (std::size_t k) { return static_cast<float> (std::pow (10.0, std::min (ceiling, offsetPerBin[k] + perBin[k] * seconds))); };
+
+        if (! started || seconds <= 0.0)
+        {
+            for (std::size_t k = 0; k <= bins; ++k)
+                gain[k] = std::pow (10.0, offsetPerBin[k] + perBin[k] * seconds);
+
+            started = seconds > 0.0;
+        }
+        else
+        {
+            for (std::size_t k = 0; k <= bins; ++k)
+                gain[k] *= growth[k];
+        }
+
+        const auto gainAt = [&] (std::size_t k) { return static_cast<float> (std::min (most, gain[k])); };
 
         auto* sp = spectrum.get();
         sp[0] *= gainAt (0);

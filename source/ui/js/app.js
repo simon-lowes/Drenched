@@ -308,7 +308,8 @@ function snap(s){var o={sp:s.sp,bands:s.bands.slice(),rbands:s.rbands.slice(),li
 /* a new space brings its curve to both sides; the link state stays as it was */
 function changeSpace(i){var old=snap(st),sp=SPACES[i],held=[];st.sp=i;st.bands=sp.bands.slice();st.rbands=sp.bands.slice();st.pre=sp.pre;st.size=100;
  if(st.locks.decay){var f=decayOf(old.bands)/decayOf(sp.bands),sc=function(b){return clamp(b*f,0.1,20);};st.bands=st.bands.map(sc);st.rbands=st.rbands.map(sc);held.push('Decay');}
- if(st.locks.pre){st.pre=old.pre;held.push('Pre-delay');}if(st.locks.mix)held.push('Mix');
+ if(st.locks.pre){st.pre=old.pre;held.push('Pre-delay');}if(st.locks.size){st.size=old.size;held.push('Size');}
+ ['mix','bright','el','dist'].forEach(function(k){if(st.locks[k])held.push(P[k].l);});
  st.hint=null;st.note='<b>'+esc(sp.name)+'</b> loaded.'+(held.length?' Locked and held: '+held.join(', ')+'.':' Lock a value to hold it when you change space.')+(sp.credit?' Recording: '+esc(sp.credit)+', '+esc(sp.licence)+'.':'');return held;}
 var drag=null,eqTap=null;
 live.addEventListener('pointerdown',function(e){var t=e.target;if(t.closest('input,button'))return;

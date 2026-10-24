@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The macOS installer's layout (see build-pkg.sh): four components, all chosen by default. -->
+<!-- The macOS installer's layout (see build-pkg.sh): five components, all chosen by default. -->
 <installer-gui-script minSpecVersion="2">
     <title>Drenched @VERSION@ beta</title>
     <welcome file="welcome.txt" mime-type="text/plain"/>
     <!-- the components' notices, which their licences ask to ship with the binaries -->
     <license file="third-party-licences.txt" mime-type="text/plain"/>
+    <conclusion file="conclusion.txt" mime-type="text/plain"/>
     <options customize="allow" require-scripts="false" hostArchitectures="arm64,x86_64"/>
     <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
     <choices-outline>
@@ -12,6 +13,7 @@
         <line choice="vst3"/>
         <line choice="clap"/>
         <line choice="app"/>
+        <line choice="docs"/>
     </choices-outline>
     <choice id="au" title="Audio Unit" description="For Logic Pro, GarageBand and other Audio Unit hosts. Installs in /Library/Audio/Plug-Ins/Components.">
         <pkg-ref id="com.drenched.drenched.au"/>
@@ -25,8 +27,12 @@
     <choice id="app" title="Standalone app" description="Drenched on its own, without a host. Installs in /Applications.">
         <pkg-ref id="com.drenched.drenched.app"/>
     </choice>
+    <choice id="docs" title="User guide" description="The user guide and third-party licences. Installs in /Library/Application Support/Drenched.">
+        <pkg-ref id="com.drenched.drenched.docs"/>
+    </choice>
     <pkg-ref id="com.drenched.drenched.au" version="@VERSION@">au.pkg</pkg-ref>
     <pkg-ref id="com.drenched.drenched.vst3" version="@VERSION@">vst3.pkg</pkg-ref>
     <pkg-ref id="com.drenched.drenched.clap" version="@VERSION@">clap.pkg</pkg-ref>
     <pkg-ref id="com.drenched.drenched.app" version="@VERSION@">app.pkg</pkg-ref>
+    <pkg-ref id="com.drenched.drenched.docs" version="@VERSION@">docs.pkg</pkg-ref>
 </installer-gui-script>

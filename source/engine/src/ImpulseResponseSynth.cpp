@@ -122,6 +122,17 @@ std::vector<float> shapeDecay (const std::vector<float>& noise, std::size_t star
     std::vector<float> out (noise.size() + frame, 0.0f);
     const auto norm = 1.0f / (static_cast<float> (frame) * 2.0f); // inverse FFT scale and Hann overlap sum
 
+    // Each bin's gain, 10^(-dB per second * seconds / 20). Once the frames are
+    // past the start, seconds grows by one hop per frame, so the gain falls by a
+    // fixed factor per frame: a multiply instead of a pow per bin.
+    const auto hopSeconds = static_cast<double> (hop) / sampleRate;
+    std::vector<double> gain (bins + 1), fall (bins + 1);
+
+    for (std::size_t k = 0; k <= bins; ++k)
+        fall[k] = std::pow (10.0, -dbPerSecond[k] * hopSeconds / 20.0);
+
+    auto started = false;
+
     for (std::size_t pos = 0; pos < noise.size(); pos += hop)
     {
         for (std::size_t n = 0; n < frame; ++n)
@@ -131,7 +142,21 @@ std::vector<float> shapeDecay (const std::vector<float>& noise, std::size_t star
 
         const auto centre = static_cast<double> (pos + frame / 2) - static_cast<double> (start);
         const auto seconds = std::max (0.0, centre / sampleRate);
-        const auto gainAt = [&] (std::size_t k) { return static_cast<float> (std::pow (10.0, -dbPerSecond[k] * seconds / 20.0)); };
+
+        if (! started || seconds <= 0.0)
+        {
+            for (std::size_t k = 0; k <= bins; ++k)
+                gain[k] = std::pow (10.0, -dbPerSecond[k] * seconds / 20.0);
+
+            started = seconds > 0.0;
+        }
+        else
+        {
+            for (std::size_t k = 0; k <= bins; ++k)
+                gain[k] *= fall[k];
+        }
+
+        const auto gainAt = [&] (std::size_t k) { return static_cast<float> (gain[k]); };
 
         spectrum[0] *= gainAt (0);
         spectrum[1] *= gainAt (bins);
