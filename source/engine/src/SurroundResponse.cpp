@@ -68,12 +68,17 @@ namespace
 
     std::vector<float> convolve (const std::vector<float>& x, const std::vector<float>& h, std::size_t outLength)
     {
-        PartitionedConvolver convolver ({ std::span<const float> (h) });
+        // Offline there is no need for zero latency. With one, the convolver
+        // leaves out the time-domain head and the small stages, which cost
+        // the most per sample, and the result is read that much later.
+        constexpr std::size_t latency = 2048;
+        PartitionedConvolver convolver ({ std::span<const float> (h) }, latency);
         std::vector<float> in (x);
-        in.resize (outLength, 0.0f);
-        std::vector<float> out (outLength);
+        in.resize (outLength + latency, 0.0f);
+        std::vector<float> out (outLength + latency);
         float* outputs[] = { out.data() };
-        convolver.process (in.data(), outputs, outLength);
+        convolver.process (in.data(), outputs, out.size());
+        out.erase (out.begin(), out.begin() + static_cast<std::ptrdiff_t> (latency));
         return out;
     }
 

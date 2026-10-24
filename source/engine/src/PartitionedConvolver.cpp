@@ -23,8 +23,11 @@ public:
 
     explicit AlignedFloats (std::size_t count)
         : size_ (count),
-          data_ (static_cast<float*> (pffft_aligned_malloc (count * sizeof (float))))
+          data_ (count == 0 ? nullptr : static_cast<float*> (pffft_aligned_malloc (count * sizeof (float))))
     {
+        if (count == 0)
+            return;
+
         if (data_ == nullptr)
             throw std::bad_alloc();
 
@@ -64,15 +67,24 @@ struct SetupDeleter
 } // namespace
 
 /** One uniformly partitioned overlap-save stage: block size B, FFT size 2B,
-    P partitions covering taps [B, B + P * B) of the impulse response. */
+    P partitions covering taps [firstTap, firstTap + P * B) of the impulse
+    response.
+
+    A stage that starts at tap B must have each block's output ready the moment
+    the block's input is complete, so its transforms all run in that one audio
+    callback. A stage that starts at tap 2B (with slack) has a whole block of
+    time instead: while block k+1 arrives it works out block k's output a share
+    at a time, transforms included, and plays it from the boundary after. That
+    keeps the large stages from spiking the CPU every time a block completes. */
 struct PartitionedConvolver::Stage
 {
     Stage (std::size_t blockSize, std::size_t numPartitions,
-           const std::vector<std::span<const float>>& irs, std::size_t firstTap)
-        : B (blockSize), P (numPartitions), N (2 * blockSize), numOut (irs.size()),
+           const std::vector<std::span<const float>>& irs, std::size_t firstTap, bool withSlack)
+        : B (blockSize), P (numPartitions), N (2 * blockSize), numOut (irs.size()), slack (withSlack),
           setup (pffft_new_setup (static_cast<int> (2 * blockSize), PFFFT_REAL)),
           history (N), work (N), timeDomain (N),
-          filters (numOut * P * N), fdl (P * N), acc (numOut * N), outBlock (numOut * B)
+          filters (numOut * P * N), fdl (P * N), acc (numOut * N), outBlock (numOut * B),
+          nextBlock (slack ? numOut * B : 0), pendingInput (slack ? N : 0)
     {
         if (setup == nullptr)
             throw std::bad_alloc();
@@ -98,6 +110,15 @@ struct PartitionedConvolver::Stage
                 pffft_transform (setup.get(), padded.data(), filter (k, p), work.data(), PFFFT_FORWARD);
             }
         }
+
+        // A transform costs about as much as this many spectrum multiplies.
+        auto bits = std::size_t { 0 };
+        while ((std::size_t { 1 } << bits) < N)
+            ++bits;
+
+        transformCost = std::max<std::size_t> (1, bits * 3 / 5);
+        numTasks = 1 + numOut * (P + 1);
+        totalCost = transformCost + numOut * (P + transformCost);
     }
 
     float* filter (std::size_t output, std::size_t partition) noexcept
@@ -113,9 +134,13 @@ struct PartitionedConvolver::Stage
         fdl.clear();
         acc.clear();
         outBlock.clear();
+        nextBlock.clear();
+        pendingInput.clear();
         fill = 0;
         macDone = 0;
         newest = 0;
+        tasksDone = 0;
+        costDone = 0;
     }
 
     /** Multiply-accumulates partitions 1 .. P-1 for the block now filling, up
@@ -167,6 +192,64 @@ struct PartitionedConvolver::Stage
         macDone = 0;
     }
 
+    /** With slack: the work for the last completed block's output is a list of
+        tasks, the forward transform of its input first, then for each output
+        its P multiplies and its inverse transform. Runs them up to the share
+        of their cost that matches how much of the current block has arrived. */
+    void runTasks (std::size_t costTarget) noexcept
+    {
+        const auto scale = 1.0f / static_cast<float> (N);
+
+        while (tasksDone < numTasks)
+        {
+            const auto t = tasksDone;
+            const auto isTransform = t == 0 || (t - 1) % (P + 1) == P;
+            const auto cost = isTransform ? transformCost : 1;
+
+            if (costDone + cost > costTarget)
+                break;
+
+            if (t == 0)
+            {
+                pffft_transform (setup.get(), pendingInput.data(), spectrum (newest), work.data(), PFFFT_FORWARD);
+            }
+            else
+            {
+                const auto k = (t - 1) / (P + 1), p = (t - 1) % (P + 1);
+                auto* a = acc.data() + k * N;
+
+                if (p < P)
+                {
+                    pffft_zconvolve_accumulate (setup.get(), spectrum ((newest + P - p) % P), filter (k, p), a, scale);
+                }
+                else
+                {
+                    pffft_transform (setup.get(), a, timeDomain.data(), work.data(), PFFFT_BACKWARD);
+                    std::copy_n (timeDomain.data() + B, B, nextBlock.data() + k * B);
+                    std::fill_n (a, N, 0.0f);
+                }
+            }
+
+            ++tasksDone;
+            costDone += cost;
+        }
+    }
+
+    /** With slack, at the end of a block: finishes the previous block's output
+        and plays it from now, and queues the block just completed. */
+    void finishBlockWithSlack() noexcept
+    {
+        runTasks (totalCost);
+        std::swap (outBlock, nextBlock);
+
+        newest = (newest + 1) % P;
+        std::copy_n (history.data(), N, pendingInput.data());
+        std::copy_n (history.data() + B, B, history.data());
+        fill = 0;
+        tasksDone = 0;
+        costDone = 0;
+    }
+
     /** Adds this stage's contribution for numSamples into the outputs. */
     void process (const float* input, float* const* outputs, std::size_t numSamples) noexcept
     {
@@ -179,7 +262,8 @@ struct PartitionedConvolver::Stage
             std::copy_n (input + done, count, history.data() + B + fill);
 
             // The block computed at the last boundary covers exactly the
-            // samples arriving now, because this stage starts at tap B.
+            // samples arriving now, because this stage starts at tap B (or
+            // 2B with slack, where it was worked out during the block before).
             for (std::size_t k = 0; k < numOut; ++k)
             {
                 const auto* src = outBlock.data() + k * B + fill;
@@ -192,18 +276,30 @@ struct PartitionedConvolver::Stage
             fill += count;
             done += count;
 
-            if (P > 1)
-                accumulateOlderPartitions ((P - 1) * fill / B);
+            if (slack)
+            {
+                runTasks (totalCost * fill / B);
 
-            if (fill == B)
-                finishBlock();
+                if (fill == B)
+                    finishBlockWithSlack();
+            }
+            else
+            {
+                if (P > 1)
+                    accumulateOlderPartitions ((P - 1) * fill / B);
+
+                if (fill == B)
+                    finishBlock();
+            }
         }
     }
 
     const std::size_t B, P, N, numOut;
+    const bool slack;
     std::unique_ptr<PFFFT_Setup, SetupDeleter> setup;
-    AlignedFloats history, work, timeDomain, filters, fdl, acc, outBlock;
+    AlignedFloats history, work, timeDomain, filters, fdl, acc, outBlock, nextBlock, pendingInput;
     std::size_t fill = 0, macDone = 0, newest = 0;
+    std::size_t transformCost = 1, numTasks = 0, totalCost = 0, tasksDone = 0, costDone = 0;
 };
 
 PartitionedConvolver::PartitionedConvolver (const std::vector<std::span<const float>>& impulseResponses,
@@ -234,21 +330,30 @@ PartitionedConvolver::PartitionedConvolver (const std::vector<std::span<const fl
     }
 
     const auto total = irLength + latency;
+    const auto startOf = [] (std::size_t block) { return block >= slackFrom ? 2 * block : block; };
+    auto begin = latency == 0 ? headLength : latency; // where the next stage starts
 
-    for (std::size_t block = latency == 0 ? headLength : latency; block < total; block *= growthFactor)
+    for (std::size_t block = begin; begin < total; block *= growthFactor)
     {
         // A larger stage only pays for itself when the rest fills at least one
-        // of its blocks; otherwise this stage takes up to 15 partitions to the
-        // end. Rounding a short remainder up to one huge block per output cost
-        // 2 GB for a long 9.1.6 response.
+        // of its blocks; otherwise this stage takes the rest. Rounding a short
+        // remainder up to one huge block per output cost 2 GB for a long 9.1.6
+        // response.
         const auto next = block * growthFactor;
-        const auto last = total < 2 * next;
-        const auto partitions = last ? (total - block + block - 1) / block : growthFactor - 1;
+        const auto nextBegin = startOf (next);
+        const auto last = total < nextBegin + next;
+        const auto end = last ? total : nextBegin;
+        const auto partitions = (end - begin + block - 1) / block;
 
-        stages.push_back (std::make_unique<Stage> (block, partitions, impulseResponses, block - latency));
+        // Only a stage that starts at 2B has the slack to spread its transforms
+        // (the first one starts straight after the head or the latency).
+        stages.push_back (std::make_unique<Stage> (block, partitions, impulseResponses, begin - latency,
+                                                   begin >= 2 * block));
 
         if (last)
             break;
+
+        begin = nextBegin;
     }
 }
 

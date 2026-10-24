@@ -113,6 +113,49 @@ TEST_CASE ("Long, sparse responses null across the large stages", "[partitioned]
     REQUIRE (maxDifference (actual, expected) <= 1.0e-4f * peak (expected));
 }
 
+TEST_CASE ("The large stages work out each block during the next, with or without a latency", "[partitioned][latency]")
+{
+    // From slackFrom up a stage starts at tap 2B and spreads its transforms over
+    // the following block. Two outputs, odd block sizes and a latency check that
+    // the work queue for every output lands on the right samples.
+    const auto latency = GENERATE (std::size_t (0), std::size_t (1024));
+    const auto length = GENERATE (std::size_t (20000), std::size_t (90000));
+    INFO ("latency " << latency << ", length " << length);
+
+    std::mt19937 rng (17);
+    std::uniform_int_distribution<std::size_t> where (0, length - 1);
+    std::uniform_real_distribution<float> value (-1.0f, 1.0f);
+    std::vector<float> left (length, 0.0f), right (length, 0.0f);
+
+    for (int i = 0; i < 40; ++i)
+    {
+        left[where (rng)] = value (rng);
+        right[where (rng)] = value (rng);
+    }
+
+    left[length - 1] = right[0] = 0.5f;
+
+    const auto input = testing::noise (length + latency + 30000, 23);
+    const auto reference = [&] (const std::vector<float>& ir)
+    {
+        std::vector<float> out (input.size(), 0.0f);
+
+        for (std::size_t k = 0; k < length; ++k)
+            if (ir[k] != 0.0f)
+                for (std::size_t n = k + latency; n < input.size(); ++n)
+                    out[n] += ir[k] * input[n - k - latency];
+
+        return out;
+    };
+
+    PartitionedConvolver conv ({ std::span<const float> (left), std::span<const float> (right) }, latency);
+    const auto actual = runInRandomBlocks (conv, input, 13);
+    const auto expectedLeft = reference (left), expectedRight = reference (right);
+
+    REQUIRE (maxDifference (actual[0], expectedLeft) <= 1.0e-4f * peak (expectedLeft));
+    REQUIRE (maxDifference (actual[1], expectedRight) <= 1.0e-4f * peak (expectedRight));
+}
+
 TEST_CASE ("There is no latency: an impulse returns the response from sample zero", "[partitioned]")
 {
     const auto ir = testing::noise (5000, 21);
