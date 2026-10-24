@@ -17,6 +17,7 @@ namespace
 constexpr std::size_t N = LivingTailDesign::numLines;
 constexpr std::size_t S = LivingTailDesign::numShelves;
 constexpr double speedOfSound = 343.0;
+constexpr double maxStepDb = 6.0; // per pass, between neighbouring octave bands
 
 // Fixed sign patterns for feeding the lines and tapping them. Different
 // patterns per channel keep the two outputs decorrelated.
@@ -572,12 +573,47 @@ LivingTailDesign designLivingTail (const ImpulseResponseRequest& request, const 
             d.bandLossDb[i][b] = static_cast<float> (target[b]);
         }
 
+        // The shelves turn over gradually, so a band can be only so much
+        // lossier than its neighbours: asked for a steeper step, the cascade
+        // overshoots between the band centres. Steeper steps become less loss
+        // in the lossier band.
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            for (std::size_t b = 1; b < 8; ++b)
+                target[b] = std::max (target[b], target[b - 1] - maxStepDb);
+
+            for (std::size_t b = 7; b-- > 0;)
+                target[b] = std::max (target[b], target[b + 1] - maxStepDb);
+        }
+
         const auto x = solve (interaction, target);
 
         for (std::size_t k = 0; k < S; ++k)
             d.shelves[i][k] = Biquad::lowShelf (sr, shelfEdge (k), x[k]);
 
-        d.broadband[i] = static_cast<float> (std::pow (10.0, x[S] / 20.0));
+        // Between the centres, and beyond the outer ones where the cascade
+        // keeps the curve's slope, the loop can still come out less lossy than
+        // any band asked for, or gain outright and grow without end. Nowhere may
+        // it ring for more than twice the longest decay asked for.
+        auto broadbandDb = x[S];
+        double loudest = -1000.0;
+
+        for (double f = 10.0; f < 0.5 * sr; f *= 1.05)
+        {
+            auto db = broadbandDb;
+
+            for (const auto& shelf : d.shelves[i])
+                db += Biquad::magnitudeDb (shelf, sr, f);
+
+            loudest = std::max (loudest, db);
+        }
+
+        const auto limit = 0.5 * *std::max_element (target.begin(), target.end());
+
+        if (loudest > limit)
+            broadbandDb -= loudest - limit;
+
+        d.broadband[i] = static_cast<float> (std::pow (10.0, broadbandDb / 20.0));
     }
 
     // The first echo leaves after the shortest line; the input waits for the

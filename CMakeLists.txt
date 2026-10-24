@@ -19,6 +19,14 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4 AND NOT MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "
 endif()
 
 option(DRENCHED_BUILD_TESTS "Build the unit tests" ON)
+
+# Sanitizer builds for finding bugs, e.g. -DDRENCHED_SANITIZE=thread or address,undefined
+# (GCC and Clang; use a Debug or RelWithDebInfo build).
+set(DRENCHED_SANITIZE "" CACHE STRING "Sanitizers to build with, as -fsanitize takes them")
+if(DRENCHED_SANITIZE)
+    add_compile_options(-fsanitize=${DRENCHED_SANITIZE} -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=${DRENCHED_SANITIZE})
+endif()
 option(DRENCHED_BUILD_CLAP "Build the CLAP format" ON)
 
 include(cmake/Dependencies.cmake)
