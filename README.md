@@ -107,6 +107,9 @@ cmake -S . -B build -DJUCE_WEBVIEW2_PACKAGE_LOCATION=%cd%/packages
 For 32-bit Windows, configure with `-A Win32`. 32-bit Linux builds inside
 an i386 Debian container; see `.github/scripts/linux-i686.sh`.
 
+AAX (Pro Tools) is off until Avid's AAX SDK licence is signed; see
+[docs/aax.md](docs/aax.md).
+
 To hunt for races or memory errors, configure a separate Debug or RelWithDebInfo
 build with `-DDRENCHED_SANITIZE=thread` (or `address,undefined`) and run the tests.
 

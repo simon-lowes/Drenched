@@ -3,6 +3,19 @@ if(APPLE)
     list(APPEND DRENCHED_FORMATS AU)
 endif()
 
+# Pro Tools is 64-bit only and runs on macOS and Windows only.
+if(DRENCHED_BUILD_AAX)
+    if((APPLE OR WIN32) AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        if(DRENCHED_AAX_SDK)
+            juce_set_aax_sdk_path("${DRENCHED_AAX_SDK}")
+        endif()
+
+        list(APPEND DRENCHED_FORMATS AAX)
+    else()
+        message(STATUS "AAX is built for 64-bit macOS and Windows only; skipping it here.")
+    endif()
+endif()
+
 # The interface: one web page with twelve skins, embedded in the binary and served to the
 # web view from memory. Every file under source/ui ships; names must stay unique across
 # the tree because the editor looks resources up by file name.
@@ -49,6 +62,7 @@ juce_add_plugin(Drenched
     NEEDS_CURL TRUE
     VST3_CATEGORIES Fx Reverb
     AU_MAIN_TYPE kAudioUnitType_Effect
+    AAX_CATEGORY AAX_ePlugInCategory_Reverb
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
 target_sources(Drenched PRIVATE
