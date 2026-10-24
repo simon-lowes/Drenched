@@ -1325,6 +1325,16 @@ void DrenchedProcessor::migrateState (juce::ValueTree& session) const
         ui.removeProperty (UiIDs::listenerX, nullptr);
     }
 
+    // A damaged session can hold settings that aren't numbers. They take their
+    // defaults; left in, they would make the reverb play nothing but NaN.
+    for (int i = session.getNumChildren(); --i >= 0;)
+    {
+        const auto child = session.getChild (i);
+
+        if (child.hasType ("PARAM") && ! std::isfinite (static_cast<double> (child.getProperty ("value"))))
+            session.removeChild (i, nullptr);
+    }
+
     session.setProperty (stateVersionID, stateVersion, nullptr);
 }
 
