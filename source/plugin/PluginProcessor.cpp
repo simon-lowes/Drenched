@@ -436,7 +436,7 @@ juce::var DrenchedProcessor::matchRecording (const juce::File& file)
     const auto length = std::min (reader->lengthInSamples, static_cast<juce::int64> (longestSeconds * reader->sampleRate));
 
     if (static_cast<double> (length) < shortestSeconds * reader->sampleRate)
-        return failed (file.getFileName() + " is too short. Choose a recording at least ten seconds long.");
+        return failed (file.getFileName() + " is too short. Choose a recording at least five seconds long.");
 
     RoomListener listener (reader->sampleRate);
     juce::AudioBuffer<float> buffer (channels, block);

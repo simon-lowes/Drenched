@@ -1,0 +1,5 @@
+Drenched is installed.
+
+Rescan plug-ins in your host if it doesn't appear. Logic Pro finds it under Audio Units > Drenched.
+
+The user guide is in /Library/Application Support/Drenched (in the Finder, choose Go > Go to Folder and paste that path). It covers every control and window, and how to report a bug.

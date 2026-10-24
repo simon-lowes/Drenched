@@ -1,7 +1,7 @@
 #!/bin/bash
 # Builds the macOS installer for the friends beta: one .pkg that puts the VST3, Audio Unit
 # and CLAP plug-ins in /Library/Audio/Plug-Ins and the standalone app in /Applications,
-# each a component the installer's "Customise" button can leave out.
+# each a component the installer's "Customise" button can leave out, plus the user guide.
 #
 #   packaging/macos/build-pkg.sh <folder with Drenched.vst3, .component, .clap, .app> <version> <output.pkg>
 #
@@ -36,16 +36,23 @@ component au Drenched.component /Library/Audio/Plug-Ins/Components
 component clap Drenched.clap /Library/Audio/Plug-Ins/CLAP
 component app Drenched.app /Applications
 
+# The user guide and the licences, where the conclusion page says they are.
+mkdir -p "$WORK/guide/Drenched"
+cp "$HERE/../user-guide.html" "$WORK/guide/Drenched/User guide.html"
+cp "$HERE/../third-party-licences.txt" "$WORK/guide/Drenched/Third-party licences.txt"
+SRC="$WORK/guide"
+component docs Drenched "/Library/Application Support"
+
 sed "s/@VERSION@/$VERSION/g" "$HERE/distribution.xml" > "$WORK/distribution.xml"
 mkdir -p "$WORK/resources"
-cp "$HERE/welcome.txt" "$HERE/../third-party-licences.txt" "$WORK/resources/"
+cp "$HERE/welcome.txt" "$HERE/conclusion.txt" "$HERE/../third-party-licences.txt" "$WORK/resources/"
 
 productbuild --distribution "$WORK/distribution.xml" --package-path "$WORK" \
              --resources "$WORK/resources" "$OUT"
 
 # A quick look that every component made it in.
 pkgutil --expand "$OUT" "$WORK/check"
-for id in vst3 au clap app; do
+for id in vst3 au clap app docs; do
     [ -d "$WORK/check/$id.pkg" ] || { echo "the installer is missing $id" >&2; exit 1; }
 done
 echo "Built $OUT"
