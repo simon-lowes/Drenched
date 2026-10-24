@@ -60,11 +60,14 @@ Source: "{#Source}\Drenched.exe"; DestDir: "{app}"; Components: app; Flags: igno
 Source: "{#Source}\Drenched (32-bit).exe"; DestDir: "{app}"; DestName: "Drenched.exe"; Components: app; Flags: ignoreversion; Check: not Is64BitInstallMode
 
 Source: "..\third-party-licences.txt"; DestDir: "{app}"; DestName: "Third-party licences.txt"; Flags: ignoreversion
+Source: "..\user-guide.html"; DestDir: "{app}"; DestName: "User guide.html"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Drenched"; Filename: "{app}\Drenched.exe"; Components: app
+Name: "{group}\Drenched user guide"; Filename: "{app}\User guide.html"
 Name: "{group}\Third-party licences"; Filename: "{app}\Third-party licences.txt"
 Name: "{group}\Uninstall Drenched"; Filename: "{uninstallexe}"
 
 [Run]
 Filename: "{app}\Drenched.exe"; Description: "Open Drenched now"; Flags: nowait postinstall skipifsilent; Components: app
+Filename: "{app}\User guide.html"; Description: "Read the user guide"; Flags: shellexec nowait postinstall skipifsilent unchecked

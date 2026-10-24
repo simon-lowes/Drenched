@@ -143,6 +143,12 @@ To preview the interface in a browser without the plugin, serve
 `source/ui/` with any static file server and open `index.html#rotunda`
 (or any other skin id).
 
+## User guide
+
+The [user guide](docs/user-guide.md) covers installing, every control and window, and how
+to report a bug. Both installers include it as a web page (`packaging/user-guide.html`,
+rebuilt from the Markdown with `tools/user_guide_html.sh`, which needs pandoc).
+
 ## Downloads
 
 Every push builds the plugin on macOS (Universal), Windows (32 and 64-bit)
