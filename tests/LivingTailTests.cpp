@@ -113,6 +113,58 @@ TEST_CASE ("Living tail decays at the room's RT60 in every band", "[livingtail]"
     }
 }
 
+TEST_CASE ("The living tail's loop never gains, whatever the decay curve", "[livingtail]")
+{
+    // The decay graph can be drawn into any shape. Curves that change steeply
+    // between bands, or rise at the top, once made the shelves overshoot between
+    // the band centres, so a loop gained a little on every pass and the tail grew
+    // until it was nothing but NaN.
+    const std::vector<std::array<float, 8>> curves {
+        { 5.19f, 2.99f, 0.32f, 0.1f, 1.38f, 0.24f, 0.21f, 11.91f },
+        { 0.1f, 20.0f, 0.1f, 20.0f, 0.1f, 20.0f, 0.1f, 20.0f },
+        { 20.0f, 0.1f, 20.0f, 0.1f, 20.0f, 0.1f, 20.0f, 0.1f },
+        { 0.1f, 0.1f, 0.1f, 0.1f, 0.1f, 0.1f, 0.1f, 20.0f },
+        { 20.0f, 0.1f, 0.1f, 0.1f, 0.1f, 0.1f, 0.1f, 0.1f },
+        { 20.0f, 20.0f, 20.0f, 20.0f, 20.0f, 20.0f, 20.0f, 20.0f },
+    };
+
+    for (const auto rate : { 44100.0, 48000.0, 96000.0 })
+    {
+        for (const auto& curve : curves)
+        {
+            auto request = requestFor (2, rate);
+            request.decaySeconds = curve;
+            const auto design = designLivingTail (request, synthesiseImpulseResponse (request));
+            REQUIRE (design.valid);
+
+            double loudest = -1000.0;
+
+            for (std::size_t i = 0; i < LivingTailDesign::numLines; ++i)
+            {
+                for (double f = 10.0; f < 0.5 * rate; f *= 1.02)
+                {
+                    auto db = 20.0 * std::log10 (static_cast<double> (design.broadband[i]));
+
+                    for (const auto& shelf : design.shelves[i])
+                        db += Biquad::magnitudeDb (shelf, rate, f);
+
+                    loudest = std::max (loudest, db);
+                }
+            }
+
+            INFO (rate << " Hz, curve starting " << curve[0] << " s: loudest loop " << loudest << " dB");
+            CHECK (loudest < 0.0);
+        }
+    }
+
+    // And played: an impulse into the steep curve dies away.
+    auto request = requestFor (2);
+    request.decaySeconds = curves[0];
+    auto tail = tailFor (request);
+    const auto out = render (tail, std::vector<float> (1, 1.0f), static_cast<std::size_t> (30.0 * request.sampleRate));
+    CHECK (energyDb (out.left, 29.0, 30.0, request.sampleRate) < energyDb (out.left, 0.5, 1.5, request.sampleRate) - 60.0);
+}
+
 TEST_CASE ("Living tail matches the room's late level and is decorrelated", "[livingtail]")
 {
     const auto space = GENERATE (0, 1, 2, 3);

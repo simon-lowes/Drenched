@@ -27,6 +27,14 @@ option(DRENCHED_BUILD_CLAP "Build the CLAP format" ON)
 option(DRENCHED_BUILD_AAX "Build the AAX format (needs the signed Avid AAX SDK licence)" OFF)
 set(DRENCHED_AAX_SDK "" CACHE PATH "A downloaded AAX SDK folder to use instead of the copy bundled with JUCE")
 
+# Sanitizer builds for finding bugs, e.g. -DDRENCHED_SANITIZE=thread or address,undefined
+# (GCC and Clang; use a Debug or RelWithDebInfo build).
+set(DRENCHED_SANITIZE "" CACHE STRING "Sanitizers to build with, as -fsanitize takes them")
+if(DRENCHED_SANITIZE)
+    add_compile_options(-fsanitize=${DRENCHED_SANITIZE} -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=${DRENCHED_SANITIZE})
+endif()
+
 include(cmake/Dependencies.cmake)
 
 add_subdirectory(source/engine)
