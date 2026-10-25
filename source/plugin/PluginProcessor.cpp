@@ -28,7 +28,11 @@ DrenchedProcessor::DrenchedProcessor()
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       state (*this, nullptr, "DrenchedState", createParameterLayout())
 {
-    const auto raw = [this] (const char* id) { return state.getRawParameterValue (id); };
+    const auto raw = [this] (const char* id)
+    {
+        auto* parameter = state.getParameter (id);
+        return Setting (state.getRawParameterValue (id), parameter->convertFrom0to1 (parameter->getDefaultValue()));
+    };
 
     params.mix = raw (ParamIDs::mix);
     params.output = raw (ParamIDs::output);
@@ -177,34 +181,34 @@ std::optional<ImpulseResponseRequest> DrenchedProcessor::currentRequest (double 
         request.outputs = outputSpeakers;
     }
 
-    request.listenerX = params.listenerX->load() / 100.0f;
-    request.sourceX = params.sourceX->load() / 100.0f;
-    request.sizePercent = params.size->load();
-    request.distancePercent = params.distance->load();
-    request.earlyLatePercent = params.earlyLate->load();
-    request.livingPercent = params.living->load();
-    request.reverse = params.reverse->load() >= 0.5f;
-    request.gateMs = params.gate->load();
-    request.attackMs = params.attack->load();
-    request.directLevelDb = params.directLevel->load();
-    request.directDelayMs = params.directDelay->load();
-    request.directColourDb = params.directColour->load();
-    request.crossFeedPercent = params.crossFeed->load();
+    request.listenerX = params.listenerX.load() / 100.0f;
+    request.sourceX = params.sourceX.load() / 100.0f;
+    request.sizePercent = params.size.load();
+    request.distancePercent = params.distance.load();
+    request.earlyLatePercent = params.earlyLate.load();
+    request.livingPercent = params.living.load();
+    request.reverse = params.reverse.load() >= 0.5f;
+    request.gateMs = params.gate.load();
+    request.attackMs = params.attack.load();
+    request.directLevelDb = params.directLevel.load();
+    request.directDelayMs = params.directDelay.load();
+    request.directColourDb = params.directColour.load();
+    request.crossFeedPercent = params.crossFeed.load();
     request.latencySamples = wantedLatency (sampleRate);
 
     for (size_t band = 0; band < params.decay.size(); ++band)
-        request.decaySeconds[band] = params.decay[band]->load();
+        request.decaySeconds[band] = params.decay[band].load();
 
-    if (params.decayLink->load() < 0.5f)
+    if (params.decayLink.load() < 0.5f)
         for (size_t band = 0; band < params.decayRight.size(); ++band)
-            request.rightDecaySeconds[band] = params.decayRight[band]->load();
+            request.rightDecaySeconds[band] = params.decayRight[band].load();
 
     return request;
 }
 
 int DrenchedProcessor::wantedLatency (double sampleRate) const
 {
-    return params.lowCpu->load() >= 0.5f ? static_cast<int> (ConvolutionReverb::lowCpuLatency (sampleRate)) : 0;
+    return params.lowCpu.load() >= 0.5f ? static_cast<int> (ConvolutionReverb::lowCpuLatency (sampleRate)) : 0;
 }
 
 void DrenchedProcessor::updateLatency (double sampleRate)
@@ -231,7 +235,7 @@ void DrenchedProcessor::timerCallback()
 
 float DrenchedProcessor::predelayMs (float requested)
 {
-    if (params.predelaySync->load() < 0.5f)
+    if (params.predelaySync.load() < 0.5f)
         return requested;
 
     // Synced: snap to the nearest 64th note at the host tempo.
@@ -901,12 +905,16 @@ juce::String DrenchedProcessor::bugReportDetails()
                + juce::String (juce::SystemStats::getMemorySizeInMegabytes() / 1024.0, 1) + " GB");
     lines.add ("Audio: " + juce::String (getSampleRate(), 0) + " Hz, buffer " + juce::String (getBlockSize())
                + ", latency " + juce::String (getLatencySamples()) + " samples"
-               + (*params.lowCpu > 0.5f ? " (Low CPU)" : ""));
+               + (params.lowCpu.load() > 0.5f ? " (Low CPU)" : ""));
     lines.add ("Channels: " + layout.getMainInputChannelSet().getDescription() + " in, "
                + layout.getMainOutputChannelSet().getDescription() + " out");
     lines.add ("Space: " + (space == "user" ? "your IR " + irName : space));
     lines.add ("Look: " + ui.getProperty (UiIDs::skin, settings::loadDefaultSkin()).toString()
                + ", view " + ui.getProperty (UiIDs::mode, "studio").toString());
+
+    if (const auto restarts = reverb.recoveries(); restarts > 0)
+        lines.add ("Reverb restarted after a fault: " + juce::String (restarts) + (restarts == 1 ? " time" : " times"));
+
     return lines.joinIntoString ("\n");
 }
 
@@ -934,7 +942,7 @@ juce::var DrenchedProcessor::impulseResponseInfo()
     juce::Array<juce::var> decay;
 
     for (size_t band = 0; band < params.decay.size(); ++band)
-        decay.add (static_cast<double> (current != nullptr ? current->room.decaySeconds[band] : params.decay[band]->load()));
+        decay.add (static_cast<double> (current != nullptr ? current->room.decaySeconds[band] : params.decay[band].load()));
 
     object->setProperty ("bands", decay);
 
@@ -1020,7 +1028,7 @@ int DrenchedProcessor::storeScene (int number, const juce::String& name)
 
     for (const auto& id : ParamIDs::all())
         if (SceneIDs::isStored (id))
-            if (auto* raw = state.getRawParameterValue (id))
+            if (auto* raw = state.getRawParameterValue (id); raw != nullptr && std::isfinite (raw->load()))
                 stored.setProperty (id, static_cast<double> (raw->load()), nullptr);
 
     auto ui = getUiState();
@@ -1064,7 +1072,7 @@ void DrenchedProcessor::recallScene (int number)
 
     followedScene = number;
 
-    if (auto* parameter = state.getParameter (ParamIDs::scene); parameter != nullptr && juce::roundToInt (params.scene->load()) != number)
+    if (auto* parameter = state.getParameter (ParamIDs::scene); parameter != nullptr && juce::roundToInt (params.scene.load()) != number)
     {
         parameter->beginChangeGesture();
         parameter->setValueNotifyingHost (parameter->convertTo0to1 (static_cast<float> (number)));
@@ -1126,7 +1134,7 @@ void DrenchedProcessor::recallScene (int number)
 
 void DrenchedProcessor::followSceneParameter()
 {
-    if (const auto number = juce::roundToInt (params.scene->load()); number != followedScene)
+    if (const auto number = juce::roundToInt (params.scene.load()); number != followedScene)
     {
         followedScene = number;
         recallScene (number);
@@ -1269,29 +1277,29 @@ void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     notePeak (0, numInputs);
 
     ReverbControls controls;
-    controls.mix = params.mix->load() / 100.0f;
-    controls.outputGain = decibelsToGain (params.output->load());
-    controls.predelayMs = predelayMs (params.predelay->load());
-    controls.brightnessDb = params.brightness->load();
-    controls.lowCutHz = params.wetLowCut->load();
-    controls.highCutHz = params.wetHighCut->load();
-    controls.widthPercent = params.width->load();
-    controls.cloudPercent = params.cloudSize->load();
-    controls.ducking = params.ducking->load() / 100.0f;
-    controls.monoBelowHz = params.monoBelow->load();
-    controls.freeze = params.freeze->load() >= 0.5f;
-    controls.crossoverHz = params.crossover->load();
-    controls.movement = params.movement->load() / 100.0f;
-    controls.movementRateHz = params.movementRate->load();
+    controls.mix = params.mix.load() / 100.0f;
+    controls.outputGain = decibelsToGain (params.output.load());
+    controls.predelayMs = predelayMs (params.predelay.load());
+    controls.brightnessDb = params.brightness.load();
+    controls.lowCutHz = params.wetLowCut.load();
+    controls.highCutHz = params.wetHighCut.load();
+    controls.widthPercent = params.width.load();
+    controls.cloudPercent = params.cloudSize.load();
+    controls.ducking = params.ducking.load() / 100.0f;
+    controls.monoBelowHz = params.monoBelow.load();
+    controls.freeze = params.freeze.load() >= 0.5f;
+    controls.crossoverHz = params.crossover.load();
+    controls.movement = params.movement.load() / 100.0f;
+    controls.movementRateHz = params.movementRate.load();
 
     for (size_t band = 0; band < WetEqualiser::numBands; ++band)
     {
         auto& eq = controls.eq[band];
-        eq.frequencyHz = params.eqFrequency[band]->load();
-        eq.gainDb = params.eqGain[band]->load();
+        eq.frequencyHz = params.eqFrequency[band].load();
+        eq.gainDb = params.eqGain[band].load();
 
         if (WetEqualiser::shapeOf (band) == WetEqualiser::Shape::bell)
-            eq.q = params.eqQ[band - 1]->load();
+            eq.q = params.eqQ[band - 1].load();
     }
 
     for (size_t k = 0; k < maxChannels; ++k)
@@ -1388,7 +1396,7 @@ void DrenchedProcessor::setStateInformation (const void* data, int sizeInBytes)
 
     // The session already holds the settings it was saved with, which may have been
     // changed since the scene it names was recalled; only a move of the parameter recalls.
-    followedScene = juce::roundToInt (params.scene->load());
+    followedScene = juce::roundToInt (params.scene.load());
 
     if (const auto rate = preparedRate.load(); rate > 0.0)
     {

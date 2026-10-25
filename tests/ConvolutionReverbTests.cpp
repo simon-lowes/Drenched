@@ -3,6 +3,7 @@
 #include <drenched/ConvolutionReverb.h>
 #include <drenched/KernelBuilder.h>
 #include <drenched/LivingTail.h>
+#include <drenched/Mix.h>
 #include <drenched/Spaces.h>
 #include <drenched/SurroundResponse.h>
 
@@ -14,6 +15,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <thread>
 #include <vector>
@@ -754,4 +756,75 @@ TEST_CASE ("Benchmark: CPU use per space", "[.benchmark]")
             std::printf ("%-18s %6.0f Hz  build %.2f s  CPU %.2f%% of one core\n", bundledSpaces[static_cast<std::size_t> (space)].name, sr, buildTime, 100.0 * seconds / 10.0);
         }
     }
+}
+
+TEST_CASE ("Input that isn't a number is heard as silence", "[reverb]")
+{
+    constexpr double sr = 48000.0;
+    ConvolutionReverb reverb;
+    reverb.prepare (sr);
+    reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (sr))));
+
+    const auto bad = GENERATE (std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity(),
+                               -std::numeric_limits<float>::infinity());
+
+    std::vector<float> l (sr, 0.0f), r (l.size(), 0.0f);
+    l[100] = bad;
+    r[2000] = bad;
+    l[24000] = 1.0f;
+
+    ReverbControls c;
+    c.mix = 0.5f;
+    run (reverb, l, r, c);
+
+    for (std::size_t n = 0; n < l.size(); ++n)
+    {
+        REQUIRE (std::isfinite (l[n]));
+        REQUIRE (std::isfinite (r[n]));
+    }
+
+    // The click later on still rings in the room.
+    REQUIRE (energy (l, 24480) > 1.0e-4);
+    REQUIRE (reverb.recoveries() == 0);
+}
+
+TEST_CASE ("A reverb that stops making numbers starts again from silence", "[reverb]")
+{
+    constexpr double sr = 48000.0;
+    ConvolutionReverb reverb;
+    reverb.prepare (sr);
+    reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (sr))));
+
+    // A control that isn't a number poisons the wet path from inside.
+    auto l = testing::noise (24000, 1), r = testing::noise (24000, 2);
+    const auto inL = l;
+
+    ReverbControls broken;
+    broken.mix = 0.5f;
+    broken.widthPercent = std::numeric_limits<float>::quiet_NaN();
+    run (reverb, l, r, broken);
+
+    REQUIRE (reverb.recoveries() > 0);
+
+    // The dry sound plays on, finite, at the equal-power dry level.
+    const auto dryGain = equalPowerMix (0.5f).dry;
+
+    for (std::size_t n = 1000; n < l.size(); ++n)
+    {
+        REQUIRE (std::isfinite (l[n]));
+        REQUIRE (std::isfinite (r[n]));
+        REQUIRE (std::abs (l[n] - inL[n] * dryGain) < 1.0e-3f);
+    }
+
+    // With the control back, the room rings again.
+    std::vector<float> l2 (sr, 0.0f), r2 (l2.size(), 0.0f);
+    l2[0] = 1.0f;
+    ReverbControls good;
+    good.mix = 1.0f;
+    run (reverb, l2, r2, good);
+
+    for (std::size_t n = 0; n < l2.size(); ++n)
+        REQUIRE (std::isfinite (l2[n]));
+
+    REQUIRE (energy (l2, 480) > 1.0e-4);
 }

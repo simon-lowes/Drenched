@@ -172,6 +172,10 @@ public:
         the host; infinite while frozen. */
     double tailSeconds() const noexcept { return tail.load (std::memory_order_relaxed); }
 
+    /** How many times the reverberation stopped making numbers and was started
+        again from silence, since the plugin opened. Should stay 0. */
+    int recoveries() const noexcept { return recovered.load (std::memory_order_relaxed); }
+
     /** The reverberation alone, as it leaves the wet path (before the mix), for
         a live spectrum. Read it from one thread other than the audio thread. */
     SpectrumTap& wetSpectrum() noexcept { return wetTap; }
@@ -186,6 +190,7 @@ private:
     void retire (ReverbKernel* kernel) noexcept;
     void updateFilters (const ReverbControls& controls) noexcept;
     void runKernels (std::size_t numSamples) noexcept;
+    void restart() noexcept; // clears the wet path alone; the dry sound plays on
     void delayDry (std::size_t wanted, std::size_t numSamples) noexcept;
     void updateFreeze (const ReverbControls& controls) noexcept;
     bool tailAudible() const noexcept { return frozen || tailPosition > 0.0f; }
@@ -214,6 +219,7 @@ private:
     std::array<ReverbKernel*, 4> deferred {};
 
     std::atomic<double> tail { 0.0 };
+    std::atomic<int> recovered { 0 };
     std::atomic<bool> ready { false };
 
     // Pre-delay lines, one per stage source.
