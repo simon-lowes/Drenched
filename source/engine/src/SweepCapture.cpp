@@ -1,4 +1,5 @@
 #include "drenched/SweepCapture.h"
+#include "Denormals.h"
 
 #include <pffft/pffft.h>
 
@@ -324,6 +325,8 @@ std::vector<std::vector<float>> deconvolveCapture (const SineSweep& sweep,
                                                    const std::vector<std::vector<float>>& recordings,
                                                    int speakers)
 {
+    const ScopedFlushDenormals flush;
+
     const auto segment = sweep.segmentLength();
     const auto mics = recordings.size();
 

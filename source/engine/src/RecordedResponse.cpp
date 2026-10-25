@@ -1,6 +1,7 @@
 #include "drenched/RecordedResponse.h"
 #include "drenched/Spaces.h"
 #include "Bands.h"
+#include "Denormals.h"
 
 #include <CDSPResampler.h>
 #include <pffft/pffft.h>
@@ -418,29 +419,67 @@ std::array<double, 8> startColour (const ImpulseResponseSet& set, double seconds
 std::array<float, 8> measureDecay (const std::array<std::vector<float>, 4>& paths, double sampleRate)
 {
     const auto length = paths[0].size();
-    std::array<std::vector<double>, 8> energy;
+    const auto window = std::max<std::size_t> (1, samplesOf (windowSeconds, sampleRate));
 
-    for (auto& e : energy)
-        e.assign (length, 0.0);
+    // One band at a time, as bands::split() does it but across the paths at
+    // once, so only one band's energy is held: all eight came to 96 bytes a
+    // sample, over a gigabyte for 30 seconds at 384 kHz. A path that repeats
+    // an earlier one (stereo files fill four paths from two channels) shares
+    // its bands.
+    std::array<std::size_t, 4> sameAs {};
 
-    for (const auto& path : paths)
+    for (std::size_t p = 0; p < 4; ++p)
     {
-        if (bands::energyOf (path) <= 0.0)
-            continue;
+        sameAs[p] = p;
 
-        const auto split = bands::split (path, sampleRate);
-
-        for (std::size_t b = 0; b < 8; ++b)
-            for (std::size_t n = 0; n < length; ++n)
-                energy[b][n] += static_cast<double> (split[b][n]) * split[b][n];
+        for (std::size_t q = 0; q < p; ++q)
+            if (sameAs[q] == q && paths[q] == paths[p])
+            {
+                sameAs[p] = q;
+                break;
+            }
     }
 
+    std::array<bool, 4> heard {};
+
+    for (std::size_t p = 0; p < 4; ++p)
+        heard[p] = bands::energyOf (paths[p]) > 0.0;
+
+    // What is left of each path above the bands taken so far, and its next band.
+    std::array<std::vector<float>, 4> rest, low;
+
+    for (std::size_t p = 0; p < 4; ++p)
+        if (heard[p] && sameAs[p] == p)
+            rest[p] = paths[p];
+
     std::array<double, 8> rt {};
-    const auto window = std::max<std::size_t> (1, samplesOf (windowSeconds, sampleRate));
+    std::vector<double> e;
 
     for (std::size_t b = 0; b < 8; ++b)
     {
-        auto& e = energy[b];
+        e.assign (length, 0.0);
+
+        for (std::size_t p = 0; p < 4; ++p)
+        {
+            if (heard[p] && sameAs[p] == p && b < bands::crossovers.size())
+            {
+                bands::zeroPhaseLowPass (rest[p], low[p], bands::crossovers[b], sampleRate);
+
+                for (std::size_t n = 0; n < length; ++n)
+                    rest[p][n] -= low[p][n];
+            }
+        }
+
+        for (std::size_t p = 0; p < 4; ++p)
+        {
+            if (! heard[p])
+                continue;
+
+            const auto& split = b < bands::crossovers.size() ? low[sameAs[p]] : rest[sameAs[p]];
+
+            for (std::size_t n = 0; n < length; ++n)
+                e[n] += static_cast<double> (split[n]) * split[n];
+        }
 
         // Lundeby, simplified: if the recording ends in a steady noise floor
         // (its last two twentieths are within 3 dB of each other), estimate
@@ -517,6 +556,8 @@ namespace
 std::shared_ptr<RecordedResponse> prepare (const std::vector<std::vector<float>>& channels, double sampleRate, std::string name,
                                            const SpeakerLayout& layout, bool ambisonic)
 {
+    const ScopedFlushDenormals flush;
+
     const auto count = channels.size();
     const auto surround = ! ambisonic && count != 1 && count != 2 && count != 4;
 
@@ -815,6 +856,8 @@ ImpulseResponseSet shapeRecordedResponse (ImpulseResponseSet set, const Recorded
 
 ImpulseResponseSet renderImpulseResponse (const ImpulseResponseRequest& request)
 {
+    const ScopedFlushDenormals flush;
+
     if (request.recorded == nullptr)
         return synthesiseImpulseResponse (request);
 

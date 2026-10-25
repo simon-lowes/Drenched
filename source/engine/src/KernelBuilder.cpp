@@ -4,6 +4,7 @@
 #include "drenched/DirectSound.h"
 #include "drenched/RecordedResponse.h"
 #include "drenched/ResponseEnvelope.h"
+#include "Denormals.h"
 
 #include <algorithm>
 #include <cmath>
@@ -124,6 +125,8 @@ std::shared_ptr<const ImpulseResponseSet> KernelBuilder::lastResponses() const
 
 void KernelBuilder::build (const ImpulseResponseRequest& wanted)
 {
+    const ScopedFlushDenormals flush;
+
     const std::lock_guard buildLock (buildMutex);
 
     ImpulseResponseSet responses;
