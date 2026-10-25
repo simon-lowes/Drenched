@@ -227,6 +227,10 @@ private:
     /** processBlock, or with bypassed only the dry sound, in time. */
     void render (juce::AudioBuffer<float>& buffer, bool bypassed);
 
+    /** Bouncing offline: builds the room now if its settings changed. Audio thread. */
+    void buildChangedRoom (int numSamples);
+    juce::int64 offlineSinceBuild = 0; // samples since buildChangedRoom last built, audio thread
+
     /** Writes a captured impulse response as a 32-bit float WAV file in the captures folder. */
     static juce::File writeCapture (const std::vector<std::vector<float>>& channels, double sampleRate);
 

@@ -278,6 +278,7 @@ Drenched normally runs with no latency. **Low CPU** runs the reverb on about a t
 
 - Every setting, the space, locks, the view, the look, the speaker settings, the scenes and the window size are saved with the session.
 - Sessions from earlier betas load and sound the same. New controls start at the setting that matches how older versions played.
+- Bouncing offline, changes to the room (decay, size and the other settings that reshape it) take effect at the moment they are automated, so a bounce sounds the same every time. Rebuilding the room makes a bounce with a lot of room automation take a little longer.
 - Every parameter can be automated except Low CPU. Decay is shaped through its eight bands, as hosts see them; the positions, the wet EQ and Scene are all automatable.
 - Your own IR files and captures are files on disk: keep them where they are, or the session can't find them.
 
