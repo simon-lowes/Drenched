@@ -38,6 +38,12 @@ public:
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     using AudioProcessor::processBlock;
 
+    /** Bypassed, only the dry sound plays, delayed by the same latency as when the
+        reverb plays, so the host's latency compensation stays right. The reverb
+        fades out and back in rather than clicking. */
+    void processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    using AudioProcessor::processBlockBypassed;
+
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
@@ -217,6 +223,9 @@ private:
     /** Notices a capture that has finished playing, then deconvolves and saves it on the
         loader thread. Message thread. */
     void pollCapture();
+
+    /** processBlock, or with bypassed only the dry sound, in time. */
+    void render (juce::AudioBuffer<float>& buffer, bool bypassed);
 
     /** Writes a captured impulse response as a 32-bit float WAV file in the captures folder. */
     static juce::File writeCapture (const std::vector<std::vector<float>>& channels, double sampleRate);
