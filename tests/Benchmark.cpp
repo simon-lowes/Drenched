@@ -18,6 +18,10 @@
 #include <string>
 #include <vector>
 
+#if defined (__SSE__) || defined (_M_X64)
+ #include <xmmintrin.h>
+#endif
+
 using namespace drenched;
 using Clock = std::chrono::steady_clock;
 
@@ -80,7 +84,7 @@ void benchBuild (const char* label, ImpulseResponseRequest request)
 }
 
 void benchPlay (const char* label, ImpulseResponseRequest request, size_t block, double seconds,
-                bool living = false)
+                bool living = false, bool changing = false)
 {
     const auto& outputs = request.outputs;
     ConvolutionReverb reverb;
@@ -122,6 +126,17 @@ void benchPlay (const char* label, ImpulseResponseRequest request, size_t block,
         for (size_t c = 0; c < 2; ++c)
             for (auto& s : buffers[c]) s = uniform (noise);
 
+        // Changing: a new room every quarter second (built untimed, as the builder thread
+        // would), so swaps overlap, and freeze toggled every second.
+        if (changing && b % (size_t) (0.25 * rate / (double) block) == 0)
+        {
+            request.decaySeconds[4] += 0.01f;
+            builder.buildNow (request);
+        }
+
+        if (changing)
+            controls.freeze = (b * block / (size_t) rate) % 2 == 1;
+
         const auto t = Clock::now();
         reverb.process (pointers.data(), channels, block, controls);
         times[b] = millisSince (t);
@@ -142,6 +157,13 @@ void benchPlay (const char* label, ImpulseResponseRequest request, size_t block,
 int main (int argc, char** argv)
 {
     const double seconds = argc > 1 ? std::atof (argv[1]) : 10.0;
+
+    // As the plugin does for every block (juce::ScopedNoDenormals): tails decaying
+    // to almost nothing would otherwise run at a fraction of the speed.
+   #if defined (__SSE__) || defined (_M_X64)
+    _mm_setcsr (_mm_getcsr() | 0x8040);
+   #endif
+
     const auto stereo = layouts::stereo();
     const auto surround = layouts::sevenPointOnePointFour();
 
@@ -166,5 +188,8 @@ int main (int argc, char** argv)
     benchPlay ("6 s recording, stereo, living", recorded, 256, seconds, true);
     benchPlay ("6 s recording, stereo, Low CPU", lowCpu, 256, seconds);
     benchPlay ("6 s recording, 7.1.4", recordedSurround, 256, seconds);
+    for (size_t block : { 64, 256 })
+        benchPlay ("6 s recording, stereo, changing", recorded, block, seconds, true, true);
+    benchPlay ("6 s recording, 7.1.4, changing", recordedSurround, 256, seconds, true, true);
     return 0;
 }
