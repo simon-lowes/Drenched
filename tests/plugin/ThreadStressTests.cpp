@@ -6,11 +6,13 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <random>
 #include <thread>
+#include <vector>
 
 using namespace drenched;
 
@@ -114,5 +116,94 @@ TEST_CASE ("Playing while everything else changes stays finite", "[plugin][stres
 
     INFO (blocks.load() << " blocks played");
     CHECK (blocks.load() > 0);
+    CHECK (finite.load());
+}
+
+TEST_CASE ("Many instances play at once while the host opens and closes more", "[plugin][stress]")
+{
+    // A session with reverb on several tracks: each instance has its own audio thread
+    // (as hosts that spread tracks across cores do) and sample rate, they share the
+    // space library, and the host opens and closes instances while they play.
+    constexpr int blockSize = 128;
+    const std::array<double, 4> rates { 44100.0, 48000.0, 88200.0, 96000.0 };
+
+    std::vector<std::unique_ptr<testing::Plugin>> playing;
+
+    for (const auto rate : rates)
+    {
+        auto& plugin = playing.emplace_back (std::make_unique<testing::Plugin>());
+        testing::onMessageThread ([&] { (*plugin)->prepareToPlay (rate, blockSize); });
+    }
+
+    std::atomic<bool> running { true }, finite { true };
+    std::atomic<int> blocks { 0 };
+    std::vector<std::thread> audio;
+
+    for (size_t n = 0; n < playing.size(); ++n)
+    {
+        audio.emplace_back ([&, n]
+        {
+            auto& p = **playing[n];
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            juce::MidiBuffer midi;
+            std::mt19937 rng (static_cast<unsigned> (n + 1));
+            std::uniform_real_distribution<float> noise (-0.5f, 0.5f);
+
+            while (running.load())
+            {
+                for (int c = 0; c < 2; ++c)
+                    for (int i = 0; i < blockSize; ++i)
+                        buffer.setSample (c, i, noise (rng));
+
+                p.processBlock (buffer, midi);
+
+                for (int c = 0; c < 2; ++c)
+                    for (int i = 0; i < blockSize; ++i)
+                        if (! std::isfinite (buffer.getSample (c, i)))
+                            finite.store (false);
+
+                blocks.fetch_add (1);
+            }
+        });
+    }
+
+    testing::onMessageThread ([&]
+    {
+        std::vector<juce::String> spaces;
+
+        for (const auto& space : bundledSpaces)
+            spaces.push_back (space.id);
+
+        for (const auto& space : library::spaces())
+            spaces.push_back (space.id);
+
+        std::mt19937 rng (3u);
+        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds (4);
+
+        for (int step = 0; std::chrono::steady_clock::now() < end; ++step)
+        {
+            auto& p = **playing[static_cast<size_t> (step) % playing.size()];
+            p.getUiState().setProperty (UiIDs::spaceId, spaces[rng() % spaces.size()], nullptr);
+            set (p, ParamIDs::size, static_cast<float> (rng() % 100) / 100.0f);
+            ((juce::Timer&) p).timerCallback();
+
+            // Opening and closing other instances, which load and free their own spaces.
+            if (step % 25 == 0)
+            {
+                testing::Plugin extra;
+                extra->prepareToPlay (rates[rng() % rates.size()], blockSize);
+                extra->getUiState().setProperty (UiIDs::spaceId, spaces[rng() % spaces.size()], nullptr);
+                ((juce::Timer&) *extra).timerCallback();
+            }
+        }
+    });
+
+    running.store (false);
+
+    for (auto& thread : audio)
+        thread.join();
+
+    INFO (blocks.load() << " blocks played");
+    CHECK (blocks.load() > static_cast<int> (playing.size()));
     CHECK (finite.load());
 }
