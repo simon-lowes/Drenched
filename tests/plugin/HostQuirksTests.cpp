@@ -191,3 +191,50 @@ TEST_CASE ("Bypassed, the dry sound plays untouched and in time", "[plugin][host
 
     CHECK (worst < 1.0e-5);
 }
+
+TEST_CASE ("Bouncing offline, a change to the room lands at the same place every time", "[plugin][host]")
+{
+    constexpr double rate = 48000.0;
+    constexpr int block = 512;
+
+    // Silence, then the decay is cut short, then a click rings in the new room.
+    const auto bounce = [&] (bool changeDecay)
+    {
+        testing::Plugin p;
+        testing::onMessageThread ([&] { p->setNonRealtime (true); });
+        prepare (*p, rate, block);
+
+        std::vector<float> out;
+        juce::MidiBuffer midi;
+
+        for (int pos = 0; pos < static_cast<int> (rate * 3.0); pos += block)
+        {
+            if (changeDecay && pos == block * 20)
+                for (auto* each : p->getParameters())
+                    if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (each); ranged != nullptr)
+                        for (const auto* id : ParamIDs::decay)
+                            if (ranged->paramID == id)
+                                ranged->setValueNotifyingHost (ranged->convertTo0to1 (0.3f));
+
+            juce::AudioBuffer<float> buffer (2, block);
+            buffer.clear();
+
+            if (pos == block * 40)
+                buffer.setSample (0, 0, 1.0f);
+
+            p->processBlock (buffer, midi);
+            out.insert (out.end(), buffer.getReadPointer (0), buffer.getReadPointer (0) + block);
+        }
+
+        return out;
+    };
+
+    const auto unchanged = bounce (false);
+    const auto changed = bounce (true);
+    const auto again = bounce (true);
+
+    // The room heard is the new, short one: its tail is gone a second after the click.
+    const auto late = static_cast<size_t> (block * 40 + rate);
+    CHECK (energy (changed, late) < 0.01 * energy (unchanged, late));
+    CHECK (changed == again);
+}

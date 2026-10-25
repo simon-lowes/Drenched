@@ -228,7 +228,8 @@ void DrenchedProcessor::timerCallback()
     if (const auto rate = preparedRate.load(); rate > 0.0)
         updateLatency (rate);
 
-    if (const auto rate = preparedRate.load(); rate > 0.0)
+    // Bouncing offline, render() builds changes itself, at the block they happen.
+    if (const auto rate = preparedRate.load(); rate > 0.0 && ! isNonRealtime())
         if (auto request = currentRequest (rate))
             builder->request (*request);
 }
@@ -1233,6 +1234,8 @@ void DrenchedProcessor::prepareToPlay (double sampleRate, int)
         // Out of memory: the builder thread retries on the next change.
     }
 
+    offlineSinceBuild = 0;
+
     for (auto& peak : peaks)
         peak.store (0.0f);
 }
@@ -1329,6 +1332,9 @@ void DrenchedProcessor::render (juce::AudioBuffer<float>& buffer, bool bypassed)
         controls.outputGain = 1.0f;
     }
 
+    if (isNonRealtime())
+        buildChangedRoom (numSamples);
+
     reverb.process (buffer.getArrayOfWritePointers(), static_cast<size_t> (buffer.getNumChannels()),
                     static_cast<size_t> (numSamples), controls);
 
@@ -1342,6 +1348,34 @@ void DrenchedProcessor::render (juce::AudioBuffer<float>& buffer, bool bypassed)
 
         while (level > current && ! peak.compare_exchange_weak (current, level, std::memory_order_relaxed))
         {}
+    }
+}
+
+void DrenchedProcessor::buildChangedRoom (int numSamples)
+{
+    // Offline, the host waits for every block, so the room can be rebuilt here. A change
+    // then lands at the same place in every bounce, rather than wherever the builder
+    // thread caught up with audio running faster than real time. Rebuilds are spaced
+    // like the builder's settling time, in audio time, so a sweep stays quick to bounce.
+    const auto rate = preparedRate.load();
+    offlineSinceBuild += numSamples;
+
+    if (rate <= 0.0 || offlineSinceBuild < static_cast<juce::int64> (0.08 * rate))
+        return;
+
+    const auto request = currentRequest (rate);
+
+    if (! request || request == builder->lastBuilt())
+        return;
+
+    try
+    {
+        builder->buildNow (*request);
+        offlineSinceBuild = 0;
+    }
+    catch (const std::exception&)
+    {
+        // Out of memory: the current room plays on.
     }
 }
 
