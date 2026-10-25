@@ -23,6 +23,21 @@ jobs:
         working-directory: server
         run: npm test
 
+  interface:
+    name: Interface
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Playwright and Chromium
+        working-directory: tests/ui
+        run: npm ci && npx playwright install --with-deps chromium
+      - name: Tests
+        working-directory: tests/ui
+        run: npm test
+
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}

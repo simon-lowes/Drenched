@@ -41,7 +41,8 @@ function applyFromHost(msg){if(!msg)return;var p=msg.params||{},u=msg.ui||{};
  if(u.irEvent!=null){var ev=+u.irEvent;if(irEvent!==null&&ev!==irEvent){st.hint=null;
    st.note=u.irError?'<b>That file didn\u2019t load.</b> '+esc(u.irError):'<b>'+esc(SPACES[USER]?SPACES[USER].name:'Your IR')+'</b> loaded. The graph shows its measured decay; drag a band to reshape it.';}
   irEvent=ev;}
- for(var id in p){var v=+p[id];if(!isFinite(v))continue;lastSent[id]=v;var bi=BAND_ID.indexOf(id);if(bi>=0){st.bands[bi]=v;continue;}
+ // a value that isn't a number arrives as null, which + would read as 0
+ for(var id in p){if(p[id]==null)continue;var v=+p[id];if(!isFinite(v))continue;lastSent[id]=v;var bi=BAND_ID.indexOf(id);if(bi>=0){st.bands[bi]=v;continue;}
   var ri=RBAND_ID.indexOf(id);if(ri>=0){st.rbands[ri]=v;continue;}if(id===LINK_ID){st.link=v>=0.5;if(st.link)st.side='L';continue;}
   var k=keyOf(id);if(!k)continue;if(k==='freeze')st.freeze=v>=0.5;else st[k]=v;}
  if(u.spaceId!=null){var si=spaceIndex(String(u.spaceId));if(si>=0){st.sp=si;lastUi.spaceId=String(u.spaceId);}}
@@ -290,7 +291,11 @@ function fit(){var w=live.clientWidth,h=live.clientHeight,sc=Math.min(w/W,h/H),e
  el.style.transform='translate('+((w-W*sc)/2).toFixed(2)+'px,'+((h-H*sc)/2).toFixed(2)+'px) scale('+sc.toFixed(5)+')';
  var frs=live.querySelectorAll('.skins .fr');for(var i=0;i<frs.length;i++){var s2=frs[i].firstElementChild;if(s2)s2.style.transform='scale('+(frs[i].clientWidth/W).toFixed(5)+')';}
  if(st.wf||st.eq)drawDisplays();}
-function renderLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAttribute('data-fid'):null,bl=live.querySelector('.brw-list'),blt=bl?bl.scrollTop:0;
+/* Replacing the page blurs an edited field, whose change handler redraws too: that redraw
+   waits for this one to finish, as two at once fail. */
+var rendering=false,renderAgain=false;
+function renderLive(){if(rendering){renderAgain=true;return;}rendering=true;try{drawLive();}finally{rendering=false;}if(renderAgain){renderAgain=false;renderLive();}}
+function drawLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAttribute('data-fid'):null,bl=live.querySelector('.brw-list'),blt=bl?bl.scrollTop:0;
  var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.wf)html=html.slice(0,-6)+wfHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';
  live.innerHTML=html;fit();syncDisplays();
  if(blt){var bl2=live.querySelector('.brw-list');if(bl2)bl2.scrollTop=blt;}

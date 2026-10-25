@@ -96,6 +96,12 @@ ctest --test-dir build --output-on-failure
 
 Plugins land in `build/source/plugin/Drenched_artefacts/Release/`.
 
+The interface has its own tests, run in a browser with Node 22:
+
+```sh
+cd tests/ui && npm ci && npx playwright install chromium && npm test
+```
+
 On Linux, install JUCE's dependencies first (see `.github/workflows/build.yml`).
 On Windows, install the WebView2 SDK package and point CMake at it:
 

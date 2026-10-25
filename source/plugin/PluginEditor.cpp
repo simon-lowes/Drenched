@@ -4,6 +4,7 @@
 #include <DrenchedUI.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace drenched
@@ -191,7 +192,16 @@ juce::var DrenchedEditor::parameterValues (bool onlyDirty)
             continue;
 
         if (auto* raw = state.getRawParameterValue (ids[i]))
-            object->setProperty (ids[i], static_cast<double> (raw->load()));
+        {
+            auto value = raw->load();
+
+            // Automation that isn't a number plays the default (DrenchedProcessor::Setting), so show that.
+            if (! std::isfinite (value))
+                if (auto* parameter = state.getParameter (ids[i]))
+                    value = parameter->convertFrom0to1 (parameter->getDefaultValue());
+
+            object->setProperty (ids[i], static_cast<double> (value));
+        }
     }
 
     return juce::var (object.release());
