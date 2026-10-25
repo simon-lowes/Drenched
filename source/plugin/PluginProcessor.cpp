@@ -1239,6 +1239,16 @@ void DrenchedProcessor::prepareToPlay (double sampleRate, int)
 
 void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
+    render (buffer, false);
+}
+
+void DrenchedProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    render (buffer, true);
+}
+
+void DrenchedProcessor::render (juce::AudioBuffer<float>& buffer, bool bypassed)
+{
     juce::ScopedNoDenormals noDenormals;
 
     const auto numInputs = getTotalNumInputChannels();
@@ -1311,6 +1321,13 @@ void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     // After the trial, without a licence, only the dry signal plays.
     if (! licence->isAudioAllowed())
         controls.mix = 0.0f;
+
+    // Bypassed, the dry signal plays as it came in (but still in time).
+    if (bypassed)
+    {
+        controls.mix = 0.0f;
+        controls.outputGain = 1.0f;
+    }
 
     reverb.process (buffer.getArrayOfWritePointers(), static_cast<size_t> (buffer.getNumChannels()),
                     static_cast<size_t> (numSamples), controls);
