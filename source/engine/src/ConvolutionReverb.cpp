@@ -286,15 +286,9 @@ void ConvolutionReverb::reset() noexcept
     dryTap = current != nullptr ? current->latency() : 0;
     dryFade = 0;
 
-    for (auto* k : { current, ringing, fading })
-        if (k != nullptr)
-            k->reset();
+    restart();
 
     // A cleared room has nothing to hold; the next block re-freezes if asked.
-    livingTail.reset();
-    speakerTrim.reset();
-    equaliser.reset();
-    cloud.reset();
     livingTail.setFrozen (false, crossover);
     frozen = false;
     convInputGain = tailInputGain = 1.0f;
@@ -307,6 +301,18 @@ void ConvolutionReverb::reset() noexcept
         livingTail.setDesign (current->livingTail());
 
     tailDesignPending = false;
+}
+
+void ConvolutionReverb::restart() noexcept
+{
+    for (auto* k : { current, ringing, fading })
+        if (k != nullptr)
+            k->reset();
+
+    livingTail.reset();
+    speakerTrim.reset();
+    equaliser.reset();
+    cloud.reset();
 
     for (auto* bank : { &lowCut, &highCut, &lowShelf, &highShelf, &spreadHighPass })
         for (auto& f : *bank)
@@ -614,10 +620,17 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
 
         std::array<const float*, maxChannels> heard {};
 
+        // Input that isn't a number (a broken plug-in earlier in the chain)
+        // is heard as silence; one NaN would otherwise ring for ever.
         for (std::size_t i = 0; i < numIn; ++i)
         {
-            std::copy_n (channels[i] + offset, n, dry.data() + i * chunkSize);
-            heard[i] = dry.data() + i * chunkSize;
+            const auto* in = channels[i] + offset;
+            auto* d = dry.data() + i * chunkSize;
+
+            for (std::size_t s = 0; s < n; ++s)
+                d[s] = std::isfinite (in[s]) ? in[s] : 0.0f;
+
+            heard[i] = d;
         }
 
         // Where the sound is panned, for Cloud size; a frozen room stays put.
@@ -784,6 +797,26 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
 
         cloud.process (wetPtr.data(), numOut, n, c.cloudPercent);
         speakerTrim.process (wetPtr.data(), numOut, n, c.speakerLevelDb.data(), c.speakerDelayMs.data());
+
+        // A last safety net: should the reverberation ever stop making numbers,
+        // this chunk's wet sound is dropped and the reverb starts again from
+        // silence, so the dry sound carries on and the room comes back.
+        {
+            bool broken = false;
+
+            for (std::size_t k = 0; k < numOut; ++k)
+                for (std::size_t i = 0; i < n; ++i)
+                    broken |= ! std::isfinite (wetPtr[k][i]);
+
+            if (broken)
+            {
+                for (std::size_t k = 0; k < numOut; ++k)
+                    std::fill_n (wetPtr[k], n, 0.0f);
+
+                restart();
+                recovered.fetch_add (1, std::memory_order_relaxed);
+            }
+        }
 
         {
             std::array<const float*, maxChannels> wetChannels {};

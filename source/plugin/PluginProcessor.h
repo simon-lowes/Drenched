@@ -16,6 +16,7 @@
 
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -222,42 +223,62 @@ private:
 
     juce::AudioProcessorValueTreeState state;
 
+    /** A parameter as the processor reads it. A host that sends something that
+        isn't a number gets the parameter's default instead, so the reverb keeps
+        playing. */
+    class Setting
+    {
+    public:
+        Setting() = default;
+        Setting (std::atomic<float>* valueIn, float fallbackIn) noexcept : value (valueIn), fallback (fallbackIn) {}
+
+        float load() const noexcept
+        {
+            const auto v = value->load (std::memory_order_relaxed);
+            return std::isfinite (v) ? v : fallback;
+        }
+
+    private:
+        std::atomic<float>* value = nullptr;
+        float fallback = 0.0f;
+    };
+
     struct Params
     {
-        std::atomic<float>* mix = nullptr;
-        std::atomic<float>* output = nullptr;
-        std::atomic<float>* predelay = nullptr;
-        std::atomic<float>* predelaySync = nullptr;
-        std::atomic<float>* size = nullptr;
-        std::atomic<float>* brightness = nullptr;
-        std::atomic<float>* earlyLate = nullptr;
-        std::atomic<float>* distance = nullptr;
-        std::atomic<float>* wetLowCut = nullptr;
-        std::atomic<float>* wetHighCut = nullptr;
-        std::atomic<float>* width = nullptr;
-        std::atomic<float>* ducking = nullptr;
-        std::atomic<float>* monoBelow = nullptr;
-        std::atomic<float>* freeze = nullptr;
-        std::atomic<float>* crossover = nullptr;
-        std::atomic<float>* living = nullptr;
-        std::atomic<float>* movement = nullptr;
-        std::atomic<float>* movementRate = nullptr;
-        std::atomic<float>* reverse = nullptr;
-        std::atomic<float>* gate = nullptr;
-        std::atomic<float>* attack = nullptr;
-        std::atomic<float>* directLevel = nullptr;
-        std::atomic<float>* directDelay = nullptr;
-        std::atomic<float>* directColour = nullptr;
-        std::atomic<float>* crossFeed = nullptr;
-        std::atomic<float>* cloudSize = nullptr;
-        std::atomic<float>* listenerX = nullptr;
-        std::atomic<float>* sourceX = nullptr;
-        std::atomic<float>* lowCpu = nullptr;
-        std::atomic<float>* scene = nullptr;
-        std::atomic<float>* decayLink = nullptr;
-        std::array<std::atomic<float>*, 8> decay {}, decayRight {};
-        std::array<std::atomic<float>*, 6> eqFrequency {}, eqGain {};
-        std::array<std::atomic<float>*, 4> eqQ {};
+        Setting mix;
+        Setting output;
+        Setting predelay;
+        Setting predelaySync;
+        Setting size;
+        Setting brightness;
+        Setting earlyLate;
+        Setting distance;
+        Setting wetLowCut;
+        Setting wetHighCut;
+        Setting width;
+        Setting ducking;
+        Setting monoBelow;
+        Setting freeze;
+        Setting crossover;
+        Setting living;
+        Setting movement;
+        Setting movementRate;
+        Setting reverse;
+        Setting gate;
+        Setting attack;
+        Setting directLevel;
+        Setting directDelay;
+        Setting directColour;
+        Setting crossFeed;
+        Setting cloudSize;
+        Setting listenerX;
+        Setting sourceX;
+        Setting lowCpu;
+        Setting scene;
+        Setting decayLink;
+        std::array<Setting, 8> decay {}, decayRight {};
+        std::array<Setting, 6> eqFrequency {}, eqGain {};
+        std::array<Setting, 4> eqQ {};
     } params;
 
     // The output speakers, for kernel requests. Written in prepareToPlay, read by the timer.

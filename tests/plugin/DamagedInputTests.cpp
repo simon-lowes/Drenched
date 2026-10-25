@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
+#include <limits>
 #include <random>
 
 using namespace drenched;
@@ -262,4 +263,38 @@ TEST_CASE ("Damaged sessions load what they can and play finite audio", "[plugin
                 CHECK (std::isfinite (param->getValue()));
         }
     }
+}
+
+TEST_CASE ("Automation that isn't a number can't silence the reverb", "[plugin][damaged]")
+{
+    testing::Plugin p;
+    testing::onMessageThread ([&]
+    {
+        for (auto* param : p->getParameters())
+            param->setValueNotifyingHost (std::numeric_limits<float>::quiet_NaN());
+    });
+
+    playsFinite (*p);
+
+    // A click still rings in the room, at the settings' defaults.
+    juce::AudioBuffer<float> buffer (2, blockSize);
+    juce::MidiBuffer midi;
+    double tail = 0.0;
+
+    for (int pos = 0; pos < static_cast<int> (rate); pos += blockSize)
+    {
+        buffer.clear();
+
+        if (pos == 0)
+            buffer.setSample (0, 0, 1.0f);
+
+        p->processBlock (buffer, midi);
+
+        if (pos >= blockSize * 4)
+            for (int i = 0; i < blockSize; ++i)
+                tail += std::abs (buffer.getSample (0, i));
+    }
+
+    CHECK (tail > 1.0e-3);
+    CHECK_FALSE (p->bugReportDetails().contains ("restarted"));
 }
