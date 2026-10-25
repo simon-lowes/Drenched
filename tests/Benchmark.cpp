@@ -1,5 +1,5 @@
-// Measures what the engine costs: how long a kernel takes to build when the
-// space or a control changes, and how much of one core the reverb takes to
+// Measures what the engine costs: how long a file takes to load, how long a
+// kernel takes to build when the space or a control changes, and how much of one core the reverb takes to
 // play, for a few layouts, block sizes and modes. Not a test; run it by hand:
 //
 //   build/tests/drenched_bench [seconds of audio per case, default 10]
@@ -59,6 +59,26 @@ std::shared_ptr<const RecordedResponse> fakeRecording (double seconds)
             c[i] = gauss (noise) * std::exp (-6.9f * (float) i / (float) (2.5 * rate));
 
     return prepareRecordedResponse (channels, rate, "bench");
+}
+
+/** Prepares a stereo recording of decaying noise, rounded to 24 bits so its
+    tail ends in digital silence as a real file's does. Runs before main()
+    flushes denormals: the plugin's loader thread and a host's message thread
+    don't, so loading must be fast without. */
+void benchLoad (const char* label, double seconds, double sampleRate)
+{
+    std::mt19937 noise (7);
+    std::normal_distribution<float> gauss;
+    const auto n = (size_t) (seconds * sampleRate);
+    std::vector<std::vector<float>> channels (2, std::vector<float> (n));
+
+    for (auto& c : channels)
+        for (size_t i = 0; i < n; ++i)
+            c[i] = std::round (0.3f * gauss (noise) * std::exp (-2.3f * (float) i / (float) sampleRate) * 8388608.0f) / 8388608.0f;
+
+    const auto start = Clock::now();
+    const auto prepared = prepareRecordedResponse (channels, sampleRate, "bench");
+    std::printf ("  %-44s %7.1f ms\n", label, millisSince (start));
 }
 
 void benchBuild (const char* label, ImpulseResponseRequest request)
@@ -158,6 +178,10 @@ int main (int argc, char** argv)
 {
     const double seconds = argc > 1 ? std::atof (argv[1]) : 10.0;
 
+    std::printf ("Loading a file\n");
+    benchLoad ("30 s stereo, 48 kHz", 30.0, 48000.0);
+    benchLoad ("30 s stereo, 96 kHz", 30.0, 96000.0);
+
     // As the plugin does for every block (juce::ScopedNoDenormals): tails decaying
     // to almost nothing would otherwise run at a fraction of the speed.
    #if defined (__SSE__) || defined (_M_X64)
@@ -174,7 +198,7 @@ int main (int argc, char** argv)
     auto lowCpu = recorded;
     lowCpu.latencySamples = ConvolutionReverb::lowCpuLatency (rate);
 
-    std::printf ("Building a kernel (48 kHz)\n");
+    std::printf ("\nBuilding a kernel (48 kHz)\n");
     benchBuild ("Stone Chapel, modelled, stereo", requestFor (1, stereo));
     benchBuild ("6 s recording, stereo", recorded);
     auto sized = recorded;

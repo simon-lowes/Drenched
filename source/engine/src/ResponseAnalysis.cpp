@@ -2,6 +2,7 @@
 
 #include "drenched/Biquad.h"
 #include "drenched/RecordedResponse.h"
+#include "Denormals.h"
 
 #include <algorithm>
 #include <cmath>
@@ -46,6 +47,8 @@ std::vector<float> thirdOctave (const std::vector<float>& signal, std::size_t le
 
 ResponseAnalysis analyseResponse (const ImpulseResponseSet& responses)
 {
+    const ScopedFlushDenormals flush;
+
     ResponseAnalysis analysis;
     const auto length = responses.length();
     const auto rate = responses.sampleRate;

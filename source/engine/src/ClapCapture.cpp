@@ -1,4 +1,5 @@
 #include "drenched/ClapCapture.h"
+#include "Denormals.h"
 
 #include <algorithm>
 #include <cmath>
@@ -32,6 +33,8 @@ std::size_t samplesOf (double seconds, double sampleRate) noexcept
 
 std::vector<std::vector<float>> extractClap (const std::vector<std::vector<float>>& recordings, double sampleRate)
 {
+    const ScopedFlushDenormals flush;
+
     if (recordings.empty() || recordings.size() > 2 || ! (sampleRate >= 8000.0))
         throw std::invalid_argument ("A clap needs one or two recordings and a sample rate.");
 

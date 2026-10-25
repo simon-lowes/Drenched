@@ -3,6 +3,7 @@
 #include <drenched/KernelBuilder.h>
 #include <drenched/LivingTail.h>
 #include <drenched/RecordedResponse.h>
+#include <drenched/ResponseAnalysis.h>
 #include <drenched/Spaces.h>
 #include <drenched/SurroundResponse.h>
 
@@ -443,3 +444,44 @@ TEST_CASE ("The builder plays a loaded response", "[recorded][builder]")
     CHECK (energy (l) > 0.0);
     CHECK (std::all_of (l.begin(), l.end(), [] (float s) { return std::isfinite (s); }));
 }
+
+#if defined (__SSE__) || defined (_M_X64)
+ #include <xmmintrin.h>
+
+TEST_CASE ("Offline work leaves the calling thread's handling of tiny numbers as it found it", "[recorded][denormals]")
+{
+    // Loading, building and analysing flush denormals to run at full speed
+    // over long, fading tails, on whatever thread calls them: often the host's
+    // message thread, which must get its own setting back, even after a refusal.
+    // Only the control bits are compared: the low six are flags any arithmetic raises.
+    const auto control = [] { return _mm_getcsr() & ~0x3fu; };
+    const auto original = _mm_getcsr();
+    const auto flushed = original | 0x8040u;
+    const auto unflushed = original & ~0x8040u;
+    const auto mode = GENERATE_COPY (unflushed, flushed) & ~0x3fu;
+    _mm_setcsr (mode);
+
+    const auto ir = fileOf (renderImpulseResponse (requestFor (1)));
+    const auto recorded = prepareRecordedResponse (ir, 48000.0, "hall");
+    CHECK (control() == mode);
+
+    CHECK_THROWS_AS (prepareRecordedResponse ({ std::vector<float> (48000, 0.0f) }, 48000.0, "silent"), std::invalid_argument);
+    CHECK (control() == mode);
+
+    ConvolutionReverb reverb;
+    reverb.prepare (48000.0);
+    {
+        KernelBuilder builder (reverb);
+        auto request = requestFor (1);
+        request.recorded = recorded;
+        builder.buildNow (request);
+        CHECK (control() == mode);
+
+        const auto analysis = analyseResponse (*builder.lastResponses());
+        CHECK (analysis.rt60[3] > 0.0f);
+        CHECK (control() == mode);
+    }
+
+    _mm_setcsr (original);
+}
+#endif

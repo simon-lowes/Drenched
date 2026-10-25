@@ -14,6 +14,14 @@ std::shared_ptr<const RecordedResponse> prepareFromReader (juce::AudioFormatRead
 {
     constexpr double maxSeconds = 31.0; // the engine keeps 30 s once the silence is trimmed
 
+    // Checked before reading, as the engine would refuse it anyway: a damaged
+    // header's huge rate would otherwise ask for a huge read.
+    if (! (reader.sampleRate >= 8000.0 && reader.sampleRate <= 384000.0))
+    {
+        error = "The file's sample rate isn't one Drenched can use.";
+        return nullptr;
+    }
+
     const auto channels = static_cast<int> (reader.numChannels);
     const auto length = static_cast<int> (std::min<juce::int64> (reader.lengthInSamples,
                                                                    static_cast<juce::int64> (maxSeconds * reader.sampleRate)));
@@ -24,21 +32,28 @@ std::shared_ptr<const RecordedResponse> prepareFromReader (juce::AudioFormatRead
         return nullptr;
     }
 
-    juce::AudioBuffer<float> buffer (channels, length);
-
-    if (! reader.read (&buffer, 0, length, 0, true, true))
-    {
-        error = "Drenched couldn't read " + displayName + ".";
-        return nullptr;
-    }
-
-    std::vector<std::vector<float>> audio (static_cast<size_t> (channels));
-
-    for (int c = 0; c < channels; ++c)
-        audio[static_cast<size_t> (c)].assign (buffer.getReadPointer (c), buffer.getReadPointer (c) + length);
-
     try
     {
+        // Read a block at a time straight into the channels: a whole-file buffer
+        // as well would double what a long, many-channel file needs.
+        constexpr int block = 65536;
+        std::vector<std::vector<float>> audio (static_cast<size_t> (channels), std::vector<float> (static_cast<size_t> (length)));
+        juce::AudioBuffer<float> buffer (channels, std::min (block, length));
+
+        for (int pos = 0; pos < length; pos += block)
+        {
+            const auto n = std::min (block, length - pos);
+
+            if (! reader.read (&buffer, 0, n, pos, true, true))
+            {
+                error = "Drenched couldn't read " + displayName + ".";
+                return nullptr;
+            }
+
+            for (int c = 0; c < channels; ++c)
+                std::copy_n (buffer.getReadPointer (c), n, audio[static_cast<size_t> (c)].begin() + pos);
+        }
+
         if (bFormat.has_value())
             return prepareAmbisonicResponse (audio, reader.sampleRate, name.toStdString(), *bFormat);
 
@@ -50,7 +65,7 @@ std::shared_ptr<const RecordedResponse> prepareFromReader (juce::AudioFormatRead
     {
         error = juce::String (e.what());
     }
-    catch (const std::exception&)
+    catch (const std::exception&) // std::bad_alloc, most likely
     {
         error = displayName + " is too large to load.";
     }

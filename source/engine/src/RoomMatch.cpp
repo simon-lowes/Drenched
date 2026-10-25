@@ -1,6 +1,7 @@
 #include "drenched/RoomMatch.h"
 
 #include "drenched/Spaces.h"
+#include "Denormals.h"
 
 #include <algorithm>
 #include <cmath>
@@ -160,6 +161,8 @@ RoomListener::RoomListener (double newSampleRate)
 
 void RoomListener::listen (const float* samples, std::size_t n)
 {
+    const ScopedFlushDenormals flush;
+
     for (std::size_t s = 0; s < n; ++s)
     {
         const auto x = std::isfinite (samples[s]) ? samples[s] : 0.0f;
@@ -196,6 +199,8 @@ double RoomListener::secondsHeard() const noexcept
 
 RoomEstimate RoomListener::estimate() const
 {
+    const ScopedFlushDenormals flush;
+
     const auto peak = frames[4].empty() ? 0.0f : *std::max_element (frames[4].begin(), frames[4].end());
 
     if (! (peak > 1.0e-12f))
