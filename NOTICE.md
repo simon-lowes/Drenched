@@ -12,6 +12,7 @@ added to this repository.
 | [clap-juce-extensions](https://github.com/free-audio/clap-juce-extensions) | CLAP format | MIT |
 | [CLAP](https://github.com/free-audio/clap) | CLAP format | MIT |
 | [Catch2](https://github.com/catchorg/Catch2) | Unit tests (not shipped) | BSL-1.0 |
+| [Playwright](https://playwright.dev) | Interface tests in a browser (not shipped) | Apache-2.0 |
 | [pffft](https://github.com/marton78/pffft) | FFT for convolution | BSD-style FFTPACK licence (Julien Pommier, Hayati Ayguen, Dario Mambro, UCAR) |
 | [r8brain-free-src](https://github.com/avaneev/r8brain-free-src) 6.5 | Resampling loaded impulse responses | MIT (Aleksey Vaneev) |
 | Ooura FFT (inside r8brain-free-src) | FFT for the resampler | Free for any use, including commercial (Takuya Ooura) |
