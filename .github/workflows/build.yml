@@ -153,9 +153,9 @@ jobs:
           [ -n "$VST3" ] || VST3=$(find build -type d -name "Drenched.vst3" | head -n 1)
           echo "Validating $VST3"
           if [ "$RUNNER_OS" = "Linux" ]; then
-            xvfb-run -a ./${{ matrix.pluginval_bin }} --strictness-level 10 --skip-gui-tests --validate-in-process --validate "$VST3"
+            xvfb-run -a ./${{ matrix.pluginval_bin }} --strictness-level 10 --validate-in-process --validate "$VST3"
           else
-            ./${{ matrix.pluginval_bin }} --strictness-level 10 --skip-gui-tests --validate-in-process --validate "$VST3"
+            ./${{ matrix.pluginval_bin }} --strictness-level 10 --validate-in-process --validate "$VST3"
           fi
 
       # Logic and GarageBand only load Audio Units that pass Apple's auval.
