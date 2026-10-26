@@ -57,6 +57,10 @@ juce_add_plugin(Drenched
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
+    # macOS gives the standalone app no input without a reason to show the person
+    # (and may quit it); plug-ins use their host's permission.
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "Drenched plays your input through the reverb, and records rooms when you capture one."
     NEEDS_WEB_BROWSER TRUE
     NEEDS_WEBVIEW2 TRUE
     NEEDS_CURL TRUE
