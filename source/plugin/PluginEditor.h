@@ -6,6 +6,7 @@
 
 #include <array>
 #include <atomic>
+#include <memory>
 #include <optional>
 #include <set>
 
@@ -91,6 +92,9 @@ private:
     bool choosing = false;
 
     juce::WebBrowserComponent web;
+
+    // Shown instead of the page where the system has no web view to show it in.
+    std::unique_ptr<juce::Component> missingWebView;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DrenchedEditor)
 };

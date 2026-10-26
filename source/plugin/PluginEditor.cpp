@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "Settings.h"
+#include "WebView.h"
 
 #include <DrenchedUI.h>
 
@@ -36,6 +37,43 @@ namespace
         return "application/octet-stream";
     }
 
+    /** What the window shows where Windows has no WebView2 runtime: what's missing, and a
+        way to get it. The plug-in plays as usual meanwhile. */
+    class MissingWebView final : public juce::Component
+    {
+    public:
+        MissingWebView()
+        {
+            message.setText ("Drenched's window needs Microsoft's WebView2 runtime, which isn't on this computer. "
+                             "Install it, then close this window and open it again. Drenched plays as usual meanwhile.",
+                             juce::dontSendNotification);
+            message.setJustificationType (juce::Justification::centred);
+            message.setFont (juce::FontOptions (17.0f));
+            message.setColour (juce::Label::textColourId, juce::Colours::white);
+            addAndMakeVisible (message);
+
+            download.setButtonText ("Get WebView2 from Microsoft");
+            download.onClick = [] { juce::URL (webView::downloadUrl).launchInDefaultBrowser(); };
+            addAndMakeVisible (download);
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            g.fillAll (juce::Colours::black);
+        }
+
+        void resized() override
+        {
+            auto area = getLocalBounds().withSizeKeepingCentre (juce::jmin (520, getWidth() - 40), 150);
+            message.setBounds (area.removeFromTop (100));
+            download.setBounds (area.removeFromBottom (36).withSizeKeepingCentre (260, 36));
+        }
+
+    private:
+        juce::Label message;
+        juce::TextButton download;
+    };
+
     template <typename Fn>
     void forEachProperty (const juce::var& object, Fn&& fn)
     {
@@ -60,8 +98,17 @@ DrenchedEditor::DrenchedEditor (DrenchedProcessor& p)
     state.state.addListener (this);
     processor.getLicence().addChangeListener (this);
 
-    addAndMakeVisible (web);
-    web.goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
+    // Without a web view the page never loads, so nothing is ever sent to it.
+    if (webView::runtimeAvailable())
+    {
+        addAndMakeVisible (web);
+        web.goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
+    }
+    else
+    {
+        missingWebView = std::make_unique<MissingWebView>();
+        addAndMakeVisible (*missingWebView);
+    }
 
     // Read the saved size before anything can call resized(), which stores the size.
     const auto savedWidth = static_cast<int> (processor.getUiState().getProperty (UiIDs::width, designWidth));
@@ -599,6 +646,9 @@ void DrenchedEditor::paint (juce::Graphics& g)
 void DrenchedEditor::resized()
 {
     web.setBounds (getLocalBounds());
+
+    if (missingWebView != nullptr)
+        missingWebView->setBounds (getLocalBounds());
 
     if (getWidth() >= minWidth)
         processor.getUiState().setProperty (UiIDs::width, getWidth(), nullptr);

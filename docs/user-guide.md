@@ -29,6 +29,8 @@ xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/Drenched.vst3
 
 Run the setup program. It is unsigned, so when Windows warns you, choose **More info > Run anyway**. You can install everything or pick the VST3, CLAP and app.
 
+Drenched's window runs in Microsoft's WebView2 runtime, which most Windows 10 and 11 PCs already have. If yours doesn't, the last page of the installer offers Microsoft's download, and the Drenched window says so too, with a button to get it. Install it, then close the Drenched window and open it again.
+
 On 64-bit Windows it installs both the 64-bit and 32-bit plug-ins, each where its kind of host looks (`C:\Program Files\Common Files` and `C:\Program Files (x86)\Common Files`). The app and this guide go in `C:\Program Files\Drenched`, and the Start menu has a shortcut to the guide.
 
 ### Finding it in your host
