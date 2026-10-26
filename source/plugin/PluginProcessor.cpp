@@ -351,6 +351,15 @@ void DrenchedProcessor::loadLibrarySpace (const juce::String& id, bool now)
 
     loader.addJob ([this, space, id, alive]
     {
+        // Clicking quickly through the browser queues a load per space; only the last
+        // one chosen is worth reading.
+        {
+            const std::lock_guard lock (recordedLock);
+
+            if (libraryWanted != id)
+                return;
+        }
+
         juce::String error;
         auto loaded = library::load (*space, error);
 
