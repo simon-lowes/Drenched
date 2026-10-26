@@ -17,6 +17,8 @@ You need macOS 11 or later (Apple Silicon or Intel), or Windows 10 or 11 (32 or 
 
 The plug-ins go in `/Library/Audio/Plug-Ins` (Components, VST3 and CLAP), the app in `/Applications`, and this guide in `/Library/Application Support/Drenched`.
 
+The first time the app uses your audio input, macOS asks whether Drenched may use the microphone. Choose **Allow**, or the app hears silence. You can change it later in System Settings > Privacy & Security > Microphone.
+
 If you were sent a plug-in on its own rather than the installer, clear the quarantine flag before loading it, for example:
 
 ```sh

@@ -158,6 +158,14 @@ jobs:
             ./${{ matrix.pluginval_bin }} --strictness-level 10 --validate-in-process --validate "$VST3"
           fi
 
+      # Without this reason in its Info.plist, macOS gives the app no audio input.
+      - name: Check the app asks for the microphone (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          APP=$(find build -type d -name "Drenched.app" -path "*Release*" | head -n 1)
+          plutil -extract NSMicrophoneUsageDescription raw "$APP/Contents/Info.plist"
+
       # Logic and GarageBand only load Audio Units that pass Apple's auval.
       - name: Validate Audio Unit (auval)
         if: runner.os == 'macOS'

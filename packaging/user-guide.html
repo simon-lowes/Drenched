@@ -138,6 +138,7 @@ th, td, h1 { border-color: #3a3e43; } a { color: #8cb8ec; }
 <li>Choose <strong>Customise</strong> if you want to leave out any of the Audio Unit, VST3, CLAP or the app.</li>
 </ol>
 <p>The plug-ins go in <code>/Library/Audio/Plug-Ins</code> (Components, VST3 and CLAP), the app in <code>/Applications</code>, and this guide in <code>/Library/Application Support/Drenched</code>.</p>
+<p>The first time the app uses your audio input, macOS asks whether Drenched may use the microphone. Choose <strong>Allow</strong>, or the app hears silence. You can change it later in System Settings &gt; Privacy &amp; Security &gt; Microphone.</p>
 <p>If you were sent a plug-in on its own rather than the installer, clear the quarantine flag before loading it, for example:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">xattr</span> <span class="at">-dr</span> com.apple.quarantine /Library/Audio/Plug-Ins/VST3/Drenched.vst3</span></code></pre></div>
 <h2 id="windows">Windows</h2>
