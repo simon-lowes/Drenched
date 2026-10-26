@@ -14,6 +14,7 @@
 #ifndef Source
   #define Source "dist"
 #endif
+#define WebView2Download "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
 
 [Setup]
 AppId={{6B0F3C2E-5C1D-4F7A-9E2B-D7A1C3E5F801}
@@ -71,3 +72,27 @@ Name: "{group}\Uninstall Drenched"; Filename: "{uninstallexe}"
 [Run]
 Filename: "{app}\Drenched.exe"; Description: "Open Drenched now"; Flags: nowait postinstall skipifsilent; Components: app
 Filename: "{app}\User guide.html"; Description: "Read the user guide"; Flags: shellexec nowait postinstall skipifsilent unchecked
+; Drenched's window runs in Microsoft's WebView2 runtime. Most PCs have it; where it's
+; missing, the last page offers Microsoft's download (ticked), rather than shipping it.
+Filename: "{#WebView2Download}"; Description: "Get Microsoft's WebView2 runtime, which Drenched's window needs (it isn't on this PC)"; Flags: shellexec nowait postinstall skipifsilent; Check: not WebView2Installed
+
+[Code]
+// The runtime registers its version under EdgeUpdate, machine-wide (either registry view)
+// or for this user; "0.0.0.0" or nothing means it isn't there.
+function HasVersion (Root: Integer; const Key: String): Boolean;
+var
+  Version: String;
+begin
+  Result := RegQueryStringValue (Root, Key, 'pv', Version) and (Version <> '') and (Version <> '0.0.0.0');
+end;
+
+function WebView2Installed: Boolean;
+var
+  Key: String;
+begin
+  Key := 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
+  Result := HasVersion (HKLM32, Key) or HasVersion (HKCU, Key);
+
+  if not Result and IsWin64 then
+    Result := HasVersion (HKLM64, Key);
+end;

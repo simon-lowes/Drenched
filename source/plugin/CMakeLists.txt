@@ -73,7 +73,8 @@ target_sources(Drenched PRIVATE
     Library.cpp
     LicenceManager.cpp
     PluginProcessor.cpp
-    PluginEditor.cpp)
+    PluginEditor.cpp
+    WebView.cpp)
 
 target_compile_definitions(Drenched PUBLIC
     JUCE_WEB_BROWSER=1
@@ -82,7 +83,8 @@ target_compile_definitions(Drenched PUBLIC
 
 if(WIN32)
     # Chromium-based WebView2, linked statically (the loader), so the plugin needs no extra DLL.
-    # The Evergreen runtime it talks to ships with Windows 10 and 11.
+    # Most Windows 10 and 11 PCs have the Evergreen runtime it talks to; without it the
+    # window says how to get it (WebView.h), and so does the installer.
     target_compile_definitions(Drenched PUBLIC JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1)
 endif()
 
