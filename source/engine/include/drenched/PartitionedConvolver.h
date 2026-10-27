@@ -18,7 +18,7 @@ namespace drenched
       - taps [0, 64) run in the time domain (DirectConvolver), so there is no
         latency;
       - after that come uniformly partitioned overlap-save stages whose block
-        sizes grow by a factor of eight (64, 512, 4096, 32768). A small stage
+        sizes grow by a factor of eight (64, 512, 4096, 32768) and no further. A small stage
         with block size B starts at tap B, which exactly hides its B samples of
         buffering, so the stages chain without any added delay. A stage of
         slackFrom samples or more starts at tap 2B instead (the stage before it
@@ -44,6 +44,7 @@ public:
     static constexpr std::size_t headLength = 64;
     static constexpr std::size_t growthFactor = 8;
     static constexpr std::size_t slackFrom = 4096; // stages this big or bigger start at tap 2B
+    static constexpr std::size_t largestBlock = 32768; // the last stage takes the rest of a long response
 
     /** One impulse response per output. Shorter responses are zero padded to
         the longest. At least one response is required. latency is 0 or a

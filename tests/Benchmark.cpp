@@ -28,7 +28,8 @@ using Clock = std::chrono::steady_clock;
 namespace
 {
 
-constexpr double rate = 48000.0;
+/** The rate every case runs at; main() raises it for the high-rate cases. */
+double rate = 48000.0;
 
 double millisSince (Clock::time_point start)
 {
@@ -47,7 +48,7 @@ ImpulseResponseRequest requestFor (int space, const SpeakerLayout& outputs)
 
 // A recorded-like true-stereo response: decaying noise, so the recorded path
 // (trimming, measuring, shaping) runs as it does for a library space.
-std::shared_ptr<const RecordedResponse> fakeRecording (double seconds)
+std::shared_ptr<const RecordedResponse> fakeRecording (double seconds, double decaySeconds = 2.5)
 {
     std::mt19937 noise (7);
     std::normal_distribution<float> gauss;
@@ -56,7 +57,7 @@ std::shared_ptr<const RecordedResponse> fakeRecording (double seconds)
 
     for (auto& c : channels)
         for (size_t i = 0; i < n; ++i)
-            c[i] = gauss (noise) * std::exp (-6.9f * (float) i / (float) (2.5 * rate));
+            c[i] = gauss (noise) * std::exp (-6.9f * (float) i / (float) (decaySeconds * rate));
 
     return prepareRecordedResponse (channels, rate, "bench");
 }
@@ -215,5 +216,24 @@ int main (int argc, char** argv)
     for (size_t block : { 64, 256 })
         benchPlay ("6 s recording, stereo, changing", recorded, block, seconds, true, true);
     benchPlay ("6 s recording, 7.1.4, changing", recordedSurround, 256, seconds, true, true);
+
+    // A cathedral: a response long enough for the largest stage to be used.
+    auto cathedral = requestFor (0, stereo);
+    cathedral.recorded = fakeRecording (20.0, 10.0);
+    for (size_t block : { 64, 256 })
+        benchPlay ("20 s cathedral, stereo", cathedral, block, seconds);
+
+    // Higher rates mean more samples in the same time, and a block of the same size is shorter.
+    for (const auto high : { 96000.0, 192000.0 })
+    {
+        rate = high;
+        auto r = requestFor (0, stereo);
+        r.recorded = fakeRecording (6.0);
+        std::printf ("\nPlaying (%.0f kHz)\n", high / 1000.0);
+        for (size_t block : { 64, 256, 1024 })
+            benchPlay ("6 s recording, stereo", r, block, seconds);
+        benchPlay ("6 s recording, stereo, changing", r, 256, seconds, true, true);
+    }
+
     return 0;
 }

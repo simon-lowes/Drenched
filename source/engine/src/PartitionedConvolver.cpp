@@ -339,9 +339,13 @@ PartitionedConvolver::PartitionedConvolver (const std::vector<std::span<const fl
         // of its blocks; otherwise this stage takes the rest. Rounding a short
         // remainder up to one huge block per output cost 2 GB for a long 9.1.6
         // response.
+        //
+        // No stage grows past largestBlock: a transform can't be spread, so one of a
+        // larger block (8 ms for 262144 samples) would take longer than a small
+        // block's whole callback. The largest stage takes all the rest instead.
         const auto next = block * growthFactor;
         const auto nextBegin = startOf (next);
-        const auto last = total < nextBegin + next;
+        const auto last = block >= largestBlock || total < nextBegin + next;
         const auto end = last ? total : nextBegin;
         const auto partitions = (end - begin + block - 1) / block;
 
