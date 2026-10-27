@@ -118,17 +118,22 @@ if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 4)
     target_link_options(Drenched_Standalone PRIVATE /LARGEADDRESSAWARE)
 endif()
 
-if(APPLE AND TARGET Drenched_VST3)
-    # JUCE signs the VST3 bundle (ad hoc) before writing its moduleinfo.json, which breaks
-    # the bundle's seal, so macOS sees it as damaged. Sign it again once it is complete
-    # (only if its signature no longer checks out).
-    add_custom_command(TARGET Drenched_VST3 POST_BUILD
-        COMMAND sh -c "codesign --verify \"$0\" 2>/dev/null || codesign --force --sign - \"$0\"" "$<TARGET_BUNDLE_DIR:Drenched_VST3>"
-        VERBATIM)
-endif()
-
 if(DRENCHED_BUILD_CLAP)
     clap_juce_extensions_plugin(TARGET Drenched
         CLAP_ID "com.drenched.drenched"
         CLAP_FEATURES audio-effect reverb stereo surround)
+endif()
+
+# Every macOS bundle signed (ad hoc until there is a Developer ID). JUCE signs only the
+# VST3, and before it writes the VST3's moduleinfo.json, which breaks that seal; the
+# Audio Unit, CLAP and app it leaves unsigned. Signed again here, last, wherever the
+# signature doesn't check out (.github/workflows/build.yml checks the installed bundles).
+if(APPLE)
+    foreach(format IN ITEMS VST3 AU CLAP Standalone)
+        if(TARGET Drenched_${format})
+            add_custom_command(TARGET Drenched_${format} POST_BUILD
+                COMMAND sh -c "codesign --verify \"$0\" 2>/dev/null || codesign --force --sign - \"$0\"" "$<TARGET_BUNDLE_DIR:Drenched_${format}>"
+                VERBATIM)
+        endif()
+    endforeach()
 endif()
