@@ -6,13 +6,15 @@
 #include <cmath>
 #include <functional>
 #include <random>
+#include <utility>
 #include <vector>
 
 using namespace drenched;
 
 /*  Hosts call plugins in all sorts of ways: blocks of any size (including none, and larger
-    than they promised), audio before the plugin was prepared, the sample rate changed
-    mid-session. The sound must never depend on how the audio was cut into blocks. */
+    than they promised), audio before the plugin was prepared, the sample rate (8 kHz to
+    384 kHz) or speaker layout changed mid-session. The sound must never depend on how the
+    audio was cut into blocks. */
 
 namespace
 {
@@ -126,7 +128,7 @@ TEST_CASE ("A new sample rate mid-session plays the same room", "[plugin][host]"
 {
     testing::Plugin p;
 
-    for (const auto rate : { 44100.0, 96000.0, 22050.0, 192000.0, 48000.0 })
+    for (const auto rate : { 44100.0, 96000.0, 22050.0, 192000.0, 8000.0, 384000.0, 48000.0 })
     {
         INFO (rate);
         prepare (*p, rate, 256);
@@ -237,4 +239,91 @@ TEST_CASE ("Bouncing offline, a change to the room lands at the same place every
     const auto late = static_cast<size_t> (block * 40 + rate);
     CHECK (energy (changed, late) < 0.01 * energy (unchanged, late));
     CHECK (changed == again);
+}
+
+TEST_CASE ("Every speaker layout a host can choose plays the room on every speaker", "[plugin][host][layouts]")
+{
+    // One instance, as a host that lets the person change the track's layout mid-session.
+    using Set = juce::AudioChannelSet;
+    testing::Plugin p;
+    constexpr double rate = 48000.0;
+    constexpr int blockSize = 256;
+
+    const std::vector<std::pair<Set, Set>> layouts {
+        { Set::mono(), Set::mono() },
+        { Set::mono(), Set::stereo() },
+        { Set::stereo(), Set::stereo() },
+        { Set::stereo(), Set::createLCR() },
+        { Set::stereo(), Set::quadraphonic() },
+        { Set::mono(), Set::create5point1() },
+        { Set::stereo(), Set::create5point1() },
+        { Set::create5point1(), Set::create5point1() },
+        { Set::stereo(), Set::create7point1() },
+        { Set::create7point1point4(), Set::create7point1point4() },
+        { Set::stereo(), Set::create9point1point6() },
+        { Set::stereo(), Set::stereo() },
+    };
+
+    for (const auto& [in, out] : layouts)
+    {
+        INFO (in.getDescription() << " in, " << out.getDescription() << " out");
+
+        juce::AudioProcessor::BusesLayout layout;
+        layout.inputBuses.add (in);
+        layout.outputBuses.add (out);
+        REQUIRE (testing::onMessageThread ([&] { return p->setBusesLayout (layout); }));
+        prepare (*p, rate, blockSize);
+
+        const auto channels = std::max (in.size(), out.size());
+        const auto input = noiseBurst (static_cast<int> (rate));
+        std::vector<double> tail (static_cast<size_t> (out.size()), 0.0);
+        auto finite = true;
+        juce::MidiBuffer midi;
+
+        for (int pos = 0; pos < static_cast<int> (input.size()); pos += blockSize)
+        {
+            juce::AudioBuffer<float> buffer (channels, blockSize);
+            buffer.clear();
+
+            for (int c = 0; c < in.size(); ++c)
+                buffer.copyFrom (c, 0, input.data() + pos, blockSize);
+
+            p->processBlock (buffer, midi);
+
+            for (int c = 0; c < out.size(); ++c)
+            {
+                for (int i = 0; i < blockSize; ++i)
+                {
+                    const auto x = buffer.getSample (c, i);
+                    finite = finite && std::isfinite (x);
+
+                    if (pos >= static_cast<int> (rate / 4)) // after the burst: the room
+                        tail[static_cast<size_t> (c)] += static_cast<double> (x) * x;
+                }
+            }
+        }
+
+        CHECK (finite);
+
+        for (int c = 0; c < out.size(); ++c)
+        {
+            const auto type = out.getTypeOfChannel (c);
+
+            if (type == Set::LFE || type == Set::LFE2)
+                continue;
+
+            INFO (Set::getAbbreviatedChannelTypeName (type));
+            CHECK (tail[static_cast<size_t> (c)] > 1.0e-4);
+        }
+    }
+
+    // Layouts it can't play are refused, so the host offers the next best.
+    for (const auto& [in, out] : std::vector<std::pair<Set, Set>> { { Set::create5point1(), Set::stereo() }, { Set::disabled(), Set::stereo() } })
+    {
+        INFO (in.getDescription() << " in, " << out.getDescription() << " out");
+        juce::AudioProcessor::BusesLayout layout;
+        layout.inputBuses.add (in);
+        layout.outputBuses.add (out);
+        CHECK_FALSE (testing::onMessageThread ([&] { return p->checkBusesLayoutSupported (layout); }));
+    }
 }
