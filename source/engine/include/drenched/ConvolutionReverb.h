@@ -1,6 +1,6 @@
 #pragma once
 
-#include "drenched/Biquad.h"
+#include "drenched/Glide.h"
 #include "drenched/ImpulseResponseSynth.h"
 #include "drenched/LivingTail.h"
 #include "drenched/PartitionedConvolver.h"
@@ -9,6 +9,7 @@
 #include "drenched/SpeakerTrim.h"
 #include "drenched/SpectrumTap.h"
 #include "drenched/SurroundResponse.h"
+#include "drenched/Svf.h"
 #include "drenched/WetEqualiser.h"
 
 #include <array>
@@ -107,9 +108,10 @@ struct ReverbControls
     its own wet signal; the LFE output gets no reverberation.
 
     New kernels arrive from a background thread through submit(). The audio
-    thread swaps them in without a gap: the outgoing kernel stops receiving
-    input and rings out its own tail, so changing the decay or the space
-    while sound is playing never cuts off what is already reverberating.
+    thread swaps them in without a gap: over 40 ms the input moves from the
+    outgoing kernel to the new one, and the outgoing kernel rings out its own
+    tail, so changing the decay or the space while sound is playing never
+    clicks or cuts off what is already reverberating.
     Kernels the audio thread is finished with go back through takeRetired()
     to be freed off the audio thread.
 
@@ -188,7 +190,9 @@ public:
 private:
     void installIncoming() noexcept;
     void retire (ReverbKernel* kernel) noexcept;
-    void updateFilters (const ReverbControls& controls) noexcept;
+    void settleTone (const ReverbControls& controls) noexcept;
+    void glideTone (const ReverbControls& controls) noexcept;
+    void designTone (bool cuts, bool shelves, bool mono, std::size_t rampSamples) noexcept; // 0: at once
     void runKernels (std::size_t numSamples) noexcept;
     void restart() noexcept; // clears the wet path alone; the dry sound plays on
     void delayDry (std::size_t wanted, std::size_t numSamples) noexcept;
@@ -210,6 +214,7 @@ private:
     ReverbKernel* ringing = nullptr;
     ReverbKernel* fading = nullptr;
     std::size_t ringRemaining = 0, fadeRemaining = 0, fadeLength = 2048;
+    std::size_t handRemaining = 0; // the ringing kernel still hearing some input
     std::atomic<ReverbKernel*> incoming { nullptr };
 
     // Single-producer (audio), single-consumer (builder) queue of retired kernels.
@@ -234,9 +239,13 @@ private:
     bool firstBlock = true;
 
     // Wet tone, per output.
-    std::array<Biquad, maxChannels> lowCut, highCut, lowShelf, highShelf, spreadHighPass;
-    ReverbControls lastFilterControls;
-    bool filtersValid = false;
+    std::array<Svf, maxChannels> lowCut, highCut, lowShelf, highShelf, spreadHighPass;
+    // The wet tone and width as heard, gliding to the controls (glideTone());
+    // the cuts and mono bass also fade in and out of use, heard from 0 to 1.
+    float lowCutNow = 20.0f, highCutNow = 20000.0f, brightnessNow = 0.0f, monoBelowNow = 100.0f, widthNow = 1.0f;
+    float lowCutHeard = 0.0f, highCutHeard = 0.0f, monoHeard = 0.0f;
+    float toneCoef = 0.0f, toneFade = 1.0f;
+    bool brightnessOn = false, toneSettled = false;
 
     // Each speaker's reverb level and delay.
     SpeakerTrim speakerTrim;
@@ -259,7 +268,7 @@ private:
     float livingGain = 0.0f, livingStep = 0.0f; // the kernel's living level, gliding
 
     // Workspace: chunkSize each, or maxChannels blocks of chunkSize.
-    std::vector<float> wetInL, wetInR, tailInL, tailInR, zeros, monoCopy;
+    std::vector<float> wetInL, wetInR, tailInL, tailInR, handInL, handInR, zeros, monoCopy;
     std::vector<float> dry, wet, tmp, scratch, tails;
     std::array<float*, maxChannels> wetPtr {}, tmpPtr {}, scratchPtr {}, tailPtr {};
 };

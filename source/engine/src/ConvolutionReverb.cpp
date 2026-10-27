@@ -44,6 +44,30 @@ std::size_t nextPowerOfTwo (std::size_t n) noexcept
 
 bool differs (float a, float b) noexcept { return std::abs (a - b) > 1.0e-4f; }
 
+/** Runs a filter in place as it fades in or out of use, heard going from
+    `from` to `to` across the samples; fully, or not at all, when it isn't. */
+void runFading (Svf& filter, float* x, std::size_t n, float from, float to) noexcept
+{
+    if (from >= 1.0f && to >= 1.0f)
+    {
+        filter.process (x, n);
+        return;
+    }
+
+    if (from <= 0.0f && to <= 0.0f)
+        return;
+
+    const auto step = (to - from) / static_cast<float> (n);
+
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const auto heard = from + step * static_cast<float> (i + 1);
+        x[i] += heard * (filter.processSample (x[i]) - x[i]);
+    }
+
+    filter.flushDenormals();
+}
+
 } // namespace
 
 //==============================================================================
@@ -90,7 +114,7 @@ std::size_t ConvolutionReverb::lowCpuLatency (double sampleRate) noexcept
 
 ConvolutionReverb::ConvolutionReverb()
 {
-    for (auto* buffer : { &wetInL, &wetInR, &tailInL, &tailInR, &zeros, &monoCopy })
+    for (auto* buffer : { &wetInL, &wetInR, &tailInL, &tailInR, &handInL, &handInR, &zeros, &monoCopy })
         buffer->assign (chunkSize, 0.0f);
 
     for (auto* buffer : { &dry, &wet, &tmp, &scratch, &tails })
@@ -254,6 +278,8 @@ void ConvolutionReverb::prepare (double newSampleRate, const SpeakerLayout& inpu
     attackCoef = onePole (sampleRate, 0.01);
     releaseCoef = onePole (sampleRate, 0.25);
     fadeLength = static_cast<std::size_t> (0.04 * sampleRate);
+    toneCoef = glide::coefficient (sampleRate, 0.02);
+    toneFade = static_cast<float> (static_cast<double> (glide::block) / (0.01 * sampleRate));
 
     inputCoef = onePole (sampleRate, 0.01);
     freezeStep = static_cast<float> (1.0 / (0.15 * sampleRate));
@@ -269,7 +295,6 @@ void ConvolutionReverb::prepare (double newSampleRate, const SpeakerLayout& inpu
         livingTail.setDesign (current->livingTail());
 
     tailDesignPending = false;
-    filtersValid = false;
     reset();
 }
 
@@ -308,6 +333,9 @@ void ConvolutionReverb::restart() noexcept
     for (auto* k : { current, ringing, fading })
         if (k != nullptr)
             k->reset();
+
+    handRemaining = 0;
+    toneSettled = false;
 
     livingTail.reset();
     speakerTrim.reset();
@@ -401,8 +429,10 @@ void ConvolutionReverb::installIncoming() noexcept
         fadeRemaining = fadeLength;
     }
 
+    // The new kernel takes the input over gradually (see runKernels()).
     ringing = current;
-    ringRemaining = ringing != nullptr ? ringing->length() : 0;
+    handRemaining = ringing != nullptr ? fadeLength : 0;
+    ringRemaining = ringing != nullptr ? ringing->length() + handRemaining : 0;
     current = fresh;
 
     // The living tail follows the new room at once, gliding to its new line
@@ -416,39 +446,115 @@ void ConvolutionReverb::installIncoming() noexcept
     ready.store (true, std::memory_order_relaxed);
 }
 
-void ConvolutionReverb::updateFilters (const ReverbControls& c) noexcept
+void ConvolutionReverb::settleTone (const ReverbControls& c) noexcept
 {
-    equaliser.setBands (c.eq);
-
-    const auto& last = lastFilterControls;
-
-    if (filtersValid && ! differs (c.lowCutHz, last.lowCutHz) && ! differs (c.highCutHz, last.highCutHz)
-        && ! differs (c.brightnessDb, last.brightnessDb) && ! differs (c.monoBelowHz, last.monoBelowHz))
-        return;
-
-    const auto lc = Biquad::highPass (sampleRate, c.lowCutHz);
-    const auto hc = Biquad::lowPass (sampleRate, c.highCutHz);
-    const auto ls = Biquad::lowShelf (sampleRate, 250.0, -0.5 * c.brightnessDb);
-    const auto hs = Biquad::highShelf (sampleRate, 2500.0, 0.5 * c.brightnessDb);
-
-    for (std::size_t ch = 0; ch < maxChannels; ++ch)
-    {
-        lowCut[ch].setCoefficients (lc);
-        highCut[ch].setCoefficients (hc);
-        lowShelf[ch].setCoefficients (ls);
-        highShelf[ch].setCoefficients (hs);
-    }
+    lowCutNow = c.lowCutHz;
+    highCutNow = c.highCutHz;
+    brightnessNow = c.brightnessDb;
+    lowCutHeard = c.lowCutHz > 20.5f ? 1.0f : 0.0f;
+    highCutHeard = c.highCutHz < 19999.0f ? 1.0f : 0.0f;
+    monoHeard = c.monoBelowHz > 0.0f ? 1.0f : 0.0f;
+    brightnessOn = std::abs (c.brightnessDb) > 0.01f;
+    widthNow = std::clamp (c.widthPercent, 0.0f, 200.0f) / 100.0f;
 
     if (c.monoBelowHz > 0.0f)
-    {
-        const auto spread = Biquad::highPass (sampleRate, c.monoBelowHz);
+        monoBelowNow = c.monoBelowHz;
 
-        for (auto& f : spreadHighPass)
-            f.setCoefficients (spread);
+    designTone (true, true, true, 0);
+}
+
+void ConvolutionReverb::glideTone (const ReverbControls& c) noexcept
+{
+    const auto lowCutOn = c.lowCutHz > 20.5f;
+    const auto highCutOn = c.highCutHz < 19999.0f;
+    const auto monoOn = c.monoBelowHz > 0.0f;
+    const auto brightOn = std::abs (c.brightnessDb) > 0.01f;
+
+    // A filter coming into use starts from silence, at its new setting, and
+    // fades in. One going out of use fades out, then stops.
+    const auto wake = [] (float heard, bool on, auto& bank)
+    {
+        if (on && heard <= 0.0f)
+            for (auto& f : bank)
+                f.reset();
+
+        return on && heard <= 0.0f;
+    };
+
+    if (wake (lowCutHeard, lowCutOn, lowCut))
+        lowCutNow = c.lowCutHz;
+
+    if (wake (highCutHeard, highCutOn, highCut))
+        highCutNow = c.highCutHz;
+
+    if (wake (monoHeard, monoOn, spreadHighPass))
+        monoBelowNow = c.monoBelowHz;
+
+    // The shelves are silent at 0 dB, so they need no fade: they glide from there.
+    if (brightOn && ! brightnessOn)
+    {
+        for (auto* bank : { &lowShelf, &highShelf })
+            for (auto& f : *bank)
+                f.reset();
     }
 
-    lastFilterControls = c;
-    filtersValid = true;
+    const auto fade = [this] (float heard, bool on)
+    {
+        return on ? std::min (1.0f, heard + toneFade) : std::max (0.0f, heard - toneFade);
+    };
+
+    lowCutHeard = fade (lowCutHeard, lowCutOn);
+    highCutHeard = fade (highCutHeard, highCutOn);
+    monoHeard = fade (monoHeard, monoOn);
+
+    const auto cuts = lowCutNow != c.lowCutHz || highCutNow != c.highCutHz;
+    const auto shelves = brightnessNow != c.brightnessDb;
+    const auto mono = monoOn && monoBelowNow != c.monoBelowHz;
+
+    lowCutNow = glide::towardsRatio (lowCutNow, std::max (c.lowCutHz, 1.0f), toneCoef);
+    highCutNow = glide::towardsRatio (highCutNow, std::max (c.highCutHz, 1.0f), toneCoef);
+    brightnessNow = glide::towards (brightnessNow, c.brightnessDb, toneCoef);
+
+    if (monoOn)
+        monoBelowNow = glide::towardsRatio (monoBelowNow, c.monoBelowHz, toneCoef);
+
+    brightnessOn = brightOn || std::abs (brightnessNow) > 0.01f;
+    designTone (cuts, shelves, mono, glide::block);
+}
+
+void ConvolutionReverb::designTone (bool cuts, bool shelves, bool mono, std::size_t ramp) noexcept
+{
+    if (cuts)
+    {
+        const auto lc = Svf::highPass (sampleRate, lowCutNow);
+        const auto hc = Svf::lowPass (sampleRate, highCutNow);
+
+        for (std::size_t ch = 0; ch < maxChannels; ++ch)
+        {
+            lowCut[ch].glideTo (lc, ramp);
+            highCut[ch].glideTo (hc, ramp);
+        }
+    }
+
+    if (shelves)
+    {
+        const auto ls = Svf::lowShelf (sampleRate, 250.0, -0.5 * brightnessNow);
+        const auto hs = Svf::highShelf (sampleRate, 2500.0, 0.5 * brightnessNow);
+
+        for (std::size_t ch = 0; ch < maxChannels; ++ch)
+        {
+            lowShelf[ch].glideTo (ls, ramp);
+            highShelf[ch].glideTo (hs, ramp);
+        }
+    }
+
+    if (mono)
+    {
+        const auto spread = Svf::highPass (sampleRate, monoBelowNow);
+
+        for (auto& f : spreadHighPass)
+            f.glideTo (spread, ramp);
+    }
 }
 
 void ConvolutionReverb::updateFreeze (const ReverbControls& c) noexcept
@@ -475,16 +581,40 @@ void ConvolutionReverb::updateFreeze (const ReverbControls& c) noexcept
 
 void ConvolutionReverb::runKernels (std::size_t n) noexcept
 {
+    // A new kernel takes the input over during a short fade, the one it replaced
+    // hearing less and less of it, so that a change of room never clicks however
+    // different the two rooms are, and the old room still rings out.
+    const auto* ringInL = zeros.data();
+    const auto* ringInR = zeros.data();
+
+    if (handRemaining > 0 && ringing != nullptr)
+    {
+        const auto step = 1.0f / static_cast<float> (std::max<std::size_t> (fadeLength, 1));
+
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const auto g = static_cast<float> (handRemaining > i ? handRemaining - i : 0) * step;
+            handInL[i] = wetInL[i] * g;
+            handInR[i] = wetInR[i] * g;
+            wetInL[i] -= handInL[i];
+            wetInR[i] -= handInR[i];
+        }
+
+        ringInL = handInL.data();
+        ringInR = handInR.data();
+        handRemaining = handRemaining > n ? handRemaining - n : 0;
+    }
+
     if (current != nullptr)
         current->process (wetInL.data(), wetInR.data(), wetPtr.data(), scratchPtr.data(), n);
     else
         for (std::size_t k = 0; k < numOut; ++k)
             std::fill_n (wetPtr[k], n, 0.0f);
 
-    // The previous kernel keeps sounding its tail but takes no new input.
+    // The previous kernel keeps sounding its tail, taking no new input once the handover is over.
     if (ringing != nullptr)
     {
-        ringing->process (zeros.data(), zeros.data(), tmpPtr.data(), scratchPtr.data(), n);
+        ringing->process (ringInL, ringInR, tmpPtr.data(), scratchPtr.data(), n);
 
         for (std::size_t k = 0; k < numOut; ++k)
             for (std::size_t i = 0; i < n; ++i)
@@ -595,7 +725,7 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
         return;
 
     installIncoming();
-    updateFilters (c);
+    equaliser.setBands (c.eq);
     updateFreeze (c);
 
     const auto mix = equalPowerMix (c.mix);
@@ -612,6 +742,13 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
         dryTap = current != nullptr ? current->latency() : 0;
         tailDelaySamples = static_cast<float> (livingTail.inputDelaySeconds() * sampleRate + static_cast<double> (dryTap));
         firstBlock = false;
+    }
+
+    // Straight to the wet tone asked for, at the start and after a restart().
+    if (! toneSettled)
+    {
+        settleTone (c);
+        toneSettled = true;
     }
 
     for (std::size_t offset = 0; offset < numSamples; offset += chunkSize)
@@ -739,58 +876,75 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
             }
         }
 
-        // Wet tone; the LFE channel carries no reverberation.
-        for (std::size_t k = 0; k < numOut; ++k)
+        // Wet tone, width and mono bass, in short steps so that the settings
+        // glide; the LFE channel carries no reverberation.
+        for (std::size_t from = 0; from < n; from += glide::block)
         {
-            auto* w = wetPtr[k];
+            const auto m = std::min (glide::block, n - from);
+            const auto lowCutFrom = lowCutHeard, highCutFrom = highCutHeard, monoFrom = monoHeard;
+            glideTone (c);
+            equaliser.advance();
 
-            if (! wetOutput[k])
+            for (std::size_t k = 0; k < numOut; ++k)
             {
-                std::fill_n (w, n, 0.0f);
-                continue;
-            }
+                auto* w = wetPtr[k] + from;
 
-            if (c.lowCutHz > 20.5f)
-                lowCut[k].process (w, n);
-
-            if (c.highCutHz < 19999.0f)
-                highCut[k].process (w, n);
-
-            if (std::abs (c.brightnessDb) > 0.01f)
-            {
-                lowShelf[k].process (w, n);
-                highShelf[k].process (w, n);
-            }
-
-            equaliser.process (k, w, n);
-        }
-
-        // Width and mono bass: each speaker's difference from the mean of all
-        // of them is scaled (and high-passed). In stereo this is mid/side.
-        if (numWet > 1)
-        {
-            const auto inverse = 1.0f / static_cast<float> (numWet);
-
-            for (std::size_t i = 0; i < n; ++i)
-            {
-                float mean = 0.0f;
-
-                for (std::size_t k = 0; k < numOut; ++k)
-                    mean += wetOutput[k] ? wetPtr[k][i] : 0.0f;
-
-                mean *= inverse;
-
-                for (std::size_t k = 0; k < numOut; ++k)
+                if (! wetOutput[k])
                 {
-                    if (! wetOutput[k])
-                        continue;
+                    std::fill_n (w, m, 0.0f);
+                    continue;
+                }
 
-                    auto spread = wetPtr[k][i] - mean;
+                runFading (lowCut[k], w, m, lowCutFrom, lowCutHeard);
+                runFading (highCut[k], w, m, highCutFrom, highCutHeard);
 
-                    if (c.monoBelowHz > 0.0f)
-                        spread = spreadHighPass[k].processSample (spread);
+                if (brightnessOn)
+                {
+                    lowShelf[k].process (w, m);
+                    highShelf[k].process (w, m);
+                }
 
-                    wetPtr[k][i] = mean + spread * width;
+                equaliser.process (k, w, m);
+            }
+
+            // Each speaker's difference from the mean of all of them is scaled
+            // (and high-passed). In stereo this is mid/side.
+            if (numWet > 1)
+            {
+                const auto inverse = 1.0f / static_cast<float> (numWet);
+                const auto monoStep = (monoHeard - monoFrom) / static_cast<float> (m);
+                const auto monoRunning = monoFrom > 0.0f || monoHeard > 0.0f;
+                const auto monoFull = monoFrom >= 1.0f && monoHeard >= 1.0f;
+
+                for (std::size_t i = from; i < from + m; ++i)
+                {
+                    widthNow = width + gainCoef * (widthNow - width);
+
+                    if (std::abs (widthNow - width) < 1.0e-6f)
+                        widthNow = width;
+
+                    float mean = 0.0f;
+
+                    for (std::size_t k = 0; k < numOut; ++k)
+                        mean += wetOutput[k] ? wetPtr[k][i] : 0.0f;
+
+                    mean *= inverse;
+                    const auto monoShare = monoFrom + monoStep * static_cast<float> (i - from + 1);
+
+                    for (std::size_t k = 0; k < numOut; ++k)
+                    {
+                        if (! wetOutput[k])
+                            continue;
+
+                        auto spread = wetPtr[k][i] - mean;
+
+                        if (monoFull)
+                            spread = spreadHighPass[k].processSample (spread);
+                        else if (monoRunning)
+                            spread += monoShare * (spreadHighPass[k].processSample (spread) - spread);
+
+                        wetPtr[k][i] = mean + spread * widthNow;
+                    }
                 }
             }
         }

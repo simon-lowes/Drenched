@@ -137,8 +137,13 @@ TEST_CASE ("A band switched back on starts fresh, and nothing allocates", "[eq][
         bands[3].gainDb = static_cast<float> (12.0 * std::sin (static_cast<double> (pos) / 4000.0));
         bands[3].frequencyHz = 500.0f + static_cast<float> (pos) * 0.1f;
         eq.setBands (bands);
-        eq.process (0, noise.data() + pos, 480);
-        eq.process (1, noise.data() + pos, 480);
+
+        for (std::size_t from = 0; from < 480; from += 32)
+        {
+            eq.advance();
+            eq.process (0, noise.data() + pos + from, std::min<std::size_t> (32, 480 - from));
+            eq.process (1, noise.data() + pos + from, std::min<std::size_t> (32, 480 - from));
+        }
     }
 
     REQUIRE (counter.count() == 0);
