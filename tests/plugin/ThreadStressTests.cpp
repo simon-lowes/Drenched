@@ -312,3 +312,91 @@ TEST_CASE ("The host can save the session from a thread of its own while things 
     CHECK (static_cast<float> (juce::ValueTree::fromXml (*later).getChildWithProperty ("id", ParamIDs::size).getProperty ("value"))
            == size->convertFrom0to1 (0.75f));
 }
+
+TEST_CASE ("The host can load a session from a thread of its own while things change", "[plugin][stress]")
+{
+    // Hosts that save from a thread of their own may load sessions and presets there too,
+    // while the interface goes on changing things on the message thread.
+    testing::Plugin plugin;
+    auto& p = *plugin;
+    testing::onMessageThread ([&] { p.prepareToPlay (48000.0, 128); });
+
+    const auto sessionWith = [&p] (float size, const juce::String& space)
+    {
+        set (p, ParamIDs::size, size);
+        p.getUiState().setProperty (UiIDs::spaceId, space, nullptr);
+        juce::MemoryBlock saved;
+        p.getStateInformation (saved);
+        return saved;
+    };
+
+    const auto first = testing::onMessageThread ([&] { return sessionWith (0.2f, bundledSpaces.front().id); });
+    const auto second = testing::onMessageThread ([&] { return sessionWith (0.8f, bundledSpaces.back().id); });
+    const auto hostLoad = [&p] (const juce::MemoryBlock& session)
+    {
+        std::thread host ([&] { p.setStateInformation (session.getData(), static_cast<int> (session.getSize())); });
+        host.join();
+    };
+
+    std::atomic<bool> running { true };
+    std::atomic<int> loads { 0 };
+
+    std::thread host ([&]
+    {
+        while (running.load())
+        {
+            const auto& session = loads.load() % 2 == 0 ? first : second;
+            p.setStateInformation (session.getData(), static_cast<int> (session.getSize()));
+            loads.fetch_add (1);
+        }
+    });
+
+    testing::onMessageThread ([&]
+    {
+        std::vector<juce::String> spaces;
+
+        for (const auto& space : library::spaces())
+            spaces.push_back (space.id);
+
+        std::mt19937 rng (5u);
+        std::uniform_real_distribution<float> unit (0.0f, 1.0f);
+        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds (4);
+
+        for (int step = 0; std::chrono::steady_clock::now() < end; ++step)
+        {
+            switch (step % 4)
+            {
+                case 0: if (! spaces.empty()) p.getUiState().setProperty (UiIDs::spaceId, spaces[rng() % spaces.size()], nullptr); break;
+                case 1: set (p, ParamIDs::brightness, unit (rng)); break;
+                case 2: p.storeScene (1 + static_cast<int> (rng() % 4), {}); break;
+                default: { juce::MemoryBlock saved; p.getStateInformation (saved); } break;
+            }
+
+            ((juce::Timer&) p).timerCallback();
+        }
+    });
+
+    running.store (false);
+    host.join();
+
+    INFO (loads.load() << " sessions loaded");
+    CHECK (loads.load() > 0);
+
+    // The last session loaded is the one that plays, and the one saved, once the
+    // processor has caught up with it.
+    hostLoad (second);
+    testing::onMessageThread ([&] { ((juce::Timer&) p).timerCallback(); });
+
+    const auto* size = p.getState().getParameter (ParamIDs::size);
+    CHECK (p.getState().getRawParameterValue (ParamIDs::size)->load() == size->convertFrom0to1 (0.8f));
+    CHECK (testing::onMessageThread ([&] { return p.getUiState().getProperty (UiIDs::spaceId).toString(); }) == bundledSpaces.back().id);
+
+    // Saved before the processor catches up, a session just loaded saves as loaded.
+    hostLoad (first);
+    juce::MemoryBlock saved;
+    std::thread saver ([&] { p.getStateInformation (saved); });
+    saver.join();
+    const auto xml = juce::AudioProcessor::getXmlFromBinary (saved.getData(), static_cast<int> (saved.getSize()));
+    REQUIRE (xml != nullptr);
+    CHECK (juce::ValueTree::fromXml (*xml).getChildWithName (UiIDs::tree).getProperty (UiIDs::spaceId).toString() == bundledSpaces.front().id);
+}

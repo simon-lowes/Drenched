@@ -87,6 +87,7 @@ public:
 
     /** The id of the chosen space: a library id, a modelled id or "user". */
     juce::String chosenSpaceId();
+    static juce::String chosenSpaceId (const juce::ValueTree& ui);
 
     /** Reads and analyses an impulse response file on a background thread, then (on the
         message thread) plays it, sets the decay graph to its measured decay (unless
@@ -207,8 +208,17 @@ private:
     static std::shared_ptr<const RecordedResponse> readImpulseResponse (const juce::File& file, juce::String& error);
     static std::shared_ptr<const RecordedResponse> readSofaFile (const juce::File& file, juce::String& error);
 
-    /** After a session loads: reloads the impulse response it names, if it isn't loaded already. */
-    void restoreImpulseResponse();
+    /** After a session loads: reloads the impulse response the interface state `ui` names,
+        if it isn't loaded already, and points `ui` at where the file was found. Any thread,
+        given a `ui` that thread owns. */
+    void restoreImpulseResponse (juce::ValueTree ui);
+
+    /** What setStateInformation does with a session once it is on the message thread: makes
+        it the state (unless invalid) and the room it describes the one that plays. */
+    void applySession (const juce::ValueTree& session);
+
+    /** Applies a session the host loaded on another thread, if one is waiting. Message thread. */
+    void applyPendingSession();
 
     /** Makes sure the chosen library recording is the one loaded: at once when `now` (a
         session loading before playback), otherwise on the loader thread. */
@@ -299,8 +309,9 @@ private:
     // The session as the message thread last saw it, for hosts that save from a thread of
     // their own: the state's value tree belongs to the message thread. The timer copies it
     // when it has changed; getStateInformation adds the parameters as they are at the time.
+    // A session the host loaded on another thread waits in pendingSession for the timer.
     std::mutex savedLock;
-    juce::ValueTree savedSession;
+    juce::ValueTree savedSession, pendingSession;
     std::atomic<bool> sessionChanged { true };
     void keepSessionForSaving();
 

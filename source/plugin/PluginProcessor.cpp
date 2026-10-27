@@ -14,6 +14,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 
 namespace drenched
 {
@@ -21,6 +22,7 @@ namespace drenched
 namespace
 {
     const juce::Identifier stateVersionID { "version" };
+    constexpr const char* stateType = "DrenchedState"; // the session's outermost tag
 
     /** Where a session's own impulse response file is now: where it was saved, or where
         it most likely moved to (see MovedFiles.h). {} when it can't be found. */
@@ -35,7 +37,7 @@ DrenchedProcessor::DrenchedProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput ("Input", juce::AudioChannelSet::stereo(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
-      state (*this, nullptr, "DrenchedState", createParameterLayout())
+      state (*this, nullptr, stateType, createParameterLayout())
 {
     const auto raw = [this] (const char* id)
     {
@@ -121,7 +123,11 @@ DrenchedProcessor::~DrenchedProcessor()
 
 juce::String DrenchedProcessor::chosenSpaceId()
 {
-    auto ui = getUiState();
+    return chosenSpaceId (getUiState());
+}
+
+juce::String DrenchedProcessor::chosenSpaceId (const juce::ValueTree& ui)
+{
     const auto id = ui.getProperty (UiIDs::spaceId, "").toString();
 
     if (id.isNotEmpty())
@@ -233,6 +239,7 @@ void DrenchedProcessor::updateLatency (double sampleRate)
 
 void DrenchedProcessor::timerCallback()
 {
+    applyPendingSession();
     followSceneParameter();
     cacheUiState();
     keepSessionForSaving();
@@ -875,9 +882,9 @@ juce::File DrenchedProcessor::writeCapture (const std::vector<std::vector<float>
     return file;
 }
 
-void DrenchedProcessor::restoreImpulseResponse()
+void DrenchedProcessor::restoreImpulseResponse (juce::ValueTree ui)
 {
-    const auto path = getUiState().getProperty (UiIDs::irPath, "").toString();
+    const auto path = ui.getProperty (UiIDs::irPath, "").toString();
 
     {
         const std::lock_guard lock (recordedLock);
@@ -911,7 +918,7 @@ void DrenchedProcessor::restoreImpulseResponse()
 
     // The session saves where it was found.
     if (found != path)
-        getUiState().setProperty (UiIDs::irPath, found, nullptr);
+        ui.setProperty (UiIDs::irPath, found, nullptr);
 }
 
 juce::String DrenchedProcessor::bugReportDetails()
@@ -1442,29 +1449,39 @@ void DrenchedProcessor::getStateInformation (juce::MemoryBlock& destData)
 
     if (juce::MessageManager::existsAndIsLockedByCurrentThread())
     {
+        applyPendingSession();
         session = state.copyState();
     }
     else
     {
+        auto loaded = false;
+
         {
             const std::lock_guard lock (savedLock);
-            session = savedSession.createCopy();
+
+            // A session loaded a moment ago, which the timer hasn't applied yet, saves as
+            // it was loaded.
+            loaded = pendingSession.isValid();
+            session = (loaded ? pendingSession : savedSession).createCopy();
         }
 
-        for (auto* parameter : getParameters())
+        if (! loaded)
         {
-            if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter))
+            for (auto* parameter : getParameters())
             {
-                auto child = session.getChildWithProperty ("id", ranged->paramID);
-
-                if (! child.isValid())
+                if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter))
                 {
-                    child = juce::ValueTree ("PARAM");
-                    child.setProperty ("id", ranged->paramID, nullptr);
-                    session.appendChild (child, nullptr);
-                }
+                    auto child = session.getChildWithProperty ("id", ranged->paramID);
 
-                child.setProperty ("value", state.getRawParameterValue (ranged->paramID)->load(), nullptr);
+                    if (! child.isValid())
+                    {
+                        child = juce::ValueTree ("PARAM");
+                        child.setProperty ("id", ranged->paramID, nullptr);
+                        session.appendChild (child, nullptr);
+                    }
+
+                    child.setProperty ("value", state.getRawParameterValue (ranged->paramID)->load(), nullptr);
+                }
             }
         }
     }
@@ -1513,22 +1530,61 @@ void DrenchedProcessor::migrateState (juce::ValueTree& session) const
 
 void DrenchedProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    if (auto xml = getXmlFromBinary (data, sizeInBytes))
+    juce::ValueTree session;
+
+    if (auto xml = getXmlFromBinary (data, sizeInBytes); xml != nullptr && xml->hasTagName (stateType))
     {
-        if (xml->hasTagName (state.state.getType()))
-        {
-            auto session = juce::ValueTree::fromXml (*xml);
-            migrateState (session);
-            state.replaceState (session);
-        }
+        session = juce::ValueTree::fromXml (*xml);
+        migrateState (session);
     }
 
-    restoreImpulseResponse();
+    if (juce::MessageManager::existsAndIsLockedByCurrentThread())
+    {
+        {
+            const std::lock_guard lock (savedLock);
+            pendingSession = {}; // this load is newer
+        }
+
+        applySession (session);
+        return;
+    }
+
+    // Hosts may load from a thread of their own too. Only the message thread may touch the
+    // state's value tree, so the timer applies the session, at most a tick later. The
+    // responses it names are read now, on this thread, which is what takes the time.
+    if (! session.isValid())
+        return;
+
+    auto ui = session.getOrCreateChildWithName (UiIDs::tree, nullptr);
+    restoreImpulseResponse (ui);
+    loadLibrarySpace (chosenSpaceId (ui), true);
+
+    const std::lock_guard lock (savedLock);
+    pendingSession = session;
+}
+
+void DrenchedProcessor::applyPendingSession()
+{
+    juce::ValueTree session;
+
+    {
+        const std::lock_guard lock (savedLock);
+        session = std::exchange (pendingSession, {});
+    }
+
+    if (session.isValid())
+        applySession (session);
+}
+
+void DrenchedProcessor::applySession (const juce::ValueTree& session)
+{
+    if (session.isValid())
+        state.replaceState (session);
+
+    restoreImpulseResponse (getUiState());
     loadLibrarySpace (chosenSpaceId(), true);
     cacheUiState();
-
-    if (juce::MessageManager::existsAndIsLockedByCurrentThread())
-        keepSessionForSaving();
+    keepSessionForSaving();
 
     // The session already holds the settings it was saved with, which may have been
     // changed since the scene it names was recalled; only a move of the parameter recalls.
