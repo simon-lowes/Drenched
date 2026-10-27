@@ -274,6 +274,8 @@ void ConvolutionReverb::prepare (double newSampleRate, const SpeakerLayout& inpu
     dryFadeLength = static_cast<std::size_t> (0.02 * sampleRate);
 
     delayCoef = onePole (sampleRate, 0.05);
+    delayJump = static_cast<float> (0.005 * sampleRate);
+    delayFadeLength = static_cast<std::size_t> (0.04 * sampleRate);
     gainCoef = onePole (sampleRate, 0.02);
     attackCoef = onePole (sampleRate, 0.01);
     releaseCoef = onePole (sampleRate, 0.25);
@@ -303,6 +305,7 @@ void ConvolutionReverb::reset() noexcept
     std::fill (delayL.begin(), delayL.end(), 0.0f);
     std::fill (delayR.begin(), delayR.end(), 0.0f);
     delayWrite = 0;
+    delayFade = 0;
     duckEnvelope = 0.0f;
     firstBlock = true;
 
@@ -774,11 +777,28 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
         cloud.listen (heard.data(), numIn, n, frozen);
 
         // The stage sources, through the pre-delay, with the delay time
-        // gliding so moving it never clicks. The living tail reads the same
-        // lines a little further back, and later still by the kernel's
-        // latency so it stays in time with the convolution.
+        // gliding so moving it never clicks. A big move crossfades to the new
+        // time instead, as gliding that far would sweep the pitch. The living
+        // tail reads the same lines a little further back, and later still by
+        // the kernel's latency so it stays in time with the convolution.
         const auto kernelLatency = current != nullptr ? current->latency() : dryTap;
         const auto targetTailDelay = static_cast<float> (livingTail.inputDelaySeconds() * sampleRate + static_cast<double> (kernelLatency));
+
+        if (delayFade == 0 && std::abs (targetDelay - delaySamples) > delayJump)
+        {
+            delayFrom = delaySamples;
+            delaySamples = targetDelay;
+            delayFade = delayFadeLength;
+        }
+
+        const auto read = [this] (const std::vector<float>& line, float delay) noexcept
+        {
+            const auto whole = static_cast<std::size_t> (delay);
+            const auto frac = delay - static_cast<float> (whole);
+            const auto a = (delayWrite - whole) & delayMask;
+            const auto b = (a - 1) & delayMask;
+            return line[a] + frac * (line[b] - line[a]);
+        };
 
         for (std::size_t s = 0; s < n; ++s)
         {
@@ -795,23 +815,26 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
             delayR[delayWrite] = r;
 
             delaySamples = targetDelay + delayCoef * (delaySamples - targetDelay);
-            const auto whole = static_cast<std::size_t> (delaySamples);
-            const auto frac = delaySamples - static_cast<float> (whole);
-            const auto a = (delayWrite - whole) & delayMask;
-            const auto b = (a - 1) & delayMask;
-
-            wetInL[s] = delayL[a] + frac * (delayL[b] - delayL[a]);
-            wetInR[s] = delayR[a] + frac * (delayR[b] - delayR[a]);
+            wetInL[s] = read (delayL, delaySamples);
+            wetInR[s] = read (delayR, delaySamples);
 
             tailDelaySamples = targetTailDelay + delayCoef * (tailDelaySamples - targetTailDelay);
             const auto tailTotal = delaySamples + tailDelaySamples;
-            const auto tailWhole = static_cast<std::size_t> (tailTotal);
-            const auto tailFrac = tailTotal - static_cast<float> (tailWhole);
-            const auto ta = (delayWrite - tailWhole) & delayMask;
-            const auto tb = (ta - 1) & delayMask;
+            tailInL[s] = read (delayL, tailTotal);
+            tailInR[s] = read (delayR, tailTotal);
 
-            tailInL[s] = delayL[ta] + tailFrac * (delayL[tb] - delayL[ta]);
-            tailInR[s] = delayR[ta] + tailFrac * (delayR[tb] - delayR[ta]);
+            if (delayFade > 0)
+            {
+                constexpr auto quarter = static_cast<float> (std::numbers::pi / 2.0);
+                const auto g = static_cast<float> (delayFadeLength - delayFade) / static_cast<float> (delayFadeLength) * quarter;
+                const auto from = std::cos (g), to = std::sin (g);
+                wetInL[s] = read (delayL, delayFrom) * from + wetInL[s] * to;
+                wetInR[s] = read (delayR, delayFrom) * from + wetInR[s] * to;
+                tailInL[s] = read (delayL, delayFrom + tailDelaySamples) * from + tailInL[s] * to;
+                tailInR[s] = read (delayR, delayFrom + tailDelaySamples) * from + tailInR[s] * to;
+                --delayFade;
+            }
+
             delayWrite = (delayWrite + 1) & delayMask;
         }
 
