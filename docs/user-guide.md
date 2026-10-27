@@ -53,7 +53,7 @@ The hint line explains whatever you last touched, with its value and the capture
 ### Working the controls
 
 - Drag any control up or down. Hold Shift for fine steps.
-- Click a value to type one. You can type "off" where a control has an Off, "centre" or "20% left" for the positions, and "12k" for frequencies.
+- Click a value to type one. You can type "off" where a control has an Off, "centre" or "20% left" for the positions, and "12k" for frequencies. A decimal comma ("1,5") works as well as a point, and you can type in another unit: "0.1 s" for Pre-delay, "800 ms" for Decay.
 - With a control focused, the arrow keys nudge it, Page Up and Page Down take bigger steps, and Home and End go to the ends.
 - Escape closes any window.
 - Drag the corner to resize the window. It keeps its shape, and the size is saved with the session.
