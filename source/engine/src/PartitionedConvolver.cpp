@@ -75,12 +75,17 @@ struct SetupDeleter
     callback. A stage that starts at tap 2B (with slack) has a whole block of
     time instead: while block k+1 arrives it works out block k's output a share
     at a time, transforms included, and plays it from the boundary after. That
-    keeps the large stages from spiking the CPU every time a block completes. */
+    keeps the large stages from spiking the CPU every time a block completes.
+    The work is spread over samples [workFrom, workTo) of each block, so that
+    stages running side by side can do their transforms at different times. */
 struct PartitionedConvolver::Stage
 {
     Stage (std::size_t blockSize, std::size_t numPartitions,
-           const std::vector<std::span<const float>>& irs, std::size_t firstTap, bool withSlack)
+           const std::vector<std::span<const float>>& irs, std::size_t firstTap, bool withSlack,
+           WorkWindow window)
         : B (blockSize), P (numPartitions), N (2 * blockSize), numOut (irs.size()), slack (withSlack),
+          workFrom (static_cast<std::size_t> (window.from * static_cast<float> (blockSize))),
+          workTo (std::max (workFrom + 1, static_cast<std::size_t> (window.to * static_cast<float> (blockSize)))),
           setup (pffft_new_setup (static_cast<int> (2 * blockSize), PFFFT_REAL)),
           history (N), work (N), timeDomain (N),
           filters (numOut * P * N), fdl (P * N), acc (numOut * N), outBlock (numOut * B),
@@ -278,7 +283,8 @@ struct PartitionedConvolver::Stage
 
             if (slack)
             {
-                runTasks (totalCost * fill / B);
+                if (fill > workFrom)
+                    runTasks (fill >= workTo ? totalCost : totalCost * (fill - workFrom) / (workTo - workFrom));
 
                 if (fill == B)
                     finishBlockWithSlack();
@@ -296,6 +302,7 @@ struct PartitionedConvolver::Stage
 
     const std::size_t B, P, N, numOut;
     const bool slack;
+    const std::size_t workFrom, workTo;
     std::unique_ptr<PFFFT_Setup, SetupDeleter> setup;
     AlignedFloats history, work, timeDomain, filters, fdl, acc, outBlock, nextBlock, pendingInput;
     std::size_t fill = 0, macDone = 0, newest = 0;
@@ -303,13 +310,16 @@ struct PartitionedConvolver::Stage
 };
 
 PartitionedConvolver::PartitionedConvolver (const std::vector<std::span<const float>>& impulseResponses,
-                                            std::size_t latency)
+                                            std::size_t latency, WorkWindow window)
     : outputs (impulseResponses.size()), delay (latency)
 {
     assert (! impulseResponses.empty());
 
     if (latency != 0 && (latency < headLength || (latency & (latency - 1)) != 0))
         throw std::invalid_argument ("A convolution latency must be 0 or a power of two from 64 samples.");
+
+    if (! (window.from >= 0.0f && window.from < window.to && window.to <= 1.0f))
+        throw std::invalid_argument ("A work window must be a part of the block, from 0 to 1.");
 
     for (const auto& ir : impulseResponses)
         irLength = std::max (irLength, ir.size());
@@ -352,7 +362,7 @@ PartitionedConvolver::PartitionedConvolver (const std::vector<std::span<const fl
         // Only a stage that starts at 2B has the slack to spread its transforms
         // (the first one starts straight after the head or the latency).
         stages.push_back (std::make_unique<Stage> (block, partitions, impulseResponses, begin - latency,
-                                                   begin >= 2 * block));
+                                                   begin >= 2 * block, window));
 
         if (last)
             break;

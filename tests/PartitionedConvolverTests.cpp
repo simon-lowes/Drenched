@@ -118,11 +118,14 @@ TEST_CASE ("Long, sparse responses null across the large stages", "[partitioned]
 TEST_CASE ("The large stages work out each block during the next, with or without a latency", "[partitioned][latency]")
 {
     // From slackFrom up a stage starts at tap 2B and spreads its transforms over
-    // the following block. Two outputs, odd block sizes and a latency check that
-    // the work queue for every output lands on the right samples.
+    // the following block, or the part of it its work window gives. Two outputs,
+    // odd block sizes and a latency check that the work queue for every output
+    // lands on the right samples.
     const auto latency = GENERATE (std::size_t (0), std::size_t (1024));
     const auto length = GENERATE (std::size_t (20000), std::size_t (90000));
-    INFO ("latency " << latency << ", length " << length);
+    const auto window = GENERATE (PartitionedConvolver::WorkWindow {}, PartitionedConvolver::WorkWindow { 0.0f, 0.75f },
+                                  PartitionedConvolver::WorkWindow { 0.25f, 1.0f }, PartitionedConvolver::WorkWindow { 0.5f, 0.5001f });
+    INFO ("latency " << latency << ", length " << length << ", work from " << window.from << " to " << window.to);
 
     std::mt19937 rng (17);
     std::uniform_int_distribution<std::size_t> where (0, length - 1);
@@ -150,7 +153,7 @@ TEST_CASE ("The large stages work out each block during the next, with or withou
         return out;
     };
 
-    PartitionedConvolver conv ({ std::span<const float> (left), std::span<const float> (right) }, latency);
+    PartitionedConvolver conv ({ std::span<const float> (left), std::span<const float> (right) }, latency, window);
     const auto actual = runInRandomBlocks (conv, input, 13);
     const auto expectedLeft = reference (left), expectedRight = reference (right);
 
@@ -299,4 +302,17 @@ TEST_CASE ("A latency runs the same response on less CPU and never allocates", "
 
     INFO ("zero latency " << zero << " s, 1024 samples " << low << " s for 4 s of audio");
     CHECK (low < zero * 0.8);
+}
+
+TEST_CASE ("A work window outside the block is refused", "[partitioned]")
+{
+    const std::vector<float> ir (100000, 0.1f);
+    const std::vector<std::span<const float>> irs { std::span<const float> (ir) };
+
+    for (const auto window : { PartitionedConvolver::WorkWindow { -0.1f, 1.0f }, PartitionedConvolver::WorkWindow { 0.0f, 1.5f },
+                               PartitionedConvolver::WorkWindow { 0.5f, 0.5f }, PartitionedConvolver::WorkWindow { 0.8f, 0.2f } })
+    {
+        INFO ("from " << window.from << " to " << window.to);
+        REQUIRE_THROWS_AS (PartitionedConvolver (irs, 0, window), std::invalid_argument);
+    }
 }

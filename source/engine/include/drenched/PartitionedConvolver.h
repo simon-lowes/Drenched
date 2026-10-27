@@ -10,6 +10,16 @@
 namespace drenched
 {
 
+/** The part of each large block, as shares of it from 0 to 1, that a
+    PartitionedConvolver's large stages spread their work over. A transform
+    can't be spread, so two convolvers running side by side give theirs
+    overlapping but different parts: their transforms then land in different
+    callbacks, not together. */
+struct ConvolutionWorkWindow
+{
+    float from = 0.0f, to = 1.0f;
+};
+
 /** Zero-latency, non-uniformly partitioned FFT convolution of one input with
     one or more impulse responses that share it (for example the left and
     right outputs fed by one input of a true-stereo reverb).
@@ -45,13 +55,14 @@ public:
     static constexpr std::size_t growthFactor = 8;
     static constexpr std::size_t slackFrom = 4096; // stages this big or bigger start at tap 2B
     static constexpr std::size_t largestBlock = 32768; // the last stage takes the rest of a long response
+    using WorkWindow = ConvolutionWorkWindow;
 
     /** One impulse response per output. Shorter responses are zero padded to
         the longest. At least one response is required. latency is 0 or a
-        power of two from headLength up; anything else throws
-        std::invalid_argument. */
+        power of two from headLength up, and window within 0 to 1; anything
+        else throws std::invalid_argument. */
     explicit PartitionedConvolver (const std::vector<std::span<const float>>& impulseResponses,
-                                   std::size_t latency = 0);
+                                   std::size_t latency = 0, WorkWindow window = {});
     ~PartitionedConvolver();
 
     PartitionedConvolver (const PartitionedConvolver&) = delete;
