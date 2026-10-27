@@ -36,46 +36,91 @@ Biquad::Coefficients WetEqualiser::coefficientsOf (std::size_t band, const EqBan
 void WetEqualiser::prepare (double newSampleRate) noexcept
 {
     sampleRate = newSampleRate;
-    valid = false;
-    setBands (bands);
+    glideCoef = glide::coefficient (sampleRate, 0.02);
     reset();
 }
 
 void WetEqualiser::reset() noexcept
 {
+    bands = targets;
+
+    for (std::size_t b = 0; b < numBands; ++b)
+        design (b, 0);
+
     for (auto& channel : filters)
         for (auto& f : channel)
             f.reset();
+
+    heardSinceReset = false;
 }
 
 void WetEqualiser::setBands (const Bands& newBands) noexcept
 {
-    for (std::size_t b = 0; b < numBands; ++b)
+    targets = newBands;
+
+    if (! heardSinceReset)
     {
-        if (valid && ! differs (newBands[b], bands[b]))
-            continue;
-
-        // A band coming back into use starts from silence, not from where it stopped.
-        const auto waking = valid && ! isActive (bands[b]) && isActive (newBands[b]);
-
-        bands[b] = newBands[b];
-        coefficients[b] = coefficientsOf (b, bands[b], sampleRate);
-
-        for (auto& channel : filters)
+        for (std::size_t b = 0; b < numBands; ++b)
         {
-            channel[b].setCoefficients (coefficients[b]);
-
-            if (waking)
-                channel[b].reset();
+            if (differs (bands[b], targets[b]))
+            {
+                bands[b] = targets[b];
+                design (b, 0);
+            }
         }
     }
+}
 
-    valid = true;
+void WetEqualiser::advance() noexcept
+{
+    for (std::size_t b = 0; b < numBands; ++b)
+    {
+        auto& now = bands[b];
+        const auto& goal = targets[b];
+
+        if (now.frequencyHz == goal.frequencyHz && now.gainDb == goal.gainDb && now.q == goal.q)
+            continue;
+
+        // A band coming back into use starts from silence, not from where it
+        // stopped, and from 0 dB, where its frequency and Q make no difference.
+        if (! isActive (now))
+        {
+            now.frequencyHz = goal.frequencyHz;
+            now.q = goal.q;
+
+            for (auto& channel : filters)
+                channel[b].reset();
+        }
+
+        now.gainDb = glide::towards (now.gainDb, goal.gainDb, glideCoef);
+        now.frequencyHz = glide::towardsRatio (now.frequencyHz, goal.frequencyHz, glideCoef);
+        now.q = glide::towardsRatio (now.q, goal.q, glideCoef);
+        design (b, glide::block);
+    }
+}
+
+void WetEqualiser::design (std::size_t band, std::size_t ramp) noexcept
+{
+    const auto& b = bands[band];
+    coefficients[band] = coefficientsOf (band, b, sampleRate);
+
+    // The same response, played by filters whose settings can glide.
+    const auto f = static_cast<double> (b.frequencyHz);
+    const auto g = static_cast<double> (std::clamp (b.gainDb, minGainDb, maxGainDb));
+    const auto q = static_cast<double> (std::clamp (b.q, minQ, maxQ));
+    const auto shape = shapeOf (band);
+    const auto svf = shape == Shape::lowShelf ? Svf::lowShelf (sampleRate, f, g)
+                   : shape == Shape::highShelf ? Svf::highShelf (sampleRate, f, g)
+                                               : Svf::peak (sampleRate, f, g, q);
+
+    for (auto& channel : filters)
+        channel[band].glideTo (svf, ramp);
 }
 
 void WetEqualiser::process (std::size_t channel, float* data, std::size_t n) noexcept
 {
     auto& chain = filters[std::min (channel, maxChannels - 1)];
+    heardSinceReset = true;
 
     for (std::size_t b = 0; b < numBands; ++b)
         if (isActive (bands[b]))

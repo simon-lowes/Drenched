@@ -1,6 +1,8 @@
 #pragma once
 
 #include "drenched/Biquad.h"
+#include "drenched/Glide.h"
+#include "drenched/Svf.h"
 #include "drenched/SpeakerLayout.h"
 
 #include <array>
@@ -19,7 +21,8 @@ struct EqBand
 
 /** A six-band parametric EQ on the reverberation: a low shelf, four bells
     and a high shelf. A band at 0 dB is skipped altogether, so a flat EQ
-    leaves the sound exactly as it was.
+    leaves the sound exactly as it was. New settings glide in with advance(),
+    so a band that jumps never clicks.
 
     Everything here is real-time safe. */
 class WetEqualiser
@@ -45,10 +48,16 @@ public:
     static Biquad::Coefficients coefficientsOf (std::size_t band, const EqBand& settings, double sampleRate) noexcept;
 
     void prepare (double newSampleRate) noexcept;
+
+    /** Clears the filters and settles every band where it was sent. */
     void reset() noexcept;
 
-    /** Takes new settings; only the bands that changed are recalculated. */
+    /** Where the bands should go. Until advance() moves them, they stay where
+        they are, except before any sound has been through: then they go at once. */
     void setBands (const Bands& newBands) noexcept;
+
+    /** Moves every band one glide::block of samples closer to its settings. */
+    void advance() noexcept;
 
     /** In place on `n` samples of one channel. */
     void process (std::size_t channel, float* data, std::size_t n) noexcept;
@@ -61,11 +70,14 @@ public:
 private:
     static bool isActive (const EqBand& band) noexcept;
 
+    void design (std::size_t band, std::size_t rampSamples) noexcept; // 0: at once
+
     double sampleRate = 48000.0;
-    Bands bands = flat;
+    Bands bands = flat, targets = flat; // as heard, and where they are going
+    float glideCoef = 0.0f;
+    bool heardSinceReset = false;
     std::array<Biquad::Coefficients, numBands> coefficients {};
-    std::array<std::array<Biquad, numBands>, maxChannels> filters {};
-    bool valid = false;
+    std::array<std::array<Svf, numBands>, maxChannels> filters {};
 };
 
 } // namespace drenched
