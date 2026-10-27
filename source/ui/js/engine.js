@@ -35,11 +35,11 @@ function swatchWindow(s){var n=Math.min(4,SPACES.length),out=[];for(var j=0;j<n;
 function spaceIndex(id){for(var i=0;i<SPACES.length;i++)if(SPACES[i].id===id)return i;return -1;}
 /* A loaded impulse response joins the end of the list, described by the plugin: its
    measured decay and the room size its echo density implies. A missing file keeps its slot
-   so the session still says what it used. */
+   so the session still says what it used, and Spaces offers to find it. */
 function setUserSpace(ir){SPACES.length=USER;if(!ir)return;var miss=!!ir.missing;
  SPACES.push({id:'user',name:String(ir.name||'Your impulse response'),no:'Your IR',kind:'user',img:'user',place:miss?'File not found':'Your own impulse response',
   W:+ir.W||10,D:+ir.D||14,H:+ir.H||5.5,mat:'Measured from the file',bands:(ir.bands||[1,1,1,1,1,1,1,1]).map(function(b){return clamp(+b||1,0.1,20);}),pre:0,
-  rec:miss?'Load it again to hear it':(ir.bformat?'B-format':ir.layout?String(ir.layout)+' surround':+ir.ch===4?'True-stereo':+ir.ch===2?'Stereo':'Mono')+' file, '+Math.round(+ir.rate||48000)+' Hz',date:miss?'file missing':'by you',missing:miss});}
+  rec:miss?'Find it in Spaces to hear it':(ir.bformat?'B-format':ir.layout?String(ir.layout)+' surround':+ir.ch===4?'True-stereo':+ir.ch===2?'Stereo':'Mono')+' file, '+Math.round(+ir.rate||48000)+' Hz',date:miss?'file missing':'by you',missing:miss});}
 /* The twelve skins. Each is a token set plus a composition in COMPOSE; the ids match the
    CSS (.s-<id>) and the value saved in the plugin state. Order is the picker order. */
 var SKINS=[
@@ -486,7 +486,8 @@ function browserHTML(s){var R=browseResults(s),n=R.rows.length,cur=clamp(s.brwCu
  var simb=R.ref?'<button class="brw-simb" data-act="brwsim" data-v="off" aria-pressed="true" title="Back to the whole list">Sounding like '+esc(R.ref.name)+'</button>'
   :'<button class="brw-simb" data-act="brwsim" data-v="'+s.sp+'" aria-pressed="false" title="Order the list by how close each space sounds to '+esc(spOf(s).name)+'">Similar to this space</button>';
  var tool=function(act,cls,l,sm){return '<button data-act="'+act+'" class="'+cls+'"><b>'+l+'</b><small>'+sm+'</small></button>';};
- var tools=tool('loadir','mload','Load your own IR\u2026','WAV, AIFF, FLAC, SOFA')+tool('capture','mcap','Capture a space\u2026','Sweep or clap, and record')+tool('speakers','mspk','Reverb speakers\u2026','Level and delay each')+
+ var lost=spOf(s)&&spOf(s).missing?spOf(s):null;
+ var tools=(lost?tool('findir','mload','Find '+esc(lost.name)+'\u2026','Keeps your settings'):'')+tool('loadir','mload','Load your own IR\u2026','WAV, AIFF, FLAC, SOFA')+tool('capture','mcap','Capture a space\u2026','Sweep or clap, and record')+tool('speakers','mspk','Reverb speakers\u2026','Level and delay each')+
   tool('eq','meq','Wet EQ\u2026',eqFlat(s)?'Six bands, flat':eqUsed(s)+(eqUsed(s)===1?' band':' bands')+' in use')+tool('wf','mwf','Waterfall\u2026','Decay and live spectrum')+tool('scenes','mscn','Scenes\u2026',s.scenes&&s.scenes.length?s.scenes.length+' stored':'For each shot')+
   (LIBRARY.length?tool('credits','mcred','Recording credits\u2026',LIBRARY.length+' recorded'):'')+tool('report','mrep','Report a bug','Copy this setup\u2019s details')+(s.licence&&s.licence.state==='beta'?'':tool('licence','mlic','Licence\u2026',s.licence&&s.licence.state==='licensed'?'Activated':s.licence&&s.licence.state==='ended'?'Trial ended':'Trial'));
  return '<div class="cap brw'+(R.ref?' sim':'')+'" role="dialog" aria-modal="true" aria-labelledby="brw-h"><div class="cbox"><div class="chd"><h2 id="brw-h">Spaces</h2><span class="brw-n">'+SPACES.length+' to choose from. Type to search, the arrow keys move, Enter picks, and Shift with Enter lists the ones that sound like the highlighted space.</span><button class="cx" data-act="browse" aria-label="Close">Close</button></div>'+

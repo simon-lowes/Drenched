@@ -371,17 +371,21 @@ void DrenchedEditor::onUi (const juce::var& payload)
     settingFromUi.store (false);
 }
 
-void DrenchedEditor::onLoadIr (const juce::var&)
+void DrenchedEditor::onLoadIr (const juce::var& payload)
 {
     if (choosing)
         return; // already open
 
+    // Finding a session's missing file keeps the session's settings; loading a new one
+    // starts from the file's own decay.
+    const auto keep = static_cast<bool> (payload["keep"]);
+
     choosing = true;
-    chooser = std::make_unique<juce::FileChooser> ("Load an impulse response", settings::loadIrFolder(),
-                                                   "*.wav;*.wave;*.amb;*.aif;*.aiff;*.flac;*.sofa");
+    chooser = std::make_unique<juce::FileChooser> (keep ? "Find this session's impulse response" : "Load an impulse response",
+                                                   settings::loadIrFolder(), "*.wav;*.wave;*.amb;*.aif;*.aiff;*.flac;*.sofa");
 
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                          [this] (const juce::FileChooser& fc)
+                          [this, keep] (const juce::FileChooser& fc)
                           {
                               // The chooser stays alive until the next one replaces it, since
                               // it may still be in use while this runs.
@@ -392,7 +396,7 @@ void DrenchedEditor::onLoadIr (const juce::var&)
                                   return; // cancelled
 
                               settings::saveIrFolder (file.getParentDirectory());
-                              processor.loadImpulseResponseAsync (file);
+                              processor.loadImpulseResponseAsync (file, keep);
                           });
 }
 

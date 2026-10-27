@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include "Settings.h"
 #include "ChannelLayouts.h"
+#include "MovedFiles.h"
 
 #include <drenched/ClapCapture.h>
 #include <drenched/Mix.h>
@@ -20,6 +21,14 @@ namespace drenched
 namespace
 {
     const juce::Identifier stateVersionID { "version" };
+
+    /** Where a session's own impulse response file is now: where it was saved, or where
+        it most likely moved to (see MovedFiles.h). {} when it can't be found. */
+    juce::File findImpulseResponse (const juce::String& savedPath)
+    {
+        return movedFiles::find (savedPath, juce::File::getSpecialLocation (juce::File::userHomeDirectory),
+                                 { settings::loadIrFolder(), settings::capturesFolder() });
+    }
 }
 
 DrenchedProcessor::DrenchedProcessor()
@@ -385,19 +394,19 @@ void DrenchedProcessor::loadLibrarySpace (const juce::String& id, bool now)
     });
 }
 
-void DrenchedProcessor::loadImpulseResponseAsync (const juce::File& file)
+void DrenchedProcessor::loadImpulseResponseAsync (const juce::File& file, bool keepSettings)
 {
     std::weak_ptr<int> alive = lifetime;
 
-    loader.addJob ([this, file, alive]
+    loader.addJob ([this, file, alive, keepSettings]
     {
         juce::String error;
         auto loaded = readImpulseResponse (file, error);
 
-        juce::MessageManager::callAsync ([this, file, alive, loaded = std::move (loaded), error]() mutable
+        juce::MessageManager::callAsync ([this, file, alive, loaded = std::move (loaded), error, keepSettings]() mutable
         {
             if (! alive.expired())
-                applyLoadedImpulseResponse (file, std::move (loaded), error);
+                applyLoadedImpulseResponse (file, std::move (loaded), error, ! keepSettings);
         });
     });
 }
@@ -882,14 +891,23 @@ void DrenchedProcessor::restoreImpulseResponse()
     }
 
     // Sessions load this way before playback starts, so read it now: the first
-    // bounce must already use it.
+    // bounce must already use it. A file that moved, or a session from another
+    // computer, is looked for where it most likely is now.
+    const auto file = findImpulseResponse (path);
     juce::String error;
-    auto loaded = juce::File::isAbsolutePath (path) ? readImpulseResponse (juce::File (path), error) : nullptr;
+    auto loaded = file != juce::File() ? readImpulseResponse (file, error) : nullptr;
+    const auto found = loaded != nullptr ? file.getFullPathName() : path;
 
-    const std::lock_guard lock (recordedLock);
-    recorded = std::move (loaded);
-    recordedPath = path;
-    recordedMissing = recorded == nullptr;
+    {
+        const std::lock_guard lock (recordedLock);
+        recorded = std::move (loaded);
+        recordedPath = found;
+        recordedMissing = recorded == nullptr;
+    }
+
+    // The session saves where it was found.
+    if (found != path)
+        getUiState().setProperty (UiIDs::irPath, found, nullptr);
 }
 
 juce::String DrenchedProcessor::bugReportDetails()
@@ -1112,19 +1130,23 @@ void DrenchedProcessor::recallScene (int number)
 
     if (spaceId == "user")
     {
+        // The scene names the file where it was when stored; it may have moved since.
         const auto path = scene.getProperty (SceneIDs::irPath, "").toString();
+        const auto found = findImpulseResponse (path);
+        const auto now = found != juce::File() ? found.getFullPathName() : path;
         bool loaded = false;
 
         {
             const std::lock_guard lock (recordedLock);
-            loaded = path == recordedPath && recorded != nullptr;
+            loaded = now == recordedPath && recorded != nullptr;
         }
 
-        if (! loaded && juce::File::isAbsolutePath (path))
+        if (! loaded && juce::File::isAbsolutePath (now))
         {
-            ui.setProperty (UiIDs::irPath, path, nullptr);
+            const juce::File file (now);
+            ui.setProperty (UiIDs::irPath, now, nullptr);
             ui.setProperty (UiIDs::irName, scene.getProperty (SceneIDs::irName, "").toString(), nullptr);
-            loadSceneImpulseResponseAsync (juce::File (path));
+            loadSceneImpulseResponseAsync (file);
         }
     }
 
