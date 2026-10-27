@@ -282,17 +282,18 @@ TEST_CASE ("Every speaker layout a host can choose plays the room on every speak
 
         for (int pos = 0; pos < static_cast<int> (input.size()); pos += blockSize)
         {
-            juce::AudioBuffer<float> buffer (channels, blockSize);
+            const auto n = std::min (blockSize, static_cast<int> (input.size()) - pos);
+            juce::AudioBuffer<float> buffer (channels, n);
             buffer.clear();
 
             for (int c = 0; c < in.size(); ++c)
-                buffer.copyFrom (c, 0, input.data() + pos, blockSize);
+                buffer.copyFrom (c, 0, input.data() + pos, n);
 
             p->processBlock (buffer, midi);
 
             for (int c = 0; c < out.size(); ++c)
             {
-                for (int i = 0; i < blockSize; ++i)
+                for (int i = 0; i < n; ++i)
                 {
                     const auto x = buffer.getSample (c, i);
                     finite = finite && std::isfinite (x);
