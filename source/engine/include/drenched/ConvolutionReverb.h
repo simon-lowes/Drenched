@@ -231,6 +231,8 @@ private:
     std::vector<float> delayL, delayR;
     std::size_t delayMask = 0, delayWrite = 0;
     float delaySamples = 0.0f, delayCoef = 0.0f;
+    float delayFrom = 0.0f, delayJump = 240.0f; // a bigger move crossfades from the old time
+    std::size_t delayFade = 0, delayFadeLength = 1920;
     float tailDelaySamples = 0.0f; // the living tail's extra wait, read from the same lines
 
     // Smoothed gains.

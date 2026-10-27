@@ -180,7 +180,7 @@ TEST_CASE ("Changing the room while a note holds never clicks", "[reverb]")
     REQUIRE (click < -45.0);
 }
 
-TEST_CASE ("The wet tone, EQ and width move without a click", "[reverb][eq]")
+TEST_CASE ("The pre-delay, wet tone, EQ and width move without a click", "[reverb][eq]")
 {
     using Change = std::function<void (ReverbControls&)>;
     const std::vector<std::pair<const char*, Change>> changes {
@@ -188,6 +188,8 @@ TEST_CASE ("The wet tone, EQ and width move without a click", "[reverb][eq]")
         { "high cut", [] (ReverbControls& c) { c.highCutHz = 300.0f; } },
         { "brightness", [] (ReverbControls& c) { c.brightnessDb = 12.0f; } },
         { "width", [] (ReverbControls& c) { c.widthPercent = 0.0f; } },
+        { "pre-delay, far", [] (ReverbControls& c) { c.predelayMs = 800.0f; } },
+        { "pre-delay, a little", [] (ReverbControls& c) { c.predelayMs = 4.0f; } },
         { "mono bass", [] (ReverbControls& c) { c.monoBelowHz = 400.0f; } },
         { "EQ low shelf", [] (ReverbControls& c) { c.eq[0].gainDb = 18.0f; } },
         { "EQ bell on the tone", [] (ReverbControls& c) { c.eq[1] = { 110.0f, 18.0f, 2.0f }; } },
