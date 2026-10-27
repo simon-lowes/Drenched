@@ -26,7 +26,8 @@ namespace drenched
 {
 
 class DrenchedProcessor final : public juce::AudioProcessor,
-                                private juce::Timer
+                                private juce::Timer,
+                                private juce::ValueTree::Listener
 {
 public:
     DrenchedProcessor();
@@ -294,6 +295,20 @@ private:
         std::array<Setting, 6> eqFrequency {}, eqGain {};
         std::array<Setting, 4> eqQ {};
     } params;
+
+    // The session as the message thread last saw it, for hosts that save from a thread of
+    // their own: the state's value tree belongs to the message thread. The timer copies it
+    // when it has changed; getStateInformation adds the parameters as they are at the time.
+    std::mutex savedLock;
+    juce::ValueTree savedSession;
+    std::atomic<bool> sessionChanged { true };
+    void keepSessionForSaving();
+
+    void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override { sessionChanged.store (true); }
+    void valueTreeChildAdded (juce::ValueTree&, juce::ValueTree&) override { sessionChanged.store (true); }
+    void valueTreeChildRemoved (juce::ValueTree&, juce::ValueTree&, int) override { sessionChanged.store (true); }
+    void valueTreeChildOrderChanged (juce::ValueTree&, int, int) override { sessionChanged.store (true); }
+    void valueTreeRedirected (juce::ValueTree&) override { sessionChanged.store (true); }
 
     // The output speakers, for kernel requests. Written in prepareToPlay, read by the timer.
     mutable std::mutex layoutLock;

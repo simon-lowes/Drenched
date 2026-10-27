@@ -207,3 +207,108 @@ TEST_CASE ("Many instances play at once while the host opens and closes more", "
     CHECK (blocks.load() > static_cast<int> (playing.size()));
     CHECK (finite.load());
 }
+
+TEST_CASE ("The host can save the session from a thread of its own while things change", "[plugin][stress]")
+{
+    // Some hosts save (autosave, undo history, a project save while playing) from a
+    // thread of their own, while the interface goes on changing the session on the
+    // message thread.
+    testing::Plugin plugin;
+    auto& p = *plugin;
+    testing::onMessageThread ([&] { p.prepareToPlay (48000.0, 128); });
+    const auto sessionType = p.getState().state.getType();
+
+    const auto hostSave = [&p]
+    {
+        juce::MemoryBlock saved;
+        std::thread host ([&] { p.getStateInformation (saved); });
+        host.join();
+        return juce::AudioProcessor::getXmlFromBinary (saved.getData(), static_cast<int> (saved.getSize()));
+    };
+
+    std::atomic<bool> running { true }, readable { true };
+    std::atomic<int> saves { 0 };
+
+    std::thread host ([&]
+    {
+        while (running.load())
+        {
+            juce::MemoryBlock saved;
+            p.getStateInformation (saved);
+            const auto xml = juce::AudioProcessor::getXmlFromBinary (saved.getData(), static_cast<int> (saved.getSize()));
+
+            if (xml == nullptr || ! xml->hasTagName (sessionType.toString()))
+                readable.store (false);
+
+            saves.fetch_add (1);
+        }
+    });
+
+    testing::onMessageThread ([&]
+    {
+        std::vector<juce::String> spaces;
+
+        for (const auto& space : bundledSpaces)
+            spaces.push_back (space.id);
+
+        for (const auto& space : library::spaces())
+            spaces.push_back (space.id);
+
+        std::vector<juce::String> ids;
+
+        for (auto* parameter : p.getParameters())
+            if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter))
+                if (ranged->paramID != ParamIDs::lowCpu)
+                    ids.push_back (ranged->paramID);
+
+        std::mt19937 rng (4u);
+        std::uniform_real_distribution<float> unit (0.0f, 1.0f);
+        const auto pick = [&rng] (const auto& list) { return list[rng() % list.size()]; };
+        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds (4);
+
+        for (int step = 0; std::chrono::steady_clock::now() < end; ++step)
+        {
+            switch (step % 5)
+            {
+                case 0: p.getUiState().setProperty (UiIDs::spaceId, pick (spaces), nullptr); break;
+                case 1: for (int k = 0; k < 8; ++k) set (p, pick (ids), unit (rng)); break;
+                case 2: p.storeScene (1 + static_cast<int> (rng() % 4), {}); break;
+                case 3: p.recallScene (1 + static_cast<int> (rng() % 4)); break;
+                default: p.getUiState().setProperty (UiIDs::speakers, juce::String (unit (rng) * -6.0f) + " 0", nullptr); break;
+            }
+
+            ((juce::Timer&) p).timerCallback();
+        }
+    });
+
+    running.store (false);
+    host.join();
+
+    INFO (saves.load() << " sessions saved");
+    CHECK (saves.load() > 0);
+    CHECK (readable.load());
+
+    // What a save from the host's thread holds: the settings as they are, and the
+    // interface's choices once the processor has caught up with them.
+    testing::onMessageThread ([&]
+    {
+        set (p, ParamIDs::size, 0.25f);
+        p.getUiState().setProperty (UiIDs::spaceId, bundledSpaces.back().id, nullptr);
+        ((juce::Timer&) p).timerCallback();
+    });
+
+    const auto xml = hostSave();
+    REQUIRE (xml != nullptr);
+    const auto session = juce::ValueTree::fromXml (*xml);
+    const auto* size = p.getState().getParameter (ParamIDs::size);
+    CHECK (static_cast<float> (session.getChildWithProperty ("id", ParamIDs::size).getProperty ("value"))
+           == size->convertFrom0to1 (0.25f));
+    CHECK (session.getChildWithName (UiIDs::tree).getProperty (UiIDs::spaceId).toString() == bundledSpaces.back().id);
+
+    // A setting changed a moment ago, before the processor's timer runs, is saved too.
+    testing::onMessageThread ([&] { set (p, ParamIDs::size, 0.75f); });
+    const auto later = hostSave();
+    REQUIRE (later != nullptr);
+    CHECK (static_cast<float> (juce::ValueTree::fromXml (*later).getChildWithProperty ("id", ParamIDs::size).getProperty ("value"))
+           == size->convertFrom0to1 (0.75f));
+}

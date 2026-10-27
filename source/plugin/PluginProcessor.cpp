@@ -105,12 +105,15 @@ DrenchedProcessor::DrenchedProcessor()
 
     builder = std::make_unique<KernelBuilder> (reverb);
     cacheUiState();
+    state.state.addListener (this);
+    keepSessionForSaving();
     startTimerHz (20);
 }
 
 DrenchedProcessor::~DrenchedProcessor()
 {
     stopTimer();
+    state.state.removeListener (this);
     lifetime.reset();
     loader.removeAllJobs (true, 10000);
     builder.reset();
@@ -232,6 +235,7 @@ void DrenchedProcessor::timerCallback()
 {
     followSceneParameter();
     cacheUiState();
+    keepSessionForSaving();
     pollCapture();
 
     if (const auto rate = preparedRate.load(); rate > 0.0)
@@ -1415,9 +1419,56 @@ juce::AudioProcessorEditor* DrenchedProcessor::createEditor()
     return new DrenchedEditor (*this);
 }
 
+void DrenchedProcessor::keepSessionForSaving()
+{
+    if (! sessionChanged.load())
+        return;
+
+    // Copying flushes the parameters into the tree, which can mark it changed again;
+    // the next tick then copies once more, which is harmless.
+    auto copy = state.copyState();
+    sessionChanged.store (false);
+
+    const std::lock_guard lock (savedLock);
+    savedSession = std::move (copy);
+}
+
 void DrenchedProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    auto session = state.copyState();
+    // Hosts may save from a thread of their own (autosave, undo history). Only the message
+    // thread may touch the state's value tree, so other threads save the copy the timer
+    // keeps, at most a tick behind the interface, with the parameters as they are now.
+    juce::ValueTree session;
+
+    if (juce::MessageManager::existsAndIsLockedByCurrentThread())
+    {
+        session = state.copyState();
+    }
+    else
+    {
+        {
+            const std::lock_guard lock (savedLock);
+            session = savedSession.createCopy();
+        }
+
+        for (auto* parameter : getParameters())
+        {
+            if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter))
+            {
+                auto child = session.getChildWithProperty ("id", ranged->paramID);
+
+                if (! child.isValid())
+                {
+                    child = juce::ValueTree ("PARAM");
+                    child.setProperty ("id", ranged->paramID, nullptr);
+                    session.appendChild (child, nullptr);
+                }
+
+                child.setProperty ("value", state.getRawParameterValue (ranged->paramID)->load(), nullptr);
+            }
+        }
+    }
+
     session.setProperty (stateVersionID, stateVersion, nullptr);
 
     if (auto xml = session.createXml())
@@ -1475,6 +1526,9 @@ void DrenchedProcessor::setStateInformation (const void* data, int sizeInBytes)
     restoreImpulseResponse();
     loadLibrarySpace (chosenSpaceId(), true);
     cacheUiState();
+
+    if (juce::MessageManager::existsAndIsLockedByCurrentThread())
+        keepSessionForSaving();
 
     // The session already holds the settings it was saved with, which may have been
     // changed since the scene it names was recalled; only a move of the parameter recalls.
