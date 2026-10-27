@@ -73,6 +73,14 @@ namespace settings
             .getChildFile ("Drenched").getChildFile ("Captures");
     }
 
+    /** Where copies of impulse responses dropped on the interface are kept, since the
+        interface can't say where a dropped file came from. */
+    inline juce::File importedFolder()
+    {
+        return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+            .getChildFile ("Drenched").getChildFile ("Imported");
+    }
+
     /** Where the Windows WebView2 runtime may keep its cache for this plugin. */
     inline juce::File webViewDataFolder()
     {

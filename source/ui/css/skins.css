@@ -22,6 +22,10 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;-webkit-user-sele
 body{font:14px system-ui,sans-serif;color:#eee}
 #live{position:absolute;inset:0;overflow:hidden}
 #live>.screen{position:absolute;left:0;top:0;transform-origin:0 0}
+/* Shown while a file is dragged over the window, whatever the skin. */
+#drop{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.62);pointer-events:none;z-index:100}
+#drop.on{display:flex}
+#drop>p{margin:0;padding:28px 40px;border:2px dashed rgba(255,255,255,.7);border-radius:12px;font:500 18px system-ui,sans-serif;color:#fff}
 .sys input{-webkit-user-select:text;user-select:text}
 /* Photographs of the spaces (placeholder renders until the capture library lands). */
 .ph-hall{background-image:url(../spaces/hall.jpg)}.ph-chapel{background-image:url(../spaces/chapel.jpg)}.ph-garage{background-image:url(../spaces/garage.jpg)}.ph-room{background-image:url(../spaces/room.jpg)}.ph-outdoor{background-image:url(../spaces/outdoor.jpg)}.ph-underground{background-image:url(../spaces/underground.jpg)}

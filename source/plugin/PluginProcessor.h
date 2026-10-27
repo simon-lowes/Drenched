@@ -96,6 +96,17 @@ public:
         Message thread only. */
     void loadImpulseResponseAsync (const juce::File& file, bool keepSettings = false);
 
+    /** The same for a file dropped on the interface, which arrives as its name and bytes:
+        keeps a copy in folder (see keepImportedFile) and loads that. Message thread only. */
+    void importImpulseResponseAsync (const juce::String& fileName, juce::MemoryBlock data, bool keepSettings,
+                                     const juce::File& folder);
+
+    /** Keeps a dropped file's bytes in folder under its name: the file already there when it
+        holds the same bytes, so dropping a file again adds no copy, otherwise a new file,
+        numbered when the name is taken. {} with error set when it can't be written. */
+    static juce::File keepImportedFile (const juce::File& folder, const juce::String& fileName,
+                                        const juce::MemoryBlock& data, juce::String& error);
+
     /** The same for a scene's file: plays it without changing the decay graph, and only if
         the session still wants that file when it has loaded. */
     void loadSceneImpulseResponseAsync (const juce::File& file);

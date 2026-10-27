@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DroppedFile.h"
 #include "PluginProcessor.h"
 
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -52,6 +53,7 @@ private:
     void onGesture (const juce::var&);
     void onUi (const juce::var&);
     void onLoadIr (const juce::var&);
+    void onDropIr (const juce::var&);
     void onMatch (const juce::var&);
     void onScene (const juce::String& action, const juce::var&);
     void sendDisplays();
@@ -90,8 +92,30 @@ private:
 
     std::unique_ptr<juce::FileChooser> chooser;
     bool choosing = false;
+    DroppedFile dropped;
 
-    juce::WebBrowserComponent web;
+    /** The interface's web view. The page takes files dropped on it itself (see onDropIr);
+        one that gets past it would otherwise open in place of the interface, so the view
+        refuses to open any file and hands it to onFile instead. */
+    struct Page final : juce::WebBrowserComponent
+    {
+        using juce::WebBrowserComponent::WebBrowserComponent;
+
+        bool pageAboutToLoad (const juce::String& url) override
+        {
+            if (! url.startsWithIgnoreCase ("file:"))
+                return true;
+
+            if (onFile != nullptr)
+                onFile (juce::URL (url).getLocalFile());
+
+            return false;
+        }
+
+        std::function<void (const juce::File&)> onFile;
+    };
+
+    Page web;
 
     // Shown instead of the page where the system has no web view to show it in.
     std::unique_ptr<juce::Component> missingWebView;

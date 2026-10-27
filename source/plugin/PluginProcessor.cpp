@@ -29,7 +29,7 @@ namespace
     juce::File findImpulseResponse (const juce::String& savedPath)
     {
         return movedFiles::find (savedPath, juce::File::getSpecialLocation (juce::File::userHomeDirectory),
-                                 { settings::loadIrFolder(), settings::capturesFolder() });
+                                 { settings::loadIrFolder(), settings::capturesFolder(), settings::importedFolder() });
     }
 }
 
@@ -420,6 +420,69 @@ void DrenchedProcessor::loadImpulseResponseAsync (const juce::File& file, bool k
                 applyLoadedImpulseResponse (file, std::move (loaded), error, ! keepSettings);
         });
     });
+}
+
+void DrenchedProcessor::importImpulseResponseAsync (const juce::String& fileName, juce::MemoryBlock data,
+                                                    bool keepSettings, const juce::File& folder)
+{
+    std::weak_ptr<int> alive = lifetime;
+
+    loader.addJob ([this, fileName, data = std::move (data), folder, alive, keepSettings]
+    {
+        juce::String error;
+        const auto file = keepImportedFile (folder, fileName, data, error);
+        auto loaded = file != juce::File() ? readImpulseResponse (file, error) : nullptr;
+
+        juce::MessageManager::callAsync ([this, file, alive, loaded = std::move (loaded), error, keepSettings]() mutable
+        {
+            if (! alive.expired())
+                applyLoadedImpulseResponse (file, std::move (loaded), error, ! keepSettings);
+        });
+    });
+}
+
+juce::File DrenchedProcessor::keepImportedFile (const juce::File& folder, const juce::String& fileName,
+                                                const juce::MemoryBlock& data, juce::String& error)
+{
+    auto name = juce::File::createLegalFileName (fileName.fromLastOccurrenceOf ("/", false, false)
+                                                         .fromLastOccurrenceOf ("\\", false, false)).trim();
+
+    if (name.isEmpty() || name.startsWithChar ('.'))
+        name = "Dropped" + name;
+
+    if (data.isEmpty())
+    {
+        error = name + " is empty.";
+        return {};
+    }
+
+    if (const auto made = folder.createDirectory(); made.failed())
+    {
+        error = "Drenched can't keep a copy of " + name + " in " + folder.getFullPathName() + ": " + made.getErrorMessage();
+        return {};
+    }
+
+    const auto plain = folder.getChildFile (name);
+    auto file = plain;
+
+    for (int n = 2; file.exists(); ++n)
+    {
+        juce::MemoryBlock existing;
+
+        if (file.existsAsFile() && file.getSize() == static_cast<juce::int64> (data.getSize())
+            && file.loadFileAsData (existing) && existing == data)
+            return file;
+
+        file = folder.getChildFile (plain.getFileNameWithoutExtension() + " " + juce::String (n) + plain.getFileExtension());
+    }
+
+    if (! file.replaceWithData (data.getData(), data.getSize()))
+    {
+        error = "Drenched can't keep a copy of " + name + " in " + folder.getFullPathName() + ". Is the disk full?";
+        return {};
+    }
+
+    return file;
 }
 
 void DrenchedProcessor::loadSceneImpulseResponseAsync (const juce::File& file)

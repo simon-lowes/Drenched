@@ -98,14 +98,14 @@ Three rooms were recorded from several places or with several microphone setups:
 
 ### Your own impulse responses
 
-Choose **Load your own IR...** in the browser. Drenched reads WAV, AIFF, FLAC, SOFA and .amb files: mono, stereo, true stereo (four channels), surround up to 9.1.6, or B-format.
+Choose **Load your own IR...** in the browser, or drop a file anywhere on the window. Drenched reads WAV, AIFF, FLAC, SOFA and .amb files: mono, stereo, true stereo (four channels), surround up to 9.1.6, or B-format.
 
 - The file is resampled to the session rate and its decay is measured into the graph, so you can reshape it, and use Size, like any other space. Anything past 30 seconds is cut.
 - **B-format** (first-order ambisonics) is recognised by its metadata, the .amb type, or "AmbiX", "B-format" or "FuMa" in the name. Higher-order AmbiX plays at first order. Any other four-channel file is true stereo.
 - **Surround files** play their own channels on a surround track and fold down on a stereo one.
 - **SOFA** files play a pair of sources about 30 degrees either side of the listener as true stereo, or else the source closest to straight ahead. Ambisonic SOFA plays as B-format. The limit is 512 MB.
 
-The session remembers where the file is, not the audio. If you move it, the space says "File not found"; load it again.
+The session remembers where the file is, not the audio. A dropped file is copied to **Documents/Drenched/Imported** first, since the window can't tell where it came from, and the session names the copy; files up to 512 MB can be dropped. If you move a file, Drenched looks for it where it most likely went; if it can't find it, the space says "File not found": choose **Find** *name*... in the browser, or drop the file on the window, and your settings stay as they were.
 
 ## Shaping the sound
 

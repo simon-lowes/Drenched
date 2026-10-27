@@ -272,3 +272,68 @@ test ('Typed values are read however they are written', async () =>
 
     assert.deepEqual (errors, []);
 });
+
+test ('A dropped impulse response reaches the plugin whole, and nothing else is taken', async () =>
+{
+    await open ('field');
+
+    const result = await page.evaluate (async () =>
+    {
+        const drop = (type, files) =>
+        {
+            const data = new DataTransfer();
+            files.forEach (f => data.items.add (f));
+            document.querySelector ('#live .screen').dispatchEvent (new DragEvent (type, { bubbles: true, cancelable: true, dataTransfer: data }));
+        };
+
+        // Larger than one piece, with every byte value in it.
+        const bytes = new Uint8Array (7 * 1024 * 1024 + 5);
+        for (let i = 0; i < bytes.length; ++i)
+            bytes[i] = (i * 7 + (i >> 11)) & 255;
+
+        const ir = new File ([bytes], 'Hall "B".WAV');
+        const out = {};
+
+        drop ('dragenter', [ir]);
+        out.shown = document.getElementById ('drop').classList.contains ('on');
+        window.__sent = [];
+        drop ('drop', [new File (['text'], 'notes.txt'), ir]);
+        out.hidden = ! document.getElementById ('drop').classList.contains ('on');
+
+        for (let wait = 0; wait < 200 && ! window.__sent.some (([n, p]) => n === 'dropIr' && p.stage === 'end'); ++wait)
+            await new Promise (r => setTimeout (r, 20));
+
+        const sent = window.__sent.filter (([n]) => n === 'dropIr').map (([, p]) => p);
+        out.stages = sent.map (p => p.stage);
+        out.start = sent[0];
+        out.sameId = sent.every (p => p.id === sent[0].id);
+
+        const joined = sent.filter (p => p.stage === 'piece').map (p => Uint8Array.from (atob (p.data), c => c.charCodeAt (0)));
+        const all = new Uint8Array (joined.reduce ((n, b) => n + b.length, 0));
+        joined.reduce ((at, b) => { all.set (b, at); return at + b.length; }, 0);
+        out.whole = all.length === bytes.length && all.every ((b, i) => b === bytes[i]);
+
+        // Only files Drenched can load are sent.
+        window.__sent = [];
+        drop ('drop', [new File (['x'], 'photo.jpg')]);
+        await new Promise (r => setTimeout (r, 50));
+        out.otherSent = window.__sent.filter (([n]) => n === 'dropIr').length;
+        out.otherNote = st.note;
+
+        window.__fromPlugin ('dropFailed', { name: 'Hall "B".WAV' });
+        out.failedNote = st.note;
+        return out;
+    });
+
+    assert.ok (result.shown && result.hidden);
+    assert.deepEqual (result.stages, ['start', 'piece', 'piece', 'piece', 'end']);
+    assert.equal (result.start.name, 'Hall "B".WAV');
+    assert.equal (result.start.size, 7 * 1024 * 1024 + 5);
+    assert.equal (result.start.keep, false);
+    assert.ok (result.sameId && result.whole);
+    assert.equal (result.otherSent, 0);
+    assert.match (result.otherNote, /photo\.jpg.*isn.t an impulse response/);
+    assert.match (result.failedNote, /Drop it again/);
+    assert.ok (page.url().includes ('index.html'));
+    assert.deepEqual (errors, []);
+});
