@@ -376,18 +376,28 @@ live.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,Arrow
   if(e.key==='ArrowUp'||e.key==='ArrowDown'){var cb=curBands(st);cb[i]=clamp(Math.round((cb[i]+(e.key==='ArrowUp'?1:-1)*(e.shiftKey?0.01:0.1))*100)/100,0.1,20);st.lastBand=i;st.hint='decay';st.note=null;e.preventDefault();schedule();}}
  else if(t.matches('[data-drag="src"]')){if(e.key==='ArrowLeft'||e.key==='ArrowRight')st.sx=clamp(st.sx+(e.key==='ArrowRight'?3:-3),6,94);else return;st.hint='sx';st.note=null;e.preventDefault();schedule();}
  else if(t.matches('[data-drag]')){if(e.key==='ArrowUp'||e.key==='ArrowDown')st.dist=clamp(st.dist+(e.key==='ArrowDown'?2:-2),0,100);else if(e.key==='ArrowLeft'||e.key==='ArrowRight')st.lx=clamp(st.lx+(e.key==='ArrowRight'?3:-3),6,94);else return;st.hint='dist';st.note=null;e.preventDefault();schedule();}});
+/* The numbers in what someone typed, however they write them: "1,5" or "1.5", ".5", a minus
+   or dash for negative and, where a value can reach thousands, "12,000" or "12 000". */
+function typedNumbers(raw,thousands){var t=raw.replace(/[\u2212\u2013]/g,'-');
+ if(thousands)t=t.replace(/(\d)[, \u00a0\u202f](?=\d{3}(?!\d))/g,'$1');
+ if(!/\d\.\d/.test(t))t=t.replace(/(\d),(?=\d)/g,'$1.');
+ return (t.match(/-?(\d+(\.\d*)?|\.\d+)/g)||[]).map(parseFloat);}
+/* What typed value v is multiplied by for the unit it was typed in, if not the field's own.
+   The high cut shows kHz, so a bare number too small to be Hz is kHz. */
+function typedScale(ty,raw,v){if(/^(pre|gate|attack|dDel|spkDelay)$/.test(ty))return /\d\s*s(ec(ond)?s?)?\b/i.test(raw)&&!/ms|millisec/i.test(raw)?1000:1;
+ if(ty==='decay'||ty==='band')return /ms|millisec/i.test(raw)?0.001:1;
+ if(/^(hicut|locut|xover|mono|eq\df)$/.test(ty))return /k/i.test(raw)?1000:ty==='hicut'&&v<P.hicut.min&&!/hz/i.test(raw)?1000:1;return 1;}
 live.addEventListener('change',function(e){var t=e.target;
- if(t.matches('input[data-spk]')){var si=+t.getAttribute('data-spk'),lv=t.getAttribute('data-f')==='l',sr=t.value.replace(/\u2212/g,'-'),sn=sr.match(/-?\d+(\.\d+)?/),cur=speakerOf(st,si).slice();
-  if(lv)cur[0]=/off/i.test(sr)?SPK_LEVEL.min:sn?clamp(Math.round(parseFloat(sn[0])*10)/10,SPK_LEVEL.min,SPK_LEVEL.max):cur[0];else if(sn)cur[1]=clamp(Math.round(parseFloat(sn[0])*10)/10,SPK_DELAY.min,SPK_DELAY.max);
+ if(t.matches('input[data-spk]')){var si=+t.getAttribute('data-spk'),lv=t.getAttribute('data-f')==='l',sr=t.value,sn=typedNumbers(sr),cur=speakerOf(st,si).slice();
+  if(lv)cur[0]=/off/i.test(sr)?SPK_LEVEL.min:sn.length?clamp(Math.round(sn[0]*10)/10,SPK_LEVEL.min,SPK_LEVEL.max):cur[0];else if(sn.length)cur[1]=clamp(Math.round(sn[0]*typedScale('spkDelay',sr,sn[0])*10)/10,SPK_DELAY.min,SPK_DELAY.max);
   while(st.speakers.length<=si)st.speakers.push([0,0]);st.speakers[si]=cur;renderLive();syncUi();return;}
  if(t.matches('input[data-scn]')){var rn=+t.getAttribute('data-scn'),nv=t.value.trim();if(nv)sceneAct('rename',rn,nv.slice(0,64));renderLive();return;}
- if(!t.matches('input[data-type]'))return;var ty=t.getAttribute('data-type'),raw=t.value.replace(/\u2212/g,'-'),nums=raw.match(/-?\d+(\.\d+)?/g);
+ if(!t.matches('input[data-type]'))return;var ty=t.getAttribute('data-type'),raw=t.value,nums=typedNumbers(raw,!!P[ty]&&P[ty].max>=1000);
  if((ty==='lx'||ty==='sx')&&/cent/i.test(raw)){setParam(st,ty,50);st.note=null;renderLive();sync();return;}
- if(!nums){if(/off/i.test(raw)&&P[ty]&&(P[ty].min===0||ty==='dLvl'))setParam(st,ty,P[ty].min);st.note=null;renderLive();sync();return;}var v=parseFloat(nums[nums.length-1]);
+ if(!nums.length){if(/off/i.test(raw)&&P[ty]&&(P[ty].min===0||ty==='dLvl'))setParam(st,ty,P[ty].min);st.note=null;renderLive();sync();return;}var v=nums[nums.length-1];v*=typedScale(ty,raw,v);
  if(ty==='band'){var i=+t.getAttribute('data-i');curBands(st)[i]=clamp(v,0.1,20);st.lastBand=i;st.hint='decay';}
  else if(ty==='dist'){st.dist=Math.round(distFromM(st,v));st.hint='dist';}
  else if((ty==='lx'||ty==='sx')&&/left|right/i.test(raw)){setParam(st,ty,50+(/left/i.test(raw)?-v:v)/2);}
- else if((ty==='hicut'||/^eq\df$/.test(ty))&&/k/i.test(raw)){setParam(st,ty,v*1000);}
  else setParam(st,ty,v);
  st.note=null;renderLive();sync();});
 live.addEventListener('input',function(e){var k=e.target.getAttribute&&e.target.getAttribute('data-in');if(k==='licKey'||k==='licCode')st[k]=e.target.value;

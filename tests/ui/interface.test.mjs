@@ -238,3 +238,37 @@ test ('Automation that isn\'t a number leaves the controls as they were', async 
     assert.deepEqual (await page.evaluate (() => ({ size: st.size, mix: st.mix, band: st.bands[0] })), before);
     assert.deepEqual (errors, []);
 });
+
+test ('Typed values are read however they are written', async () =>
+{
+    await open ('anodised');
+
+    // The advanced panel may still be open from an earlier test.
+    if (! await page.$ ('input[data-type="hicut"]'))
+        await page.click ('[data-act="adv"]');
+
+    // What someone types, and what the control should end up at, in the field's own unit.
+    const cases = [
+        ['band', '1,5', 1.5], ['band', '800 ms', 0.8], ['band', '.5', 0.5],
+        ['pre', '0,1 s', 100], ['pre', '.05 s', 50], ['pre', '12 ms', 12],
+        ['gate', '1,5 s', 1500], ['gate', '1,200 ms', 1200], ['gate', '1 200', 1200],
+        ['bright', '−3,5 dB', -3.5], ['bright', '–2', -2], ['bright', '-.5', -0.5],
+        ['hicut', '8', 8000], ['hicut', '8,5 kHz', 8500], ['hicut', '12,000 Hz', 12000], ['hicut', '12 000', 12000], ['hicut', '800 Hz', 1000],
+        ['xover', '0,5 kHz', 500], ['locut', '120', 120], ['dDel', '2,5', 2.5], ['el', '30 / 70', 70],
+    ];
+
+    for (const [type, typed, wanted] of cases)
+    {
+        const got = await page.evaluate (([ty, text]) =>
+        {
+            const field = document.querySelector ('input[data-type="' + ty + '"]');
+            field.value = text;
+            field.dispatchEvent (new Event ('change', { bubbles: true }));
+            return ty === 'band' ? curBands (st)[0] : getV (st, ty);
+        }, [type, typed]);
+
+        assert.ok (Math.abs (got - wanted) < 1e-6, type + ' typed as ' + JSON.stringify (typed) + ' gave ' + got + ', not ' + wanted);
+    }
+
+    assert.deepEqual (errors, []);
+});
