@@ -221,6 +221,30 @@ jobs:
           VERSION=$(sed -n 's/^project(Drenched VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
           bash packaging/macos/build-pkg.sh dist "$VERSION" "Drenched-$VERSION-macOS.pkg"
 
+      # What a tester gets: the package installed as they would install it, every format
+      # where hosts look (not moved to the build folder's copies), and the installed Audio
+      # Unit passing auval.
+      - name: Install and check the installer (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          rm -rf ~/Library/Audio/Plug-Ins/Components/Drenched.component # the copy auval checked above
+          sudo installer -pkg Drenched-*-macOS.pkg -target /
+          for b in "/Library/Audio/Plug-Ins/VST3/Drenched.vst3" "/Library/Audio/Plug-Ins/Components/Drenched.component" \
+                   "/Library/Audio/Plug-Ins/CLAP/Drenched.clap" "/Applications/Drenched.app"; do
+            [ -d "$b" ] || { echo "not installed: $b"; exit 1; }
+            BIN="$b/Contents/MacOS/Drenched"
+            ARCHS=$(lipo -archs "$BIN")
+            echo "$b: $ARCHS"
+            [[ "$ARCHS" == *x86_64* && "$ARCHS" == *arm64* ]] || { echo "$b is not universal"; exit 1; }
+            codesign --verify --verbose "$b"
+          done
+          for f in "User guide.html" "Third-party licences.txt"; do
+            [ -f "/Library/Application Support/Drenched/$f" ] || { echo "not installed: $f"; exit 1; }
+          done
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          auval -strict -v aufx Drn1 Drnc
+
       - name: Upload installer (macOS)
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
@@ -320,6 +344,52 @@ jobs:
           & $iscc "/DAppVersion=$version" "/DSource=$PWD\dist" "/O$PWD\installer" packaging\windows\Drenched.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem installer
+
+      # What a tester gets: the installer run (silently) as they would run it, each build
+      # where its hosts look, then the uninstaller taking it all away again.
+      - name: Install, check and uninstall
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem installer\*.exe)[0].FullName
+          $run = Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LOG=install.log' -Wait -PassThru
+          if ($run.ExitCode -ne 0) { Get-Content install.log; exit 1 }
+
+          # The machine type in a Windows binary's header: 0x8664 for x64, 0x14c for x86.
+          function Machine ($path) {
+            $bytes = [System.IO.File]::ReadAllBytes($path)
+            $pe = [BitConverter]::ToInt32($bytes, 0x3C)
+            return [BitConverter]::ToUInt16($bytes, $pe + 4)
+          }
+
+          $cf64 = "${env:CommonProgramFiles}"
+          $cf32 = "${env:CommonProgramFiles(x86)}"
+          $expected = @(
+            @("$cf64\VST3\Drenched.vst3\Contents\x86_64-win\Drenched.vst3", 0x8664),
+            @("$cf64\VST3\Drenched.vst3\Contents\x86-win\Drenched.vst3", 0x14c),
+            @("$cf32\VST3\Drenched.vst3\Contents\x86-win\Drenched.vst3", 0x14c),
+            @("$cf64\CLAP\Drenched.clap", 0x8664),
+            @("$cf32\CLAP\Drenched.clap", 0x14c),
+            @("${env:ProgramFiles}\Drenched\Drenched.exe", 0x8664))
+          foreach ($e in $expected) {
+            if (-not (Test-Path $e[0])) { Write-Error "not installed: $($e[0])"; exit 1 }
+            $m = Machine $e[0]
+            if ($m -ne $e[1]) { Write-Error ("{0} is machine 0x{1:x}, not 0x{2:x}" -f $e[0], $m, $e[1]); exit 1 }
+            Write-Host ("{0}: 0x{1:x}" -f $e[0], $m)
+          }
+          foreach ($f in @('User guide.html', 'Third-party licences.txt')) {
+            if (-not (Test-Path "${env:ProgramFiles}\Drenched\$f")) { Write-Error "not installed: $f"; exit 1 }
+          }
+
+          # The uninstaller hands over to a copy of itself, so wait for the files to go.
+          Start-Process "${env:ProgramFiles}\Drenched\unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
+          $left = @()
+          for ($i = 0; $i -lt 60; $i++) {
+            $left = @($expected | ForEach-Object { $_[0] } | Where-Object { Test-Path $_ })
+            if ($left.Count -eq 0) { break }
+            Start-Sleep -Seconds 1
+          }
+          if ($left.Count -ne 0) { Write-Error "left behind: $($left -join ', ')"; exit 1 }
+          Write-Host "Uninstalled cleanly"
 
       - uses: actions/upload-artifact@v4
         with:
