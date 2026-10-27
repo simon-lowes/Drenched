@@ -88,10 +88,11 @@ public:
     juce::String chosenSpaceId();
 
     /** Reads and analyses an impulse response file on a background thread, then (on the
-        message thread) plays it, sets the decay graph to its measured decay and saves its
-        path in the session. A file that can't be used leaves an error in the interface state
-        instead. Message thread only. */
-    void loadImpulseResponseAsync (const juce::File& file);
+        message thread) plays it, sets the decay graph to its measured decay (unless
+        keepSettings, for finding a session's missing file) and saves its path in the
+        session. A file that can't be used leaves an error in the interface state instead.
+        Message thread only. */
+    void loadImpulseResponseAsync (const juce::File& file, bool keepSettings = false);
 
     /** The same for a scene's file: plays it without changing the decay graph, and only if
         the session still wants that file when it has loaded. */

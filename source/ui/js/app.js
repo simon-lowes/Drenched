@@ -413,6 +413,7 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'brwkind':st.brwKind=v;st.brwCur=0;break;
   case 'brwsim':st.brwSim=v==='off'?null:+v;st.brwCur=0;break;
   case 'brwclear':st.brwQ='';st.brwKind='all';st.brwCur=0;break;
+  case 'findir':st.browse=false;st.hint=null;if(JUCE){JUCE.emitEvent('loadIr',{keep:true});st.note='Choose the file this session used. Your decay and other settings stay as they are.';}else st.note='<b>Find</b> opens a file chooser in the plugin.';break;
   case 'loadir':st.browse=false;st.hint=null;if(JUCE){JUCE.emitEvent('loadIr',{});st.note='Choose a WAV, AIFF, FLAC or SOFA impulse response: mono, stereo, true stereo, surround up to 9.1.6, or B-format.';}else st.note='<b>Load your own IR</b> opens a file chooser in the plugin.';break;
   case 'credits':st.credits=!st.credits;st.browse=false;st.hint=null;break;
   case 'report':st.browse=false;st.hint=null;if(JUCE){JUCE.emitEvent('copyReport',{});st.note='<b>Copied</b> the details of this setup: version, format, host, computer, audio settings, space and look. Paste them into your bug report with what you did, what you expected and what happened.';}else st.note='<b>Report a bug</b> copies this setup\'s details in the plugin.';break;
