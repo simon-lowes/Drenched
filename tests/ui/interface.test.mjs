@@ -242,7 +242,10 @@ test ('Automation that isn\'t a number leaves the controls as they were', async 
 test ('Typed values are read however they are written', async () =>
 {
     await open ('anodised');
-    await page.click ('[data-act="adv"]');
+
+    // The advanced panel may still be open from an earlier test.
+    if (! await page.$ ('input[data-type="hicut"]'))
+        await page.click ('[data-act="adv"]');
 
     // What someone types, and what the control should end up at, in the field's own unit.
     const cases = [
