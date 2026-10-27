@@ -118,6 +118,15 @@ if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 4)
     target_link_options(Drenched_Standalone PRIVATE /LARGEADDRESSAWARE)
 endif()
 
+if(APPLE AND TARGET Drenched_VST3)
+    # JUCE signs the VST3 bundle (ad hoc) before writing its moduleinfo.json, which breaks
+    # the bundle's seal, so macOS sees it as damaged. Sign it again once it is complete
+    # (only if its signature no longer checks out).
+    add_custom_command(TARGET Drenched_VST3 POST_BUILD
+        COMMAND sh -c "codesign --verify \"$0\" 2>/dev/null || codesign --force --sign - \"$0\"" "$<TARGET_BUNDLE_DIR:Drenched_VST3>"
+        VERBATIM)
+endif()
+
 if(DRENCHED_BUILD_CLAP)
     clap_juce_extensions_plugin(TARGET Drenched
         CLAP_ID "com.drenched.drenched"
