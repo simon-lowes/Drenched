@@ -12,6 +12,10 @@ namespace drenched
 namespace
 {
 
+// The two inputs' convolvers spread their large transforms over different parts of
+// each block, so that no callback does a transform for both.
+constexpr PartitionedConvolver::WorkWindow leftWork { 0.0f, 0.75f }, rightWork { 0.25f, 1.0f };
+
 std::vector<std::span<const float>> pathsFrom (const ImpulseResponseSet& set, ImpulseResponseSet::Path a, ImpulseResponseSet::Path b)
 {
     return { std::span<const float> (set.paths[a]), std::span<const float> (set.paths[b]) };
@@ -74,8 +78,8 @@ void runFading (Svf& filter, float* x, std::size_t n, float from, float to) noex
 ReverbKernel::ReverbKernel (const ImpulseResponseSet& responses, const LivingTailDesign& tail, std::size_t latency)
     : rate (responses.sampleRate),
       irLength (responses.length()),
-      fromLeft (pathsFrom (responses, ImpulseResponseSet::leftToLeft, ImpulseResponseSet::leftToRight), latency),
-      fromRight (pathsFrom (responses, ImpulseResponseSet::rightToLeft, ImpulseResponseSet::rightToRight), latency),
+      fromLeft (pathsFrom (responses, ImpulseResponseSet::leftToLeft, ImpulseResponseSet::leftToRight), latency, leftWork),
+      fromRight (pathsFrom (responses, ImpulseResponseSet::rightToLeft, ImpulseResponseSet::rightToRight), latency, rightWork),
       tailDesign (tail)
 {
 }
@@ -83,8 +87,8 @@ ReverbKernel::ReverbKernel (const ImpulseResponseSet& responses, const LivingTai
 ReverbKernel::ReverbKernel (const SpatialResponseSet& responses, const LivingTailDesign& tail, std::size_t latency)
     : rate (responses.sampleRate),
       irLength (responses.length()),
-      fromLeft (pathsFrom (responses.paths[0]), latency),
-      fromRight (pathsFrom (responses.paths[1]), latency),
+      fromLeft (pathsFrom (responses.paths[0]), latency, leftWork),
+      fromRight (pathsFrom (responses.paths[1]), latency, rightWork),
       tailDesign (tail)
 {
 }
