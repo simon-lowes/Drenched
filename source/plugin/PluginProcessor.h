@@ -141,8 +141,10 @@ public:
 
     /** Sets every setting and the space to scene `number`'s and moves the scene parameter
         to it, telling the host. Automating the scene parameter does the same within a
-        timer tick (see followSceneParameter). Does nothing for an empty number. Message thread. */
-    void recallScene (int number);
+        timer tick (see followSceneParameter), or, bouncing, before the block it changes at
+        (see followSceneOffline). Does nothing for an empty number. loadNow reads the
+        scene's recording before returning rather than in the background. Message thread. */
+    void recallScene (int number, bool loadNow = false);
 
     /** Recalls the scene the scene parameter has moved to, if it has moved since the last
         recall or session load. Called by the timer; public for tests. Message thread. */
@@ -246,7 +248,14 @@ private:
     juce::ValueTree scenes();
     juce::ValueTree findScene (int number);
     juce::String spaceName (const juce::String& id, const juce::String& irName) const;
-    int followedScene = 0; // the scene parameter's value at the last recall or session load
+    // The scene parameter's value at the last recall or session load. Read by the audio
+    // thread while bouncing (see followSceneOffline).
+    std::atomic<int> followedScene { 0 };
+
+    /** Bouncing: recalls the scene the scene parameter has moved to before the block plays,
+        with its recording read and its room built, so the change lands at the same block in
+        every bounce. Audio thread, offline only. */
+    void followSceneOffline();
 
     /** Notices a capture that has finished playing, then deconvolves and saves it on the
         loader thread. Message thread. */

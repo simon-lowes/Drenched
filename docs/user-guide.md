@@ -216,7 +216,7 @@ A scene stores every setting and the space under a name, up to 32 per session: o
 - **Recall** loads it, **Update** overwrites it with the current settings, and **Delete** removes it (the others keep their numbers, so their automation still works).
 - Automate the **Scene** parameter to change rooms on the cut. **Off** leaves the settings alone.
 - Freeze and Low CPU are not stored; they stay as they are.
-- Scenes follow automation within about a twentieth of a second of real time, so bounce in real time when a scene changes the space.
+- Playing, scenes follow automation within about a twentieth of a second, plus the moment a recorded space takes to load. An offline bounce changes the scene, room and all, at the point the automation moves, the same in every bounce.
 
 ### Reverb speakers
 

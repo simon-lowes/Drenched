@@ -240,7 +240,11 @@ void DrenchedProcessor::updateLatency (double sampleRate)
 void DrenchedProcessor::timerCallback()
 {
     applyPendingSession();
-    followSceneParameter();
+
+    // Bouncing, the audio thread follows the scene parameter itself, block by block.
+    if (! isNonRealtime())
+        followSceneParameter();
+
     cacheUiState();
     keepSessionForSaving();
     pollCapture();
@@ -376,7 +380,8 @@ void DrenchedProcessor::loadLibrarySpace (const juce::String& id, bool now)
         {
             const std::lock_guard lock (recordedLock);
 
-            if (libraryWanted != id)
+            // Or it was read at once meanwhile, for a bounce.
+            if (libraryWanted != id || (libraryLoadedId == id && libraryResponse != nullptr))
                 return;
         }
 
@@ -1173,7 +1178,7 @@ void DrenchedProcessor::deleteScene (int number)
         scenes().removeChild (scene, nullptr);
 }
 
-void DrenchedProcessor::recallScene (int number)
+void DrenchedProcessor::recallScene (int number, bool loadNow)
 {
     const auto scene = findScene (number);
 
@@ -1228,22 +1233,72 @@ void DrenchedProcessor::recallScene (int number)
             const juce::File file (now);
             ui.setProperty (UiIDs::irPath, now, nullptr);
             ui.setProperty (UiIDs::irName, scene.getProperty (SceneIDs::irName, "").toString(), nullptr);
-            loadSceneImpulseResponseAsync (file);
+
+            if (loadNow)
+            {
+                juce::String error;
+                auto response = readImpulseResponse (file, error);
+                applyLoadedImpulseResponse (file, std::move (response), error, false);
+            }
+            else
+            {
+                loadSceneImpulseResponseAsync (file);
+            }
         }
     }
 
     if (spaceId.isNotEmpty())
         ui.setProperty (UiIDs::spaceId, spaceId, nullptr);
 
+    if (loadNow)
+        loadLibrarySpace (chosenSpaceId(), true);
+
     cacheUiState();
 
-    if (const auto rate = preparedRate.load(); rate > 0.0)
+    // Bouncing, the block about to play builds the room itself.
+    if (const auto rate = preparedRate.load(); rate > 0.0 && ! loadNow)
     {
         updateLatency (rate);
 
         if (auto request = currentRequest (rate))
             builder->request (*request);
     }
+}
+
+void DrenchedProcessor::followSceneOffline()
+{
+    const auto number = juce::roundToInt (params.scene.load());
+
+    if (number == followedScene.load())
+        return;
+
+    // A recall changes the session, which belongs to the message thread. Some hosts bounce
+    // on that thread, so it happens here; otherwise this waits for it, but not for ever,
+    // as a host may hold the message thread until the bounce is done. The recall then
+    // lands late, as it did before, rather than never.
+    if (juce::MessageManager::existsAndIsCurrentThread())
+    {
+        recallScene (number, true);
+    }
+    else
+    {
+        auto done = std::make_shared<juce::WaitableEvent>();
+        std::weak_ptr<int> alive = lifetime;
+
+        juce::MessageManager::callAsync ([this, alive, number, done]
+        {
+            if (! alive.expired() && juce::roundToInt (params.scene.load()) == number)
+                recallScene (number, true);
+
+            done->signal();
+        });
+
+        done->wait (2000);
+    }
+
+    // Also for a number with no scene, so it isn't tried again every block.
+    followedScene = number;
+    offlineSinceBuild = std::numeric_limits<juce::int64>::max() / 2; // build before this block plays
 }
 
 void DrenchedProcessor::followSceneParameter()
@@ -1446,7 +1501,10 @@ void DrenchedProcessor::render (juce::AudioBuffer<float>& buffer, bool bypassed)
     }
 
     if (isNonRealtime())
+    {
+        followSceneOffline();
         buildChangedRoom (numSamples);
+    }
 
     reverb.process (buffer.getArrayOfWritePointers(), static_cast<size_t> (buffer.getNumChannels()),
                     static_cast<size_t> (numSamples), controls);
