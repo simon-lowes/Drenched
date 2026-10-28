@@ -1,8 +1,12 @@
 #include "PluginTestHelpers.h"
 
+#include <Library.h>
+
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <cmath>
+#include <thread>
 
 using namespace drenched;
 
@@ -185,4 +189,129 @@ TEST_CASE ("A scene stored before a parameter existed recalls it at its default"
     });
 
     CHECK (near (valueOf (p, ParamIDs::cloudSize), 100.0f));
+}
+
+TEST_CASE ("Automating the scene in a bounce changes the room at that block", "[scenes][offline]")
+{
+    // Bouncing runs faster than real time, so a room that changes when the interface's
+    // timer next notices, or once a file has loaded in the background, lands somewhere
+    // different in every bounce. The block the scene changes at plays the new room.
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("drenched-scene-bounce");
+    dir.deleteRecursively();
+    const auto irFile = dir.getChildFile ("plate.wav");
+
+    {
+        REQUIRE (dir.createDirectory());
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> writer (wav.createWriterFor (irFile.createOutputStream().release(), 48000.0, 2, 24, {}, 0));
+        REQUIRE (writer != nullptr);
+        juce::AudioBuffer<float> ir (2, 24000);
+        juce::Random random (9);
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int n = 0; n < ir.getNumSamples(); ++n)
+                ir.setSample (ch, n, (random.nextFloat() - 0.5f) * std::exp (-0.0003f * static_cast<float> (n)));
+
+        writer->writeFromAudioSampleBuffer (ir, 0, ir.getNumSamples());
+    }
+
+    REQUIRE_FALSE (library::spaces().empty());
+    const auto libraryId = library::spaces().back().id;
+
+    testing::Plugin plugin;
+    auto& p = *plugin;
+
+    testing::onMessageThread ([&]
+    {
+        chooseSpace (p, bundledSpaces[0].id);
+        REQUIRE (p.storeScene (0, "Studio") == 1);
+        chooseSpace (p, libraryId);
+        REQUIRE (p.storeScene (0, "Recorded") == 2);
+        p.getUiState().setProperty (UiIDs::irPath, irFile.getFullPathName(), nullptr);
+        p.getUiState().setProperty (UiIDs::irName, "plate", nullptr);
+        chooseSpace (p, "user");
+        REQUIRE (p.storeScene (0, "Own file") == 3);
+        p.recallScene (1);
+
+        p.setNonRealtime (true);
+        p.prepareToPlay (48000.0, 512);
+    });
+
+    juce::AudioBuffer<float> buffer (2, 512);
+    juce::MidiBuffer midi;
+
+    const auto playBlockAt = [&] (float scene)
+    {
+        return testing::onMessageThread ([&]
+        {
+            set (p, ParamIDs::scene, scene);
+            const auto before = p.responseVersion();
+            buffer.clear();
+            p.processBlock (buffer, midi);
+            return p.responseVersion() != before;
+        });
+    };
+
+    CHECK_FALSE (playBlockAt (1.0f));
+
+    CHECK (playBlockAt (2.0f));
+    CHECK (p.chosenSpaceId() == libraryId);
+
+    CHECK (playBlockAt (3.0f));
+    CHECK (p.chosenSpaceId() == "user");
+    const auto info = testing::onMessageThread ([&] { return p.impulseResponseInfo(); });
+    CHECK_FALSE (static_cast<bool> (info["missing"]));
+    CHECK (p.getUiState().getProperty (UiIDs::irPath).toString() == irFile.getFullPathName());
+
+    CHECK (playBlockAt (1.0f));
+    CHECK (p.chosenSpaceId() == juce::String (bundledSpaces[0].id));
+
+    // An empty scene number changes nothing, and isn't tried again every block.
+    CHECK_FALSE (playBlockAt (9.0f));
+    CHECK_FALSE (playBlockAt (9.0f));
+
+    testing::onMessageThread ([&] { p.releaseResources(); });
+    dir.deleteRecursively();
+}
+
+TEST_CASE ("A bounce whose host holds the message thread doesn't hang on a scene change", "[scenes][offline]")
+{
+    testing::Plugin plugin;
+    auto& p = *plugin;
+
+    testing::onMessageThread ([&]
+    {
+        chooseSpace (p, bundledSpaces[0].id);
+        REQUIRE (p.storeScene (0, "Studio") == 1);
+        chooseSpace (p, bundledSpaces[2].id);
+        REQUIRE (p.storeScene (0, "Chapel") == 2);
+        p.recallScene (1);
+        p.setNonRealtime (true);
+        p.prepareToPlay (48000.0, 512);
+        set (p, ParamIDs::scene, 2.0f);
+    });
+
+    // The test holds the message thread, as a host may while it bounces on another.
+    std::array<double, 2> seconds {};
+
+    std::thread bounce ([&]
+    {
+        juce::AudioBuffer<float> buffer (2, 512);
+        juce::MidiBuffer midi;
+
+        for (auto& s : seconds)
+        {
+            const auto start = juce::Time::getMillisecondCounterHiRes();
+            buffer.clear();
+            p.processBlock (buffer, midi);
+            s = (juce::Time::getMillisecondCounterHiRes() - start) / 1000.0;
+        }
+    });
+
+    bounce.join();
+
+    CHECK (seconds[0] < 5.0);
+    CHECK (seconds[1] < 0.5); // not waited for again
+
+    testing::onMessageThread ([&] { p.releaseResources(); });
 }
