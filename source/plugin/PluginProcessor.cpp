@@ -268,12 +268,13 @@ float DrenchedProcessor::predelayMs (float requested)
     if (params.predelaySync.load() < 0.5f)
         return requested;
 
-    // Synced: snap to the nearest 64th note at the host tempo.
+    // Synced: snap to the nearest 64th note at the host tempo, if it is one a host could
+    // play at. A tempo that can't be (infinite, say) leaves the predelay as set.
     if (auto* head = getPlayHead())
     {
         if (const auto position = head->getPosition())
         {
-            if (const auto bpm = position->getBpm(); bpm.hasValue() && *bpm > 1.0)
+            if (const auto bpm = position->getBpm(); bpm.hasValue() && *bpm > 1.0 && *bpm < 10000.0)
             {
                 const auto step = static_cast<float> (60000.0 / *bpm / 16.0);
                 return juce::jlimit (0.0f, 1000.0f, std::round (requested / step) * step);
