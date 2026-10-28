@@ -154,7 +154,8 @@ public:
     void reset() noexcept;
 
     /** In place: channels holds max(inputs, outputs) buffers; the first
-        inputs.size() carry the input and all outputs.size() are written. */
+        inputs.size() carry the input and all outputs.size() are written. A control
+        that isn't a number (or is infinite) keeps the last value that was. */
     void process (float* const* channels, std::size_t numChannels, std::size_t numSamples,
                   const ReverbControls& controls) noexcept;
 
@@ -188,6 +189,7 @@ public:
     std::size_t numOutputs() const noexcept { return outputLayout.size(); }
 
 private:
+    const ReverbControls& finiteControls (const ReverbControls& asked) noexcept;
     void installIncoming() noexcept;
     void retire (ReverbKernel* kernel) noexcept;
     void settleTone (const ReverbControls& controls) noexcept;
@@ -239,6 +241,7 @@ private:
     float dryGain = 1.0f, wetGain = 0.0f, outGain = 1.0f, duckGain = 1.0f, gainCoef = 0.0f;
     float duckEnvelope = 0.0f, attackCoef = 0.0f, releaseCoef = 0.0f;
     bool firstBlock = true;
+    ReverbControls lastFinite; // the controls as last played, every value a number
 
     // Wet tone, per output.
     std::array<Svf, maxChannels> lowCut, highCut, lowShelf, highShelf, spreadHighPass;

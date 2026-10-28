@@ -337,10 +337,15 @@ void ConvolutionReverb::reset() noexcept
 
 void ConvolutionReverb::restart() noexcept
 {
-    for (auto* k : { current, ringing, fading })
-        if (k != nullptr)
-            k->reset();
+    if (current != nullptr)
+        current->reset();
 
+    // Kernels on their way out have nothing left to ring, and one that made the trouble
+    // would only make it again.
+    retire (ringing);
+    retire (fading);
+    ringing = fading = nullptr;
+    ringRemaining = fadeRemaining = 0;
     handRemaining = 0;
     toneSettled = false;
 
@@ -725,11 +730,55 @@ void ConvolutionReverb::process (float* left, float* right, std::size_t numSampl
     }
 }
 
+const ReverbControls& ConvolutionReverb::finiteControls (const ReverbControls& asked) noexcept
+{
+    // A value that isn't a number (from a host, or worked out from one) would silence the
+    // reverberation until it was started again; the last value that was a number plays on.
+    auto& kept = lastFinite;
+    const auto keep = [] (float wanted, float& last) noexcept
+    {
+        if (std::isfinite (wanted))
+            last = wanted;
+    };
+
+    keep (asked.mix, kept.mix);
+    keep (asked.predelayMs, kept.predelayMs);
+    keep (asked.brightnessDb, kept.brightnessDb);
+    keep (asked.lowCutHz, kept.lowCutHz);
+    keep (asked.highCutHz, kept.highCutHz);
+    keep (asked.widthPercent, kept.widthPercent);
+    keep (asked.cloudPercent, kept.cloudPercent);
+    keep (asked.monoBelowHz, kept.monoBelowHz);
+    keep (asked.ducking, kept.ducking);
+    keep (asked.outputGain, kept.outputGain);
+    kept.freeze = asked.freeze;
+    keep (asked.crossoverHz, kept.crossoverHz);
+    keep (asked.movement, kept.movement);
+    keep (asked.movementRateHz, kept.movementRateHz);
+
+    for (std::size_t band = 0; band < kept.eq.size(); ++band)
+    {
+        keep (asked.eq[band].frequencyHz, kept.eq[band].frequencyHz);
+        keep (asked.eq[band].gainDb, kept.eq[band].gainDb);
+        keep (asked.eq[band].q, kept.eq[band].q);
+    }
+
+    for (std::size_t k = 0; k < maxChannels; ++k)
+    {
+        keep (asked.speakerLevelDb[k], kept.speakerLevelDb[k]);
+        keep (asked.speakerDelayMs[k], kept.speakerDelayMs[k]);
+    }
+
+    return kept;
+}
+
 void ConvolutionReverb::process (float* const* channels, std::size_t numChannels, std::size_t numSamples,
-                                 const ReverbControls& c) noexcept
+                                 const ReverbControls& controls) noexcept
 {
     if (numChannels < std::max (numIn, numOut))
         return;
+
+    const auto& c = finiteControls (controls);
 
     installIncoming();
     equaliser.setBands (c.eq);
