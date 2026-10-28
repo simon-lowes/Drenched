@@ -13,6 +13,7 @@ add_executable(drenched_plugin_tests
     HostQuirksTests.cpp
     LargeFileTests.cpp
     MovedFileTests.cpp
+    DropTests.cpp
     ClickTests.cpp)
 
 target_link_libraries(drenched_plugin_tests PRIVATE Drenched Catch2::Catch2)

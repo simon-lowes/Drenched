@@ -98,6 +98,16 @@ DrenchedEditor::DrenchedEditor (DrenchedProcessor& p)
     state.state.addListener (this);
     processor.getLicence().addChangeListener (this);
 
+    web.onFile = [safe = juce::Component::SafePointer<DrenchedEditor> (this)] (const juce::File& file)
+    {
+        juce::MessageManager::callAsync ([safe, file]
+        {
+            // As the page does with a file it takes: a session whose file is missing keeps its settings.
+            if (safe != nullptr && file.hasFileExtension ("wav;wave;amb;aif;aiff;flac;sofa"))
+                safe->processor.loadImpulseResponseAsync (file, static_cast<bool> (safe->processor.impulseResponseInfo()["missing"]));
+        });
+    };
+
     // Without a web view the page never loads, so nothing is ever sent to it.
     if (webView::runtimeAvailable())
     {
@@ -145,6 +155,7 @@ juce::WebBrowserComponent::Options DrenchedEditor::makeOptions()
         .withEventListener ("gesture", [this] (const juce::var& v) { onGesture (v); })
         .withEventListener ("ui",      [this] (const juce::var& v) { onUi (v); })
         .withEventListener ("loadIr",  [this] (const juce::var& v) { onLoadIr (v); })
+        .withEventListener ("dropIr",  [this] (const juce::var& v) { onDropIr (v); })
         .withEventListener ("match",   [this] (const juce::var& v) { onMatch (v); })
         .withEventListener ("displays", [this] (const juce::var& v)
         {
@@ -398,6 +409,36 @@ void DrenchedEditor::onLoadIr (const juce::var& payload)
                               settings::saveIrFolder (file.getParentDirectory());
                               processor.loadImpulseResponseAsync (file, keep);
                           });
+}
+
+void DrenchedEditor::onDropIr (const juce::var& payload)
+{
+    const auto stage = payload["stage"].toString();
+    const auto id = static_cast<int> (payload["id"]);
+    const auto name = dropped.fileName();
+    auto ok = true;
+
+    if (stage == "start")
+        ok = dropped.start (id, payload["name"].toString(), static_cast<juce::int64> (payload["size"]), static_cast<bool> (payload["keep"]));
+    else if (stage == "piece")
+        ok = dropped.add (id, payload["data"].toString());
+    else if (stage == "cancel")
+        dropped.cancel (id);
+    else if (stage == "end" && dropped.complete (id))
+    {
+        const auto keep = dropped.keepsSettings();
+        processor.importImpulseResponseAsync (name, dropped.take(), keep, settings::importedFolder());
+    }
+    else if (stage == "end")
+        ok = ! dropped.isCurrent (id); // a drop abandoned earlier has said so already
+
+    if (! ok)
+    {
+        dropped.cancel (id);
+        auto reply = std::make_unique<juce::DynamicObject>();
+        reply->setProperty ("name", stage == "start" ? payload["name"].toString() : name);
+        web.emitEventIfBrowserIsVisible ("dropFailed", juce::var (reply.release()));
+    }
 }
 
 void DrenchedEditor::onMatch (const juce::var&)

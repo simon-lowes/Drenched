@@ -492,6 +492,32 @@ var PREVIEW_LIBRARY=[
  {id:'edinburgh-tunnel',name:'Innocent Railway Tunnel, Edinburgh',no:'Space 06',rec:'B-format decoded to a supercardioid pair, mid tunnel, 10 m from the source',kind:'underground',img:'underground',place:'Railway tunnel of 1831, 517 m long, now a footpath, Edinburgh',mat:'Size estimated from the recording',date:'OpenAIR library',credit:'Andrew Chadwick and Simon Shelley: OpenAIR library (www.openairlib.net)',licence:'CC BY 4.0',source:'https://www.openair.hosted.york.ac.uk/?page_id=525',bands:[2.4,1.77,1.48,1.52,1.44,1.16,0.87,0.56],W:13.8,D:19.3,H:7.6,pre:0},
  {id:'trollers-gill',name:'Troller\'s Gill',no:'Space 13',rec:'B-format decoded to a supercardioid pair, facing a four-loudspeaker array',kind:'outdoor',img:'outdoor',place:'Narrow limestone gorge with steep cliffs, open air, Yorkshire Dales',mat:'Size estimated from the recording',date:'OpenAIR library',credit:'Andrew Chadwick and Simon Shelley: OpenAIR library (www.openairlib.net)',licence:'CC BY 4.0',source:'https://www.openair.hosted.york.ac.uk/?page_id=745',bands:[0.51,0.56,0.44,0.39,0.36,0.34,0.35,0.28],W:9.8,D:13.7,H:5.4,pre:0}
 ];
+/* ---- files dropped on the window: an impulse response goes to the plugin in pieces, which
+   keeps a copy and loads it. Nothing dropped may open in place of the interface. ---- */
+var DROP_TYPES=/\.(wav|wave|amb|aif|aiff|flac|sofa)$/i,DROP_MAX=512*1024*1024,DROP_PIECE=3*1024*1024,dropping=null,dropDepth=0,dropVeil=document.getElementById('drop');
+function hasFiles(e){var t=e.dataTransfer&&e.dataTransfer.types;return !!t&&Array.prototype.indexOf.call(t,'Files')>=0;}
+function showDrop(on){if(dropVeil)dropVeil.classList.toggle('on',on);}
+document.addEventListener('dragenter',function(e){e.preventDefault();if(!hasFiles(e))return;dropDepth++;showDrop(true);});
+document.addEventListener('dragover',function(e){e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect=hasFiles(e)?'copy':'none';});
+document.addEventListener('dragleave',function(e){if(!hasFiles(e))return;if(--dropDepth<=0){dropDepth=0;showDrop(false);}});
+document.addEventListener('drop',function(e){e.preventDefault();dropDepth=0;showDrop(false);var fs=e.dataTransfer&&e.dataTransfer.files;if(fs&&fs.length)dropFiles(fs);});
+function dropFiles(fs){var f=null;for(var i=0;i<fs.length&&!f;i++)if(DROP_TYPES.test(fs[i].name))f=fs[i];
+ st.hint=null;st.browse=false;
+ if(!f)st.note='<b>'+esc(fs[0].name)+'</b> isn’t an impulse response Drenched can load. Drop a WAV, AIFF, FLAC or SOFA file.';
+ else if(dropping)st.note='Still reading <b>'+esc(dropping)+'</b>. Drop the next file once it has loaded.';
+ else if(f.size>DROP_MAX)st.note='<b>'+esc(f.name)+'</b> is too large to drop. Use <b>Load your own IR</b> instead.';
+ else if(!JUCE)st.note='Dropping a file loads it in the plugin.';
+ else sendDropped(f,!!(spOf(st)&&spOf(st).missing));
+ schedule();}
+function onDropFailed(m){dropping=null;st.hint=null;st.note='<b>'+esc(m&&m.name||'The file')+'</b> didn\u2019t reach the plugin whole. Drop it again.';schedule();}
+function base64(bytes){var s='';for(var i=0;i<bytes.length;i+=0x8000)s+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));return btoa(s);}
+/* A session whose file is missing keeps its settings when a file is dropped, as Find does. */
+function sendDropped(f,keep){var id=Date.now()%1e9,at=0;dropping=f.name;
+ JUCE.emitEvent('dropIr',{stage:'start',id:id,name:f.name,size:f.size,keep:keep});st.note='Reading <b>'+esc(f.name)+'</b>…';
+ (function next(){if(at>=f.size){JUCE.emitEvent('dropIr',{stage:'end',id:id});dropping=null;return;}
+  var end=Math.min(f.size,at+DROP_PIECE);
+  f.slice(at,end).arrayBuffer().then(function(b){JUCE.emitEvent('dropIr',{stage:'piece',id:id,data:base64(new Uint8Array(b))});at=end;next();},
+   function(){JUCE.emitEvent('dropIr',{stage:'cancel',id:id});dropping=null;st.note='<b>'+esc(f.name)+'</b> couldn’t be read.';schedule();});})();}
 var init=null;
 try{var d=window.__JUCE__&&window.__JUCE__.initialisationData&&window.__JUCE__.initialisationData.drenched;if(d&&d.length)init=d[0];}catch(_){}
 if(init){setLibrary(init.library);Object.assign(st,{sp:0,bands:SPACES[0].bands.slice(),rbands:SPACES[0].bands.slice(),pre:SPACES[0].pre});applyFromHost(init);if(init.licence)Object.assign(st.licence,init.licence);st.bits=+init.bits||64;}
@@ -499,7 +525,7 @@ else{setLibrary(PREVIEW_LIBRARY);Object.assign(st,{sp:0,bands:SPACES[0].bands.sl
 try{var hs=(location.hash||'').slice(1);if(SKINS.some(function(x){return x.id===hs;}))st.skin=hs;}catch(_){}
 Object.assign(lastSent,paramValues(st));Object.assign(lastUi,uiState(st));
 renderLive();
-if(JUCE){JUCE.addEventListener('state',applyFromHost);JUCE.addEventListener('meters',onMeters);JUCE.addEventListener('capture',onCapture);JUCE.addEventListener('licence',onLicence);JUCE.addEventListener('pasted',onPasted);JUCE.addEventListener('matched',onMatched);JUCE.addEventListener('analysis',onAnalysis);JUCE.addEventListener('spectrum',onSpectrum);JUCE.emitEvent('ready',{});
+if(JUCE){JUCE.addEventListener('state',applyFromHost);JUCE.addEventListener('meters',onMeters);JUCE.addEventListener('capture',onCapture);JUCE.addEventListener('licence',onLicence);JUCE.addEventListener('pasted',onPasted);JUCE.addEventListener('matched',onMatched);JUCE.addEventListener('analysis',onAnalysis);JUCE.addEventListener('dropFailed',onDropFailed);JUCE.addEventListener('spectrum',onSpectrum);JUCE.emitEvent('ready',{});
  // after a reload the plugin has forgotten which displays were open, so it is told again
  dispOpen=false;syncDisplays();}
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);

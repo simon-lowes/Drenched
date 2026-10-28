@@ -230,14 +230,14 @@ th, td, h1 { border-color: #3a3e43; } a { color: #8cb8ec; }
 <h2 id="captured-positions">Captured positions</h2>
 <p>Three rooms were recorded from several places or with several microphone setups: St Paul’s Hall (five recordings), Detmold Konzerthaus (two) and WDR Großer Sendesaal (two). Their positions are listed with the space, with the distance from the stage where known and the microphones used. Click one to move there; the old position rings out as the new one takes over.</p>
 <h2 id="your-own-impulse-responses">Your own impulse responses</h2>
-<p>Choose <strong>Load your own IR…</strong> in the browser. Drenched reads WAV, AIFF, FLAC, SOFA and .amb files: mono, stereo, true stereo (four channels), surround up to 9.1.6, or B-format.</p>
+<p>Choose <strong>Load your own IR…</strong> in the browser, or drop a file anywhere on the window. Drenched reads WAV, AIFF, FLAC, SOFA and .amb files: mono, stereo, true stereo (four channels), surround up to 9.1.6, or B-format.</p>
 <ul>
 <li>The file is resampled to the session rate and its decay is measured into the graph, so you can reshape it, and use Size, like any other space. Anything past 30 seconds is cut.</li>
 <li><strong>B-format</strong> (first-order ambisonics) is recognised by its metadata, the .amb type, or “AmbiX”, “B-format” or “FuMa” in the name. Higher-order AmbiX plays at first order. Any other four-channel file is true stereo.</li>
 <li><strong>Surround files</strong> play their own channels on a surround track and fold down on a stereo one.</li>
 <li><strong>SOFA</strong> files play a pair of sources about 30 degrees either side of the listener as true stereo, or else the source closest to straight ahead. Ambisonic SOFA plays as B-format. The limit is 512 MB.</li>
 </ul>
-<p>The session remembers where the file is, not the audio. If you move it, the space says “File not found”; load it again.</p>
+<p>The session remembers where the file is, not the audio. A dropped file is copied to <strong>Documents/Drenched/Imported</strong> first, since the window can’t tell where it came from, and the session names the copy; files up to 512 MB can be dropped. If you move a file, Drenched looks for it where it most likely went; if it can’t find it, the space says “File not found”: choose <strong>Find</strong> <em>name</em>… in the browser, or drop the file on the window, and your settings stay as they were.</p>
 <h1 id="shaping-the-sound">Shaping the sound</h1>
 <h2 id="main-controls">Main controls</h2>
 <table>
