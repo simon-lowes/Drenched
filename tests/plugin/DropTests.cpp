@@ -225,3 +225,43 @@ TEST_CASE ("A dropped impulse response is kept byte for byte", "[drop]")
 
     dir.deleteRecursively();
 }
+
+#if defined (__linux__) && ! defined (__SANITIZE_ADDRESS__) && ! defined (__SANITIZE_THREAD__)
+#include <fstream>
+#include <sys/resource.h>
+#include <unistd.h>
+
+TEST_CASE ("A drop there isn't the memory for is refused, not a crash", "[drop]")
+{
+    // A 32-bit host has little room to spare, so the largest drop may not fit. Here the
+    // process is limited to a little more memory than it already has.
+    rlimit before {};
+    REQUIRE (getrlimit (RLIMIT_AS, &before) == 0);
+
+    long pages = 0;
+    {
+        std::ifstream statm ("/proc/self/statm");
+        statm >> pages;
+    }
+    REQUIRE (pages > 0);
+
+    const auto used = static_cast<rlim_t> (pages) * static_cast<rlim_t> (sysconf (_SC_PAGESIZE));
+    rlimit tight = before;
+    tight.rlim_cur = used + (64u << 20);
+    DroppedFile dropped;
+    bool refused = false, stillWorks = false;
+
+    {
+        // Back to the old limit however the block is left.
+        struct Restore { rlimit limit; ~Restore() { setrlimit (RLIMIT_AS, &limit); } } restore { before };
+        REQUIRE (setrlimit (RLIMIT_AS, &tight) == 0);
+
+        refused = ! dropped.start (1, "huge.wav", DroppedFile::largest, false);
+        stillWorks = refused && dropped.start (2, "small.wav", 9, false);
+    }
+
+    CHECK (refused);
+    CHECK_FALSE (dropped.isCurrent (1));
+    CHECK (stillWorks);
+}
+#endif

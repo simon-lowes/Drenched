@@ -464,8 +464,18 @@ void DrenchedProcessor::importImpulseResponseAsync (const juce::String& fileName
     loader.addJob ([this, fileName, data = std::move (data), folder, alive, keepSettings]
     {
         juce::String error;
-        const auto file = keepImportedFile (folder, fileName, data, error);
-        auto loaded = file != juce::File() ? readImpulseResponse (file, error) : nullptr;
+        juce::File file;
+        std::shared_ptr<const RecordedResponse> loaded;
+
+        try
+        {
+            file = keepImportedFile (folder, fileName, data, error);
+            loaded = file != juce::File() ? readImpulseResponse (file, error) : nullptr;
+        }
+        catch (const std::exception&) // std::bad_alloc, comparing with a large file kept before
+        {
+            error = fileName + " is too large to load.";
+        }
 
         juce::MessageManager::callAsync ([this, file, alive, loaded = std::move (loaded), error, keepSettings]() mutable
         {
@@ -700,7 +710,14 @@ void DrenchedProcessor::analyseResponseAsync (std::function<void (const juce::va
 
     analyser.addJob ([responses = std::move (responses), alive, done = std::move (done)]() mutable
     {
-        auto result = responses != nullptr ? analysisToVar (analyseResponse (*responses)) : juce::var();
+        juce::var result;
+
+        try
+        {
+            if (responses != nullptr)
+                result = analysisToVar (analyseResponse (*responses));
+        }
+        catch (const std::exception&) {} // std::bad_alloc: the displays stay as they were
 
         juce::MessageManager::callAsync ([alive, done = std::move (done), result = std::move (result)]
         {

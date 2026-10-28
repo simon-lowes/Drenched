@@ -509,7 +509,8 @@ function dropFiles(fs){var f=null;for(var i=0;i<fs.length&&!f;i++)if(DROP_TYPES.
  else if(!JUCE)st.note='Dropping a file loads it in the plugin.';
  else sendDropped(f,!!(spOf(st)&&spOf(st).missing));
  schedule();}
-function onDropFailed(m){dropping=null;st.hint=null;st.note='<b>'+esc(m&&m.name||'The file')+'</b> didn\u2019t reach the plugin whole. Drop it again.';schedule();}
+function onDropFailed(m){dropping=null;st.hint=null;var n='<b>'+esc(m&&m.name||'The file')+'</b>';
+ st.note=m&&m.large?n+' is too large to drop here. Use <b>Load your own IR</b> instead.':n+' didn\u2019t reach the plugin whole. Drop it again.';schedule();}
 function base64(bytes){var s='';for(var i=0;i<bytes.length;i+=0x8000)s+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));return btoa(s);}
 /* A session whose file is missing keeps its settings when a file is dropped, as Find does. */
 function sendDropped(f,keep){var id=Date.now()%1e9,at=0;dropping=f.name;

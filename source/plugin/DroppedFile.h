@@ -2,6 +2,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include <new>
+
 namespace drenched
 {
     /** A file dropped on the interface, as the page sends it: a start naming it and giving its
@@ -14,7 +16,8 @@ namespace drenched
         /** The largest file the page sends; larger ones are loaded with the file chooser. */
         static constexpr juce::int64 largest = 512 * 1024 * 1024;
 
-        /** Starts a drop. False, and nothing kept, for a size that can't be. */
+        /** Starts a drop. False, and nothing kept, for a size that can't be, or one there
+            isn't the memory for (a 32-bit host has little room to spare). */
         bool start (int id, const juce::String& fileName, juce::int64 bytes, bool keepSettings)
         {
             *this = {};
@@ -22,7 +25,16 @@ namespace drenched
             if (bytes < 0 || bytes > largest)
                 return false;
 
-            data.setSize (static_cast<size_t> (bytes), false);
+            try
+            {
+                data.setSize (static_cast<size_t> (bytes), false);
+            }
+            catch (const std::bad_alloc&)
+            {
+                *this = {};
+                return false;
+            }
+
             current = id;
             name = fileName;
             keep = keepSettings;
@@ -38,9 +50,15 @@ namespace drenched
                 return true;
 
             juce::MemoryOutputStream piece;
+            auto decoded = false;
 
-            if (! juce::Base64::convertFromBase64 (piece, base64)
-                || received + piece.getDataSize() > data.getSize())
+            try
+            {
+                decoded = juce::Base64::convertFromBase64 (piece, base64);
+            }
+            catch (const std::bad_alloc&) {}
+
+            if (! decoded || received + piece.getDataSize() > data.getSize())
             {
                 *this = {};
                 return false;
