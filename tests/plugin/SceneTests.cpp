@@ -42,6 +42,25 @@ namespace
         p.getStateInformation (block);
         return block;
     }
+
+    /** Half a second of decaying noise as a stereo WAV file, plate.wav in dir. */
+    juce::File writePlate (const juce::File& dir)
+    {
+        const auto file = dir.getChildFile ("plate.wav");
+        REQUIRE (dir.createDirectory());
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> writer (wav.createWriterFor (file.createOutputStream().release(), 48000.0, 2, 24, {}, 0));
+        REQUIRE (writer != nullptr);
+        juce::AudioBuffer<float> ir (2, 24000);
+        juce::Random random (9);
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int n = 0; n < ir.getNumSamples(); ++n)
+                ir.setSample (ch, n, (random.nextFloat() - 0.5f) * std::exp (-0.0003f * static_cast<float> (n)));
+
+        writer->writeFromAudioSampleBuffer (ir, 0, ir.getNumSamples());
+        return file;
+    }
 }
 
 TEST_CASE ("A scene brings back every setting and the space", "[scenes]")
@@ -198,22 +217,7 @@ TEST_CASE ("Automating the scene in a bounce changes the room at that block", "[
     // different in every bounce. The block the scene changes at plays the new room.
     const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("drenched-scene-bounce");
     dir.deleteRecursively();
-    const auto irFile = dir.getChildFile ("plate.wav");
-
-    {
-        REQUIRE (dir.createDirectory());
-        juce::WavAudioFormat wav;
-        std::unique_ptr<juce::AudioFormatWriter> writer (wav.createWriterFor (irFile.createOutputStream().release(), 48000.0, 2, 24, {}, 0));
-        REQUIRE (writer != nullptr);
-        juce::AudioBuffer<float> ir (2, 24000);
-        juce::Random random (9);
-
-        for (int ch = 0; ch < 2; ++ch)
-            for (int n = 0; n < ir.getNumSamples(); ++n)
-                ir.setSample (ch, n, (random.nextFloat() - 0.5f) * std::exp (-0.0003f * static_cast<float> (n)));
-
-        writer->writeFromAudioSampleBuffer (ir, 0, ir.getNumSamples());
-    }
+    const auto irFile = writePlate (dir);
 
     REQUIRE_FALSE (library::spaces().empty());
     const auto libraryId = library::spaces().back().id;
@@ -314,4 +318,66 @@ TEST_CASE ("A bounce whose host holds the message thread doesn't hang on a scene
     CHECK (seconds[1] < 0.5); // not waited for again
 
     testing::onMessageThread ([&] { p.releaseResources(); });
+}
+
+TEST_CASE ("Going back to a scene's room plays it at once", "[scenes]")
+{
+    // The plugin holds one recorded space and one file of your own at a time. Recordings
+    // played recently also stay prepared (see RecordingCache), so a scene recalled again
+    // changes rooms without waiting for its recording to be read.
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("drenched-scene-again");
+    dir.deleteRecursively();
+    const auto plate = writePlate (dir);
+    const auto otherPlate = dir.getChildFile ("other plate.wav");
+    REQUIRE (plate.copyFileTo (otherPlate));
+    REQUIRE (library::spaces().size() >= 2);
+    const auto firstId = library::spaces()[0].id, secondId = library::spaces()[1].id;
+
+    testing::Plugin plugin;
+    auto& p = *plugin;
+
+    testing::onMessageThread ([&]
+    {
+        chooseSpace (p, firstId);
+        REQUIRE (p.storeScene (0, "First") == 1);
+        chooseSpace (p, secondId);
+        REQUIRE (p.storeScene (0, "Second") == 2);
+
+        for (const auto& file : { plate, otherPlate })
+        {
+            p.getUiState().setProperty (UiIDs::irPath, file.getFullPathName(), nullptr);
+            p.getUiState().setProperty (UiIDs::irName, file.getFileNameWithoutExtension(), nullptr);
+            chooseSpace (p, "user");
+            p.storeScene (0, file.getFileNameWithoutExtension());
+        }
+
+        // Each played once.
+        p.prepareToPlay (48000.0, 512);
+
+        for (int scene = 1; scene <= 4; ++scene)
+            p.recallScene (scene, true);
+    });
+
+    // The tests run no message loop, so anything still to be read in the background never
+    // would be: the room changes only if nothing needs reading.
+    const auto builtAfter = [&p] (int scene)
+    {
+        const auto before = p.responseVersion();
+        testing::onMessageThread ([&] { p.recallScene (scene); });
+
+        for (int i = 0; i < 300 && p.responseVersion() == before; ++i)
+            juce::Thread::sleep (10);
+
+        return p.responseVersion() != before;
+    };
+
+    CHECK (builtAfter (3));
+    CHECK (p.getUiState().getProperty (UiIDs::irPath).toString() == plate.getFullPathName());
+    CHECK (testing::onMessageThread ([&] { return p.impulseResponseInfo(); })["name"].toString() == "plate");
+
+    CHECK (builtAfter (1));
+    CHECK (p.chosenSpaceId() == firstId);
+
+    testing::onMessageThread ([&] { p.releaseResources(); });
+    dir.deleteRecursively();
 }

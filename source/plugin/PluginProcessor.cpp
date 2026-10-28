@@ -3,6 +3,7 @@
 #include "Settings.h"
 #include "ChannelLayouts.h"
 #include "MovedFiles.h"
+#include "RecordingCache.h"
 
 #include <drenched/ClapCapture.h>
 #include <drenched/Mix.h>
@@ -186,12 +187,13 @@ std::optional<ImpulseResponseRequest> DrenchedProcessor::currentRequest (double 
     }
     else if (request.space == librarySpace)
     {
-        // The chosen recording; until it has loaded, the previous sound carries on.
+        // The chosen recording. Until it has loaded the room stays as it was, rather than
+        // playing the last recording with the new space's settings (a scene's, say).
         request.space = 0;
         const std::lock_guard lock (recordedLock);
         request.recorded = libraryResponse;
 
-        if (libraryResponse == nullptr)
+        if (libraryResponse == nullptr || libraryLoadedId != libraryWanted)
             return std::nullopt;
     }
     {
@@ -324,6 +326,18 @@ std::shared_ptr<const RecordedResponse> DrenchedProcessor::readImpulseResponse (
         return nullptr;
     }
 
+    const auto key = RecordingCache::keyOf (file);
+
+    if (auto kept = RecordingCache::shared().find (key))
+        return kept;
+
+    auto response = readImpulseResponseFile (file, error);
+    RecordingCache::shared().add (key, response);
+    return response;
+}
+
+std::shared_ptr<const RecordedResponse> DrenchedProcessor::readImpulseResponseFile (const juce::File& file, juce::String& error)
+{
     if (file.hasFileExtension ("sofa"))
         return readSofaFile (file, error);
 
@@ -361,10 +375,20 @@ void DrenchedProcessor::loadLibrarySpace (const juce::String& id, bool now)
         libraryWanted = id;
     }
 
+    // A space played recently is still prepared.
+    if (auto kept = RecordingCache::shared().find (RecordingCache::keyOf (id)))
+    {
+        const std::lock_guard lock (recordedLock);
+        libraryResponse = std::move (kept);
+        libraryLoadedId = id;
+        return;
+    }
+
     if (now)
     {
         juce::String error;
         auto loaded = library::load (*space, error);
+        RecordingCache::shared().add (RecordingCache::keyOf (id), loaded);
         const std::lock_guard lock (recordedLock);
         libraryResponse = std::move (loaded);
         libraryLoadedId = id;
@@ -387,6 +411,7 @@ void DrenchedProcessor::loadLibrarySpace (const juce::String& id, bool now)
 
         juce::String error;
         auto loaded = library::load (*space, error);
+        RecordingCache::shared().add (RecordingCache::keyOf (id), loaded);
 
         juce::MessageManager::callAsync ([this, id, alive, loaded = std::move (loaded)]() mutable
         {
@@ -405,7 +430,7 @@ void DrenchedProcessor::loadLibrarySpace (const juce::String& id, bool now)
 
             if (const auto rate = preparedRate.load(); rate > 0.0)
                 if (auto request = currentRequest (rate))
-                    builder->request (*request);
+                    builder->request (*request, false); // a choice, not a drag
         });
     });
 }
@@ -1234,7 +1259,8 @@ void DrenchedProcessor::recallScene (int number, bool loadNow)
             ui.setProperty (UiIDs::irPath, now, nullptr);
             ui.setProperty (UiIDs::irName, scene.getProperty (SceneIDs::irName, "").toString(), nullptr);
 
-            if (loadNow)
+            // A file played recently is still prepared, so the scene changes at once.
+            if (loadNow || RecordingCache::shared().find (RecordingCache::keyOf (file)) != nullptr)
             {
                 juce::String error;
                 auto response = readImpulseResponse (file, error);
@@ -1255,13 +1281,14 @@ void DrenchedProcessor::recallScene (int number, bool loadNow)
 
     cacheUiState();
 
-    // Bouncing, the block about to play builds the room itself.
+    // Bouncing, the block about to play builds the room itself. Otherwise it is built at
+    // once: a scene changes rooms on the cut, so there is no value to wait to settle.
     if (const auto rate = preparedRate.load(); rate > 0.0 && ! loadNow)
     {
         updateLatency (rate);
 
         if (auto request = currentRequest (rate))
-            builder->request (*request);
+            builder->request (*request, false);
     }
 }
 

@@ -222,8 +222,10 @@ private:
 
     float predelayMs (float requested);
 
-    /** Decodes and prepares a file. On failure returns null and says why in `error`. */
+    /** Decodes and prepares a file, or finds it already prepared (see RecordingCache). On
+        failure returns null and says why in `error`. */
     static std::shared_ptr<const RecordedResponse> readImpulseResponse (const juce::File& file, juce::String& error);
+    static std::shared_ptr<const RecordedResponse> readImpulseResponseFile (const juce::File& file, juce::String& error);
     static std::shared_ptr<const RecordedResponse> readSofaFile (const juce::File& file, juce::String& error);
 
     /** After a session loads: reloads the impulse response the interface state `ui` names,

@@ -43,8 +43,10 @@ public:
     KernelBuilder (const KernelBuilder&) = delete;
     KernelBuilder& operator= (const KernelBuilder&) = delete;
 
-    /** From any thread but the audio thread. Never blocks for long. */
-    void request (const ImpulseResponseRequest& wanted);
+    /** From any thread but the audio thread. Never blocks for long. A request that
+        doesn't settle (a scene recalled or a space chosen, rather than a control being
+        dragged) builds without waiting for the value to rest. */
+    void request (const ImpulseResponseRequest& wanted, bool settle = true);
 
     /** Builds and submits on the calling thread, blocking until done. For
         prepareToPlay, so playback starts with the right response. */

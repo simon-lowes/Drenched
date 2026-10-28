@@ -83,19 +83,27 @@ KernelBuilder::~KernelBuilder()
     freeRetired();
 }
 
-void KernelBuilder::request (const ImpulseResponseRequest& wanted)
+void KernelBuilder::request (const ImpulseResponseRequest& wanted, bool settle)
 {
     {
         const std::lock_guard lock (mutex);
+        const auto now = std::chrono::steady_clock::now();
 
         if (pending == wanted)
-            return;
+        {
+            if (settle)
+                return;
 
-        if (! pending.has_value() && built == wanted)
-            return;
+            pendingSince = now - debounceTime; // already settled
+        }
+        else
+        {
+            if (! pending.has_value() && built == wanted)
+                return;
 
-        pending = wanted;
-        pendingSince = std::chrono::steady_clock::now();
+            pending = wanted;
+            pendingSince = settle ? now : now - debounceTime;
+        }
     }
 
     wake.notify_all();
