@@ -866,16 +866,17 @@ void DrenchedProcessor::pollCapture()
             {
                 if (clap)
                 {
-                    file = writeCapture (extractClap (capture.recordings(), capture.sampleRate()), capture.sampleRate());
+                    file = writeCapture (extractClap (capture.recordings(), capture.sampleRate()), capture.sampleRate(), settings::capturesFolder());
                 }
                 else
                 {
                     const auto& sweep = *capture.sweep();
-                    file = writeCapture (deconvolveCapture (sweep, capture.recordings(), capture.speakers()), sweep.settings().sampleRate);
+                    file = writeCapture (deconvolveCapture (sweep, capture.recordings(), capture.speakers()), sweep.settings().sampleRate,
+                                         settings::capturesFolder());
                 }
 
                 if (file == juce::File())
-                    error = "The capture couldn't be saved in " + settings::capturesFolder().getFullPathName() + ".";
+                    error = "The capture couldn't be saved in " + settings::capturesFolder().getFullPathName() + ". Is the disk full?";
             }
             catch (const ClapProblem& problem)
             {
@@ -906,42 +907,49 @@ void DrenchedProcessor::pollCapture()
     });
 }
 
-juce::File DrenchedProcessor::writeCapture (const std::vector<std::vector<float>>& channels, double sampleRate)
+juce::File DrenchedProcessor::writeCapture (const std::vector<std::vector<float>>& channels, double sampleRate,
+                                           const juce::File& folder)
 {
-    const auto folder = settings::capturesFolder();
-
-    if (! folder.createDirectory())
+    if (channels.empty() || channels.front().empty() || folder.createDirectory().failed())
         return {};
+
+    // Made in memory and written in one go, so a full disk can't leave half a capture
+    // behind looking like a whole one: the WAV header is only finished as the writer closes,
+    // and a file stream's write errors don't reach the writer.
+    juce::MemoryBlock data;
+
+    {
+        juce::WavAudioFormat wav;
+        const auto options = juce::AudioFormatWriterOptions{}
+                                 .withSampleRate (sampleRate)
+                                 .withNumChannels (static_cast<int> (channels.size()))
+                                 .withBitsPerSample (32)
+                                 .withSampleFormat (juce::AudioFormatWriterOptions::SampleFormat::floatingPoint);
+
+        std::unique_ptr<juce::OutputStream> stream = std::make_unique<juce::MemoryOutputStream> (data, false);
+        auto writer = wav.createWriterFor (stream, options);
+
+        if (writer == nullptr)
+            return {};
+
+        std::vector<const float*> pointers;
+
+        for (const auto& c : channels)
+            pointers.push_back (c.data());
+
+        if (! writer->writeFromFloatArrays (pointers.data(), static_cast<int> (pointers.size()), static_cast<int> (channels.front().size())))
+            return {};
+    }
 
     const auto file = folder.getNonexistentChildFile ("Capture " + juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H-%M-%S"),
                                                       ".wav", false);
 
-    std::unique_ptr<juce::OutputStream> stream = file.createOutputStream();
-
-    if (stream == nullptr)
+    if (! file.replaceWithData (data.getData(), data.getSize()))
+    {
+        file.deleteFile();
         return {};
+    }
 
-    juce::WavAudioFormat wav;
-    const auto options = juce::AudioFormatWriterOptions{}
-                             .withSampleRate (sampleRate)
-                             .withNumChannels (static_cast<int> (channels.size()))
-                             .withBitsPerSample (32)
-                             .withSampleFormat (juce::AudioFormatWriterOptions::SampleFormat::floatingPoint);
-
-    auto writer = wav.createWriterFor (stream, options);
-
-    if (writer == nullptr)
-        return {};
-
-    std::vector<const float*> pointers;
-
-    for (const auto& c : channels)
-        pointers.push_back (c.data());
-
-    if (! writer->writeFromFloatArrays (pointers.data(), static_cast<int> (pointers.size()), static_cast<int> (channels.front().size())))
-        return {};
-
-    writer.reset();
     return file;
 }
 
