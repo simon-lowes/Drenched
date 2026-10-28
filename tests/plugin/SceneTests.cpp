@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <functional>
 #include <cmath>
 #include <thread>
 
@@ -377,6 +378,136 @@ TEST_CASE ("Going back to a scene's room plays it at once", "[scenes]")
 
     CHECK (builtAfter (1));
     CHECK (p.chosenSpaceId() == firstId);
+
+    testing::onMessageThread ([&] { p.releaseResources(); });
+    dir.deleteRecursively();
+}
+
+TEST_CASE ("A scene whose file is still being read leaves the room as it was", "[scenes]")
+{
+    // A file not played recently is read in the background. Until it has been, the room
+    // stays as it was, rather than playing the last file with the new scene's settings.
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("drenched-scene-reading");
+    dir.deleteRecursively();
+    const auto plate = writePlate (dir);
+    const auto unplayed = dir.getChildFile ("unplayed plate.wav"), later = dir.getChildFile ("later plate.wav");
+    REQUIRE (plate.copyFileTo (unplayed));
+    REQUIRE (plate.copyFileTo (later));
+    REQUIRE (! library::spaces().empty());
+    const auto spaceId = library::spaces()[0].id;
+
+    testing::Plugin plugin;
+    auto& p = *plugin;
+
+    testing::onMessageThread ([&]
+    {
+        for (const auto& file : { plate, unplayed, later })
+        {
+            p.getUiState().setProperty (UiIDs::irPath, file.getFullPathName(), nullptr);
+            p.getUiState().setProperty (UiIDs::irName, file.getFileNameWithoutExtension(), nullptr);
+            chooseSpace (p, "user");
+            set (p, ParamIDs::size, file == plate ? 100.0f : 150.0f);
+            p.storeScene (0, file.getFileNameWithoutExtension()); // 1, 2, 3
+        }
+
+        chooseSpace (p, spaceId);
+        REQUIRE (p.storeScene (0, "Recorded") == 4);
+
+        p.prepareToPlay (48000.0, 512);
+        p.recallScene (1, true);
+    });
+
+    // The tests run no message loop, so the background read never comes back by itself:
+    // sceneImpulseResponseRead below stands in for it.
+    const auto builtAfter = [&p] (const std::function<void()>& change)
+    {
+        const auto before = p.responseVersion();
+        testing::onMessageThread (change);
+
+        for (int i = 0; i < 300 && p.responseVersion() == before; ++i)
+            juce::Thread::sleep (10);
+
+        return p.responseVersion() != before;
+    };
+
+    const auto read = [&p] (const juce::File& file)
+    {
+        juce::String error;
+        auto loaded = DrenchedProcessor::readImpulseResponse (file, error);
+        REQUIRE (loaded != nullptr);
+        p.sceneImpulseResponseRead (file, std::move (loaded), error);
+    };
+
+    // Until the builder has finished with everything asked of it so far.
+    const auto settle = [&p]
+    {
+        for (auto seen = p.responseVersion();;)
+        {
+            juce::Thread::sleep (300);
+
+            if (const auto now = p.responseVersion(); now != seen)
+                seen = now;
+            else
+                return;
+        }
+    };
+
+    REQUIRE (builtAfter ([&] { p.recallScene (1); }));
+    settle();
+
+    CHECK_FALSE (builtAfter ([&] { p.recallScene (2); }));
+    CHECK (near (valueOf (p, ParamIDs::size), 150.0f));
+    CHECK (p.getUiState().getProperty (UiIDs::irName).toString() == "unplayed plate");
+
+    CHECK (builtAfter ([&] { read (unplayed); }));
+    CHECK (testing::onMessageThread ([&] { return p.impulseResponseInfo(); })["name"].toString() == "unplayed plate");
+
+    SECTION ("another scene chosen meanwhile stays chosen")
+    {
+        testing::onMessageThread ([&]
+        {
+            p.recallScene (3);
+            p.recallScene (4);
+            read (later);
+        });
+
+        CHECK (p.chosenSpaceId() == spaceId);
+    }
+
+    SECTION ("another file chosen meanwhile stays chosen")
+    {
+        testing::onMessageThread ([&]
+        {
+            p.recallScene (3);
+            p.recallScene (1); // played, so at once
+            read (later);
+        });
+
+        CHECK (p.getUiState().getProperty (UiIDs::irName).toString() == "plate");
+        CHECK (testing::onMessageThread ([&] { return p.impulseResponseInfo(); })["name"].toString() == "plate");
+    }
+
+    SECTION ("a file that can't be read is missing, as in a session")
+    {
+        const auto gone = dir.getChildFile ("gone.wav");
+
+        testing::onMessageThread ([&]
+        {
+            p.getUiState().setProperty (UiIDs::irPath, gone.getFullPathName(), nullptr);
+            p.getUiState().setProperty (UiIDs::irName, "gone", nullptr);
+            chooseSpace (p, "user");
+            REQUIRE (p.storeScene (0, "Gone") == 5);
+            p.recallScene (1);
+            p.recallScene (5);
+        });
+
+        settle();
+        CHECK (builtAfter ([&] { p.sceneImpulseResponseRead (gone, nullptr, "Drenched can't find gone.wav."); }));
+
+        const auto info = testing::onMessageThread ([&] { return p.impulseResponseInfo(); });
+        CHECK (static_cast<bool> (info["missing"]));
+        CHECK (info["name"].toString() == "gone");
+    }
 
     testing::onMessageThread ([&] { p.releaseResources(); });
     dir.deleteRecursively();
