@@ -18,6 +18,7 @@
 #include <limits>
 #include <numbers>
 #include <thread>
+#include <utility>
 #include <vector>
 
 using namespace drenched;
@@ -827,13 +828,16 @@ TEST_CASE ("A reverb that stops making numbers starts again from silence", "[rev
     reverb.prepare (sr);
     reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (sr))));
 
-    // A control that isn't a number poisons the wet path from inside.
+    // A kernel that isn't numbers poisons the wet path from inside.
+    auto poisoned = synthesiseImpulseResponse (hall (sr));
+    poisoned.paths[ImpulseResponseSet::leftToLeft][100] = std::numeric_limits<float>::quiet_NaN();
+    reverb.submit (std::make_unique<ReverbKernel> (poisoned));
+
     auto l = testing::noise (24000, 1), r = testing::noise (24000, 2);
     const auto inL = l;
 
     ReverbControls broken;
     broken.mix = 0.5f;
-    broken.widthPercent = std::numeric_limits<float>::quiet_NaN();
     run (reverb, l, r, broken);
 
     REQUIRE (reverb.recoveries() > 0);
@@ -848,15 +852,80 @@ TEST_CASE ("A reverb that stops making numbers starts again from silence", "[rev
         REQUIRE (std::abs (l[n] - inL[n] * dryGain) < 1.0e-3f);
     }
 
-    // With the control back, the room rings again.
+    // With a sound kernel back, the room rings again: the broken one, handing over, is
+    // dropped at once rather than left to ring out.
+    reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (sr))));
     std::vector<float> l2 (sr, 0.0f), r2 (l2.size(), 0.0f);
-    l2[0] = 1.0f;
+    l2[960] = 1.0f;
     ReverbControls good;
     good.mix = 1.0f;
+    const auto before = reverb.recoveries();
     run (reverb, l2, r2, good);
 
     for (std::size_t n = 0; n < l2.size(); ++n)
         REQUIRE (std::isfinite (l2[n]));
 
-    REQUIRE (energy (l2, 480) > 1.0e-4);
+    REQUIRE (energy (l2, 1440) > 1.0e-4);
+    CHECK (reverb.recoveries() <= before + 1);
+}
+
+TEST_CASE ("A control that isn't a number keeps the last one that was", "[reverb]")
+{
+    constexpr double sr = 48000.0;
+    constexpr auto nan = std::numeric_limits<float>::quiet_NaN(), inf = std::numeric_limits<float>::infinity();
+
+    using Break = void (*) (ReverbControls&);
+    const auto broken = GENERATE (as<Break> {},
+        [] (ReverbControls& c) { c.mix = nan; },             [] (ReverbControls& c) { c.predelayMs = inf; },
+        [] (ReverbControls& c) { c.brightnessDb = nan; },    [] (ReverbControls& c) { c.lowCutHz = -inf; },
+        [] (ReverbControls& c) { c.highCutHz = nan; },       [] (ReverbControls& c) { c.widthPercent = nan; },
+        [] (ReverbControls& c) { c.cloudPercent = inf; },    [] (ReverbControls& c) { c.monoBelowHz = nan; },
+        [] (ReverbControls& c) { c.ducking = nan; },         [] (ReverbControls& c) { c.outputGain = inf; },
+        [] (ReverbControls& c) { c.crossoverHz = nan; },     [] (ReverbControls& c) { c.movement = nan; },
+        [] (ReverbControls& c) { c.movementRateHz = inf; },  [] (ReverbControls& c) { c.eq[0].frequencyHz = nan; },
+        [] (ReverbControls& c) { c.eq[2].gainDb = inf; },    [] (ReverbControls& c) { c.eq[3].q = nan; },
+        [] (ReverbControls& c) { c.speakerLevelDb[0] = nan; }, [] (ReverbControls& c) { c.speakerDelayMs[1] = inf; });
+
+    ReverbControls good;
+    good.mix = 0.5f;
+    good.predelayMs = 12.0f;
+    good.brightnessDb = 2.0f;
+    good.lowCutHz = 80.0f;
+    good.highCutHz = 9000.0f;
+    good.widthPercent = 140.0f;
+    good.monoBelowHz = 120.0f;
+    good.ducking = 0.3f;
+    good.movement = 0.4f;
+    good.eq[2].gainDb = 3.0f;
+
+    // Half a second as asked, then half a second with one control broken, against a
+    // second of the controls as asked.
+    const auto play = [&] (bool breakOne)
+    {
+        ConvolutionReverb reverb;
+        reverb.prepare (sr);
+        reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (sr))));
+        auto l = testing::noise (48000, 3), r = testing::noise (48000, 4);
+        auto c = good;
+
+        for (std::size_t pos = 0; pos < l.size(); pos += 480)
+        {
+            if (breakOne && pos == 24000)
+                broken (c);
+
+            reverb.process (l.data() + pos, r.data() + pos, 480, c);
+        }
+
+        CHECK (reverb.recoveries() == 0);
+        return std::pair { l, r };
+    };
+
+    const auto [wantedL, wantedR] = play (false);
+    const auto [l, r] = play (true);
+
+    for (std::size_t n = 0; n < l.size(); ++n)
+    {
+        REQUIRE (l[n] == wantedL[n]);
+        REQUIRE (r[n] == wantedR[n]);
+    }
 }
