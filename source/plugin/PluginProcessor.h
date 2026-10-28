@@ -107,6 +107,11 @@ public:
     static juce::File keepImportedFile (const juce::File& folder, const juce::String& fileName,
                                         const juce::MemoryBlock& data, juce::String& error);
 
+    /** Writes a captured impulse response as a dated 32-bit float WAV file in folder. {} when
+        it can't be written whole, leaving no file behind. */
+    static juce::File writeCapture (const std::vector<std::vector<float>>& channels, double sampleRate,
+                                    const juce::File& folder);
+
     /** The same for a scene's file: plays it without changing the decay graph, and only if
         the session still wants that file when it has loaded. */
     void loadSceneImpulseResponseAsync (const juce::File& file);
@@ -253,9 +258,6 @@ private:
     /** Bouncing offline: builds the room now if its settings changed. Audio thread. */
     void buildChangedRoom (int numSamples);
     juce::int64 offlineSinceBuild = 0; // samples since buildChangedRoom last built, audio thread
-
-    /** Writes a captured impulse response as a 32-bit float WAV file in the captures folder. */
-    static juce::File writeCapture (const std::vector<std::vector<float>>& channels, double sampleRate);
 
     juce::AudioProcessorValueTreeState state;
 
