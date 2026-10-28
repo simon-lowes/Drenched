@@ -184,6 +184,9 @@ std::optional<ImpulseResponseRequest> DrenchedProcessor::currentRequest (double 
         request.space = 0;
         const std::lock_guard lock (recordedLock);
         request.recorded = recorded;
+
+        if (recordedWanted.isNotEmpty())
+            return std::nullopt;
     }
     else if (request.space == librarySpace)
     {
@@ -526,13 +529,43 @@ void DrenchedProcessor::loadSceneImpulseResponseAsync (const juce::File& file)
 
         juce::MessageManager::callAsync ([this, file, alive, loaded = std::move (loaded), error]() mutable
         {
-            // Another scene, or the person, may have chosen something else meanwhile.
-            if (alive.expired() || getUiState().getProperty (UiIDs::irPath, "").toString() != file.getFullPathName())
-                return;
-
-            applyLoadedImpulseResponse (file, std::move (loaded), error, false);
+            if (! alive.expired())
+                sceneImpulseResponseRead (file, std::move (loaded), error);
         });
     });
+}
+
+void DrenchedProcessor::sceneImpulseResponseRead (const juce::File& file, std::shared_ptr<const RecordedResponse> loaded,
+                                                  const juce::String& error)
+{
+    {
+        const std::lock_guard lock (recordedLock);
+
+        if (recordedWanted == file.getFullPathName())
+            recordedWanted = {};
+    }
+
+    // Another scene, or the person, may have chosen something else meanwhile: another file,
+    // or a space that isn't a file at all.
+    if (getUiState().getProperty (UiIDs::irPath, "").toString() != file.getFullPathName() || chosenSpaceId() != "user")
+        return;
+
+    // A file that can't be read is missing, as it is when a session names one, rather than
+    // leaving the last file playing under the scene's name.
+    if (loaded == nullptr)
+    {
+        const std::lock_guard lock (recordedLock);
+        recorded.reset();
+        recordedPath = file.getFullPathName();
+        recordedMissing = true;
+    }
+
+    applyLoadedImpulseResponse (file, std::move (loaded), error, false);
+
+    // The scene changed rooms on the cut, so there is nothing to wait to settle.
+    if (const auto rate = preparedRate.load(); rate > 0.0)
+        if (auto request = currentRequest (rate))
+            builder->request (*request, false);
 }
 
 //==============================================================================
@@ -736,6 +769,7 @@ void DrenchedProcessor::applyLoadedImpulseResponse (const juce::File& file, std:
         recorded = std::move (loaded);
         recordedPath = file.getFullPathName();
         recordedMissing = false;
+        recordedWanted = {}; // a file chosen meanwhile replaces a scene's still being read
     }
 
     ui.removeProperty (UiIDs::irError, nullptr);
@@ -989,6 +1023,7 @@ void DrenchedProcessor::restoreImpulseResponse (juce::ValueTree ui)
 
     {
         const std::lock_guard lock (recordedLock);
+        recordedWanted = {}; // the session's file, not a scene's
 
         if (path.isEmpty())
         {
@@ -1212,6 +1247,11 @@ void DrenchedProcessor::recallScene (int number, bool loadNow)
 
     followedScene = number;
 
+    {
+        const std::lock_guard lock (recordedLock);
+        recordedWanted = {}; // until this scene's file needs reading
+    }
+
     if (auto* parameter = state.getParameter (ParamIDs::scene); parameter != nullptr && juce::roundToInt (params.scene.load()) != number)
     {
         parameter->beginChangeGesture();
@@ -1268,6 +1308,11 @@ void DrenchedProcessor::recallScene (int number, bool loadNow)
             }
             else
             {
+                {
+                    const std::lock_guard lock (recordedLock);
+                    recordedWanted = now;
+                }
+
                 loadSceneImpulseResponseAsync (file);
             }
         }

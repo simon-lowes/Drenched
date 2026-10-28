@@ -113,8 +113,18 @@ public:
                                     const juce::File& folder);
 
     /** The same for a scene's file: plays it without changing the decay graph, and only if
-        the session still wants that file when it has loaded. */
+        the session still wants that file when it has loaded. Until then the room stays as it
+        was, rather than playing the last file with the scene's settings. */
     void loadSceneImpulseResponseAsync (const juce::File& file);
+
+    /** What loadSceneImpulseResponseAsync does once the file is read: plays it, built at
+        once, if the scene's file is still the one chosen. Message thread only. */
+    void sceneImpulseResponseRead (const juce::File& file, std::shared_ptr<const RecordedResponse> loaded,
+                                   const juce::String& error);
+
+    /** Decodes and prepares a file, or finds it already prepared (see RecordingCache). On
+        failure returns null and says why in `error`. Any thread but the audio thread. */
+    static std::shared_ptr<const RecordedResponse> readImpulseResponse (const juce::File& file, juce::String& error);
 
     /** Match a room: listens to a recording on a background thread for how long the room it
         was made in rings (see RoomListener), then calls `done` on the message thread with the
@@ -222,9 +232,6 @@ private:
 
     float predelayMs (float requested);
 
-    /** Decodes and prepares a file, or finds it already prepared (see RecordingCache). On
-        failure returns null and says why in `error`. */
-    static std::shared_ptr<const RecordedResponse> readImpulseResponse (const juce::File& file, juce::String& error);
     static std::shared_ptr<const RecordedResponse> readImpulseResponseFile (const juce::File& file, juce::String& error);
     static std::shared_ptr<const RecordedResponse> readSofaFile (const juce::File& file, juce::String& error);
 
@@ -359,6 +366,7 @@ private:
     std::shared_ptr<const RecordedResponse> recorded;
     juce::String recordedPath;
     bool recordedMissing = false;
+    juce::String recordedWanted; // a scene's file still being read, which the room waits for
 
     // The chosen library recording, shared with the builder the same way. libraryWanted is
     // the id asked for most recently, so a slow load that is no longer wanted is dropped.
