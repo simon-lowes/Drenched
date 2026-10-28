@@ -1,5 +1,7 @@
 #include "PluginTestHelpers.h"
 
+#include <Library.h>
+
 #include <drenched/Biquad.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -356,5 +358,84 @@ TEST_CASE ("Every parameter is in the list the interface follows", "[session]")
         REQUIRE (withId != nullptr);
         INFO (withId->paramID);
         CHECK (ParamIDs::all().indexOf (withId->paramID) >= 0);
+    }
+}
+
+TEST_CASE ("Every space a session or scene can name is still there, the same", "[sessions]")
+{
+    // Sessions and scenes name their space by id (beta 1's modelled spaces by place in the
+    // list), and a name not found plays the first modelled space instead. So no space that
+    // has shipped may go, move or be renamed, nor its recording change unnoticed:
+    // tests/sessions/spaces.txt lists them all, with a fingerprint of each recording.
+    const auto listFile = sessionsDir().getChildFile ("spaces.txt");
+    const auto fingerprint = [] (const LibrarySpace& space)
+    {
+        auto hash = 14695981039346656037ull; // 64-bit FNV-1a
+
+        for (int i = 0; i < space.size; ++i)
+            hash = (hash ^ static_cast<unsigned char> (space.data[i])) * 1099511628211ull;
+
+        return juce::String::toHexString (static_cast<juce::int64> (hash)).paddedLeft ('0', 16);
+    };
+
+    juce::StringArray listed, lines;
+    lines.addLines (listFile.loadFileAsString());
+    int modelled = 0;
+
+    for (const auto& line : lines)
+    {
+        const auto fields = juce::StringArray::fromTokens (line.upToFirstOccurrenceOf ("#", false, false), " ", "");
+
+        if (fields.isEmpty())
+            continue;
+
+        const auto& id = fields[0];
+        INFO (id);
+        listed.add (id);
+
+        if (id.startsWith ("modelled-"))
+        {
+            // In their original order, for beta 1's sessions.
+            REQUIRE (modelled < static_cast<int> (bundledSpaces.size()));
+            CHECK (id == bundledSpaces[static_cast<size_t> (modelled++)].id);
+            continue;
+        }
+
+        const auto* space = library::find (id);
+        REQUIRE (space != nullptr);
+
+        // A deliberate change of recording: DRENCHED_UPDATE_SESSIONS=1, saying why.
+        if (! updating())
+            CHECK (fields[1] == fingerprint (*space));
+    }
+
+    CHECK (modelled == static_cast<int> (bundledSpaces.size()));
+
+    // A space added since is listed too, so it is kept from now on.
+    juce::StringArray unlisted, rewritten;
+
+    for (const auto& space : library::spaces())
+    {
+        if (! listed.contains (space.id))
+            unlisted.add (space.id);
+
+        rewritten.add (space.id + " " + fingerprint (space));
+    }
+
+    if (updating())
+    {
+        juce::StringArray kept;
+
+        for (const auto& line : lines)
+            if (line.trim().startsWith ("#") || line.startsWith ("modelled-"))
+                kept.add (line);
+
+        kept.addArray (rewritten);
+        listFile.replaceWithText (kept.joinIntoString ("\n") + "\n");
+    }
+    else
+    {
+        INFO ("Not in tests/sessions/spaces.txt (run with DRENCHED_UPDATE_SESSIONS=1 to add): " << unlisted.joinIntoString (", "));
+        CHECK (unlisted.isEmpty());
     }
 }

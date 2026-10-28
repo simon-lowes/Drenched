@@ -1,0 +1,49 @@
+# Every space Drenched has shipped, which sessions and scenes name by id. Never remove,
+# reorder or rename one (see tests/sessions/README.md). Modelled spaces in their order,
+# then each recorded space with a fingerprint (64-bit FNV-1a) of its embedded FLAC file.
+modelled-hall
+modelled-chapel
+modelled-garage
+modelled-room
+stpauls-ortf a833726df667a141
+stpauls-spaced aab9c0caa1d309a3
+stpauls-decca 86a4c7c5a63f0e9f
+stpauls-back 337246b356dbee4e
+stpauls-hall d7f33c88a1f45b9d
+york-jacklyons 9007bf796dd1b219
+spokane-club c4d06dfe349b6382
+detmold-konzerthaus 19040be139c59ae4
+detmold-konzerthaus-mid c1e04ecd73e0f775
+detmold-brahmssaal 082b1336cd5e280f
+arvedi-auditorium eedda820b201e831
+wdr-large-ortf 5f1cb7fcd0ea2d28
+wdr-large-ab 70c630cf99a96b10
+wdr-small-ortf 0bc2c64110197153
+york-dixon bf9cae5b9180a7ae
+detmold-sommertheater 02399279f347799d
+york-minster c339270d334ffe31
+stalbans-lady 27d58d51fe84c840
+patrington-church 9448d15b4506b106
+york-stmargarets c7510b2deb24976a
+heslington-church 458fa14c9db6c406
+aachen-aula 4d0986417a7bb89e
+cremona-church 161b33de057a3aa7
+york-stairwell 186ec09074e3ed48
+york-genesis-studio 353094e77226b0c2
+aachen-office f271bff8151617d4
+elveden-smoking-room 9bc2bd9adec97f29
+aachen-lecture 4df8d54894fb1ca7
+york-guildhall c948734d3d77bb8a
+hamilton-mausoleum 9a541ca2db5f4e44
+tyndall-monument 06c95a03ee51e998
+terrys-warehouse 6ab577641ece230f
+terrys-typing f142ac8fe54691bf
+r1-reactor f50edc8193f6f257
+edinburgh-tunnel 7867bc3694a19ebd
+gillheads-mine 8afd22384e9b3f49
+hoffmann-kiln 9caba80ee163820d
+newgrange 2c55eb432fb82c5e
+york-sports-hall 5c584c69bb9bf20e
+falkland-tennis-court dcb7ec4e5a32f4d4
+york-alcuin-courtyard c1709598772f6888
+trollers-gill e74a7f773b7a3d96

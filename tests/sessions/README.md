@@ -21,6 +21,9 @@ Rules:
   session holds.
 - A new parameter's default must be how the plugin played before it existed, because
   older sessions load with it at its default.
+- `spaces.txt` lists every space that has shipped, which sessions and scenes name by
+  id. Never remove, reorder or rename one. A new space is added to it, and a recording
+  replaced on purpose gets a new fingerprint, both with `DRENCHED_UPDATE_SESSIONS=1`.
 - If a change is meant to alter the sound of old sessions, run the plugin tests with
   `DRENCHED_UPDATE_SESSIONS=1` and commit the rewritten `.expected` files with it,
   saying why.
