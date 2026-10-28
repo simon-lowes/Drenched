@@ -337,3 +337,21 @@ test ('A dropped impulse response reaches the plugin whole, and nothing else is 
     assert.ok (page.url().includes ('index.html'));
     assert.deepEqual (errors, []);
 });
+
+test ('A space this version doesn\'t have stays the session\'s space', async () =>
+{
+    // A session saved by a newer Drenched may name a space this one lacks. The plugin plays
+    // the first modelled space meanwhile, and the session must keep naming the newer one,
+    // or saving it here would lose it. So the page never sends another space in its place.
+    await open ('anodised');
+    await page.evaluate (() => { window.__sent = []; });
+    await fromPlugin ('state', { ui: { spaceId: 'from-a-newer-version' } });
+    await page.waitForTimeout (50);
+    await fromPlugin ('state', { ui: { locks: 'mix' } });
+    await page.click ('[data-act="adv"]');
+    await page.waitForTimeout (50);
+
+    const spaces = await page.evaluate (() => window.__sent.filter (([n, p]) => n === 'ui' && p && 'spaceId' in p));
+    assert.deepEqual (spaces, []);
+    assert.deepEqual (errors, []);
+});

@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <random>
 #include <utility>
 #include <vector>
@@ -327,4 +328,48 @@ TEST_CASE ("Every speaker layout a host can choose plays the room on every speak
         layout.outputBuses.add (out);
         CHECK_FALSE (testing::onMessageThread ([&] { return p->checkBusesLayoutSupported (layout); }));
     }
+}
+
+TEST_CASE ("A host tempo that can't be right leaves synced predelay playing", "[plugin][host]")
+{
+    // Synced predelay snaps to a 64th note at the host's tempo. A host reporting no tempo,
+    // or one that can't be, plays the predelay as set rather than a broken one.
+    struct Head final : juce::AudioPlayHead
+    {
+        double bpm = 120.0;
+
+        juce::Optional<PositionInfo> getPosition() const override
+        {
+            PositionInfo info;
+            info.setBpm (bpm);
+            return info;
+        }
+    };
+
+    constexpr double rate = 48000.0;
+    const auto input = noiseBurst (24000);
+    const auto bpm = GENERATE (std::numeric_limits<double>::infinity(), 1.0e300, std::numeric_limits<double>::quiet_NaN(), -120.0, 0.0);
+    INFO ("bpm " << bpm);
+
+    Head head;
+    testing::Plugin p;
+    p->setPlayHead (&head);
+    prepare (*p, rate, 512);
+
+    testing::onMessageThread ([&]
+    {
+        for (const auto* id : { ParamIDs::predelaySync, ParamIDs::predelay })
+        {
+            auto* parameter = p->getState().getParameter (id);
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 (id == ParamIDs::predelay ? 40.0f : 1.0f));
+        }
+    });
+
+    head.bpm = bpm;
+    const auto got = play (*p, input, [] (int) { return 512; });
+
+    for (auto x : got)
+        REQUIRE (std::isfinite (x));
+
+    REQUIRE (energy (got, got.size() / 2) > 1.0e-6);
 }
