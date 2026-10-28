@@ -15,6 +15,7 @@ add_executable(drenched_plugin_tests
     MovedFileTests.cpp
     DropTests.cpp
     CaptureSaveTests.cpp
+    RecordingCacheTests.cpp
     ClickTests.cpp)
 
 target_link_libraries(drenched_plugin_tests PRIVATE Drenched Catch2::Catch2)

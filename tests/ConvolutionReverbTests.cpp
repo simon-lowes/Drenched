@@ -473,6 +473,38 @@ TEST_CASE ("The builder builds once the request settles and frees retired kernel
     }
 }
 
+TEST_CASE ("A request that needn't settle is built at once", "[reverb][builder]")
+{
+    // A scene recalled or a space chosen is a single change, not a control being dragged,
+    // so it shouldn't wait for the value to rest.
+    ConvolutionReverb reverb;
+    reverb.prepare (48000.0);
+
+    KernelBuilder builder (reverb, std::chrono::seconds (30));
+    auto request = hall (48000.0);
+    builder.buildNow (request);
+
+    const auto waitFor = [&builder] (const ImpulseResponseRequest& wanted, int milliseconds)
+    {
+        for (int i = 0; i < milliseconds / 10 && builder.lastBuilt() != wanted; ++i)
+            std::this_thread::sleep_for (std::chrono::milliseconds (10));
+
+        return builder.lastBuilt() == wanted;
+    };
+
+    request.decaySeconds[3] = 0.9f;
+    builder.request (request);
+    CHECK_FALSE (waitFor (request, 300));
+
+    // The same request again, now not to settle, goes ahead.
+    builder.request (request, false);
+    CHECK (waitFor (request, 10000));
+
+    request.decaySeconds[3] = 1.7f;
+    builder.request (request, false);
+    CHECK (waitFor (request, 10000));
+}
+
 TEST_CASE ("Freeze holds the room above the crossover, for as long as it is on", "[reverb][freeze]")
 {
     constexpr double sr = 48000.0;
