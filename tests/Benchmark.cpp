@@ -105,7 +105,7 @@ void benchBuild (const char* label, ImpulseResponseRequest request)
 }
 
 void benchPlay (const char* label, ImpulseResponseRequest request, size_t block, double seconds,
-                bool living = false, bool changing = false)
+                bool living = false, bool changing = false, bool silent = false)
 {
     const auto& outputs = request.outputs;
     ConvolutionReverb reverb;
@@ -139,13 +139,25 @@ void benchPlay (const char* label, ImpulseResponseRequest request, size_t block,
         reverb.process (pointers.data(), channels, block, controls);
     }
 
+    // Silent: a track with nothing playing, once the room has died away.
+    if (silent)
+    {
+        for (size_t b = 0; b < (size_t) (12.0 * rate) / block; ++b)
+        {
+            for (size_t c = 0; c < channels; ++c)
+                std::fill (buffers[c].begin(), buffers[c].end(), 0.0f);
+
+            reverb.process (pointers.data(), channels, block, controls);
+        }
+    }
+
     std::vector<double> times (blocks);
     double total = 0.0;
 
     for (size_t b = 0; b < blocks; ++b)
     {
         for (size_t c = 0; c < 2; ++c)
-            for (auto& s : buffers[c]) s = uniform (noise);
+            for (auto& s : buffers[c]) s = silent ? 0.0f : uniform (noise);
 
         // Changing: a new room every quarter second (built untimed, as the builder thread
         // would), so swaps overlap, and freeze toggled every second.
@@ -213,6 +225,9 @@ int main (int argc, char** argv)
     benchPlay ("6 s recording, stereo, living", recorded, 256, seconds, true);
     benchPlay ("6 s recording, stereo, Low CPU", lowCpu, 256, seconds);
     benchPlay ("6 s recording, 7.1.4", recordedSurround, 256, seconds);
+    benchPlay ("6 s recording, stereo, silent", recorded, 256, seconds, false, false, true);
+    benchPlay ("6 s recording, living, silent", recorded, 256, seconds, true, false, true);
+    benchPlay ("6 s recording, 7.1.4, silent", recordedSurround, 256, seconds, false, false, true);
     for (size_t block : { 64, 256 })
         benchPlay ("6 s recording, stereo, changing", recorded, block, seconds, true, true);
     benchPlay ("6 s recording, 7.1.4, changing", recordedSurround, 256, seconds, true, true);

@@ -278,6 +278,8 @@ Click the **Drenched** name in any look to open **Choose a look**. Every value s
 
 Drenched normally runs with no latency. **Low CPU** runs the reverb on about a third of the processing by playing everything about 21 ms late. Your host makes up the delay, so tracks stay in time, but leave it off when you play live through the reverb. It can't be automated, and scenes leave it alone. Bypassing Drenched in your host keeps the same delay, so the dry sound stays in time, and the reverb fades out rather than cutting off.
 
+On a track with nothing playing, Drenched rests once the room has died away, so it takes next to no processing. It wakes the moment sound arrives, with nothing lost.
+
 ## Sessions and automation
 
 - Every setting, the space, locks, the view, the look, the speaker settings, the scenes and the window size are saved with the session.

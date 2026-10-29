@@ -45,6 +45,12 @@ struct ConvolutionWorkWindow
     are left out, which is what costs the most per sample, so the convolution
     runs on far less CPU. It is the same response, delayed by exactly L.
 
+    Silence costs next to nothing: once a stage's input has been silent (exactly
+    zero) for longer than the stage remembers, it does no work until sound
+    arrives again. Its output is what working it out would give, since every
+    buffer it holds is zero by then (a response that isn't all numbers never
+    rests: zero times it isn't zero).
+
     Construction allocates and transforms the impulse responses, so build
     instances away from the audio thread. process() and reset() never
     allocate, lock or wait. */
@@ -71,6 +77,10 @@ public:
     /** Clears all input history. Real-time safe. */
     void reset() noexcept;
 
+    /** Whether the input has been silent long enough that no stage is working:
+        every stage is resting until sound arrives. */
+    bool atRest() const noexcept;
+
     /** Convolves numSamples of input. outputs must hold numOutputs() pointers,
         each to numSamples writable floats; they are overwritten. The input may
         not alias an output. Any numSamples is allowed. */
@@ -84,6 +94,8 @@ private:
     struct Stage;
 
     std::size_t irLength = 0, outputs = 0, delay = 0;
+    std::size_t quiet = 0, restingAfter = 0; // samples of silence in a row, and how many rest every stage
+    bool headRests = true;                   // false for a response that isn't all numbers
     std::vector<DirectConvolver> heads; // none with a latency
     std::vector<std::unique_ptr<Stage>> stages;
 };

@@ -361,6 +361,43 @@ TEST_CASE ("A new room glides in without a click", "[livingtail][movement]")
     CHECK (level - around > 60.0);
 }
 
+TEST_CASE ("A tail that has died away rests, and carries on exactly where it would have been", "[livingtail]")
+{
+    // A tail that played and died away, and one that only ever heard silence, must play
+    // the next sound identically, movement included: resting changes nothing but the
+    // cost. Long enough for the slowest band to fall 200 dB, then the lines to empty.
+    const auto moving = GENERATE (false, true);
+    INFO ("moving " << moving);
+    const auto request = requestFor (0);
+    auto played = tailFor (request), silent = tailFor (request);
+
+    if (moving)
+        for (auto* tail : { &played, &silent })
+            tail->setMovement (0.6f, 0.7f);
+
+    const auto slowest = *std::max_element (request.decaySeconds.begin(), request.decaySeconds.end());
+    const auto quiet = static_cast<std::size_t> ((200.0 / 60.0 * slowest + 1.0) * request.sampleRate);
+    const auto burst = testing::noise (4800, 3), next = testing::noise (4800, 4);
+
+    std::vector<float> first (quiet + 48000, 0.0f), second (first.size(), 0.0f);
+    std::copy (burst.begin(), burst.end(), first.begin());
+    std::copy (next.begin(), next.end(), first.begin() + static_cast<std::ptrdiff_t> (quiet));
+    std::copy (next.begin(), next.end(), second.begin() + static_cast<std::ptrdiff_t> (quiet));
+
+    const auto a = render (played, first, first.size());
+    const auto b = render (silent, second, second.size());
+
+    // Died away to nothing at all...
+    CHECK (std::all_of (a.left.begin() + static_cast<std::ptrdiff_t> (quiet) - 4800, a.left.begin() + static_cast<std::ptrdiff_t> (quiet),
+                        [] (float x) { return x == 0.0f; }));
+
+    // ...and the next sound plays as if nothing had ever been there.
+    CHECK (std::equal (a.left.begin() + static_cast<std::ptrdiff_t> (quiet), a.left.end(), b.left.begin() + static_cast<std::ptrdiff_t> (quiet)));
+    CHECK (std::equal (a.right.begin() + static_cast<std::ptrdiff_t> (quiet), a.right.end(), b.right.begin() + static_cast<std::ptrdiff_t> (quiet)));
+    const auto when = static_cast<double> (quiet) / request.sampleRate;
+    CHECK (energyDb (a.left, when, when + 0.5, request.sampleRate) > -80.0);
+}
+
 TEST_CASE ("Living tail is real-time safe", "[livingtail][realtime]")
 {
     const auto request = requestFor (1);

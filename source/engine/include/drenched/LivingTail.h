@@ -99,6 +99,12 @@ private:
     void readFixed (std::array<float, LivingTailDesign::numLines>& taps) noexcept;
     void readMoving (std::array<float, LivingTailDesign::numLines>& taps) noexcept;
 
+    // Silence costs next to nothing: once only silence has gone round the loop for
+    // longer than a line is long, the loop rests until sound comes in again.
+    bool atRest() const noexcept;
+    void rest (float* const* outputs, std::size_t numOutputs, std::size_t numSamples) noexcept;
+    void keepPhasorsRound() noexcept;
+
     double rate = 48000.0;
     LivingTailDesign current;
     bool frozen = false;
@@ -106,6 +112,7 @@ private:
 
     std::vector<float> buffer; // N lines, each `capacity` long
     std::size_t capacity = 0, mask = 0, write = 0;
+    std::size_t quietWrites = 0; // samples in a row that wrote only silence into every line
 
     // Loop filters, stored shelf by shelf across the lines so the inner loop
     // runs all sixteen lines at once in SIMD. A new design's filters and
