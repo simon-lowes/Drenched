@@ -77,13 +77,17 @@ namespace testing
         return -60.0 / (num / den);
     }
 
-    /** Counts heap allocations made by the current thread while alive. Built on
-        replacement global operator new (AllocationCounter.cpp). */
+    /** Counts heap allocations and frees made by the current thread while alive. Built
+        on replacement global operator new and delete (AllocationCounter.cpp). */
     class AllocationCounter
     {
     public:
         AllocationCounter();
         ~AllocationCounter();
         std::size_t count() const;
+        std::size_t freed() const;
+
+        /** Whether malloc and free are counted too (glibc, without a sanitizer). */
+        static bool seesMalloc() noexcept;
     };
 }

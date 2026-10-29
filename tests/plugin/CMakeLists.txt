@@ -2,6 +2,7 @@
 # and sound the same in this one, and features that live in the plugin rather than the engine.
 add_executable(drenched_plugin_tests
     Main.cpp
+    ${PROJECT_SOURCE_DIR}/tests/AllocationCounter.cpp
     SessionTests.cpp
     MatchTests.cpp
     ChannelLayoutTests.cpp
@@ -16,7 +17,8 @@ add_executable(drenched_plugin_tests
     DropTests.cpp
     CaptureSaveTests.cpp
     RecordingCacheTests.cpp
-    ClickTests.cpp)
+    ClickTests.cpp
+    AudioThreadTests.cpp)
 
 target_link_libraries(drenched_plugin_tests PRIVATE Drenched Catch2::Catch2)
 target_include_directories(drenched_plugin_tests PRIVATE
