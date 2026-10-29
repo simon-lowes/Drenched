@@ -253,7 +253,7 @@ test ('Typed values are read however they are written', async () =>
         ['pre', '0,1 s', 100], ['pre', '.05 s', 50], ['pre', '12 ms', 12],
         ['gate', '1,5 s', 1500], ['gate', '1,200 ms', 1200], ['gate', '1 200', 1200],
         ['bright', '−3,5 dB', -3.5], ['bright', '–2', -2], ['bright', '-.5', -0.5],
-        ['hicut', '8', 8000], ['hicut', '8,5 kHz', 8500], ['hicut', '12,000 Hz', 12000], ['hicut', '12 000', 12000], ['hicut', '800 Hz', 1000],
+        ['hicut', '8', 8000], ['hicut', '8,5 kHz', 8500], ['hicut', '12,000 Hz', 12000], ['hicut', '12 000', 12000], ['hicut', '800 Hz', 1000], ['hicut', '800', 1000],
         ['xover', '0,5 kHz', 500], ['locut', '120', 120], ['dDel', '2,5', 2.5], ['el', '30 / 70', 70],
     ];
 

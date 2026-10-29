@@ -383,10 +383,10 @@ function typedNumbers(raw,thousands){var t=raw.replace(/[\u2212\u2013]/g,'-');
  if(!/\d\.\d/.test(t))t=t.replace(/(\d),(?=\d)/g,'$1.');
  return (t.match(/-?(\d+(\.\d*)?|\.\d+)/g)||[]).map(parseFloat);}
 /* What typed value v is multiplied by for the unit it was typed in, if not the field's own.
-   The high cut shows kHz, so a bare number too small to be Hz is kHz. */
+   The high cut shows kHz, so a bare number too small to be Hz, but not too big to be kHz, is kHz. */
 function typedScale(ty,raw,v){if(/^(pre|gate|attack|dDel|spkDelay)$/.test(ty))return /\d\s*s(ec(ond)?s?)?\b/i.test(raw)&&!/ms|millisec/i.test(raw)?1000:1;
  if(ty==='decay'||ty==='band')return /ms|millisec/i.test(raw)?0.001:1;
- if(/^(hicut|locut|xover|mono|eq\df)$/.test(ty))return /k/i.test(raw)?1000:ty==='hicut'&&v<P.hicut.min&&!/hz/i.test(raw)?1000:1;return 1;}
+ if(/^(hicut|locut|xover|mono|eq\df)$/.test(ty))return /k/i.test(raw)?1000:ty==='hicut'&&v<P.hicut.min&&v*1000<=P.hicut.max&&!/hz/i.test(raw)?1000:1;return 1;}
 live.addEventListener('change',function(e){var t=e.target;
  if(t.matches('input[data-spk]')){var si=+t.getAttribute('data-spk'),lv=t.getAttribute('data-f')==='l',sr=t.value,sn=typedNumbers(sr),cur=speakerOf(st,si).slice();
   if(lv)cur[0]=/off/i.test(sr)?SPK_LEVEL.min:sn.length?clamp(Math.round(sn[0]*10)/10,SPK_LEVEL.min,SPK_LEVEL.max):cur[0];else if(sn.length)cur[1]=clamp(Math.round(sn[0]*typedScale('spkDelay',sr,sn[0])*10)/10,SPK_DELAY.min,SPK_DELAY.max);

@@ -1,10 +1,14 @@
 #pragma once
 
+#include "TypedValues.h"
+
 #include <drenched/WetEqualiser.h>
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <array>
+#include <type_traits>
+#include <utility>
 
 namespace drenched
 {
@@ -50,6 +54,8 @@ namespace ParamIDs
                                                         "decay1k",  "decay2k",  "decay4k",  "decay8k" };
     inline constexpr std::array<const char*, 8> decayNames { "Decay 63 Hz",  "Decay 125 Hz", "Decay 250 Hz", "Decay 500 Hz",
                                                              "Decay 1 kHz",  "Decay 2 kHz",  "Decay 4 kHz",  "Decay 8 kHz" };
+    inline constexpr std::array<const char*, 8> decayShortNames { "Dcy 63", "Dcy 125", "Dcy 250", "Dcy 500",
+                                                                  "Dcy 1k", "Dcy 2k",  "Dcy 4k",  "Dcy 8k" };
 
     // The right-hand side's own decay curve, played while the two sides are unlinked.
     inline constexpr auto decayLink = "decayLink";
@@ -58,12 +64,15 @@ namespace ParamIDs
     inline constexpr std::array<const char*, 8> decayRightNames { "Right decay 63 Hz", "Right decay 125 Hz", "Right decay 250 Hz",
                                                                   "Right decay 500 Hz", "Right decay 1 kHz", "Right decay 2 kHz",
                                                                   "Right decay 4 kHz", "Right decay 8 kHz" };
+    inline constexpr std::array<const char*, 8> decayRightShortNames { "RDcy 63", "RDcy 125", "RDcy 250", "RDcy 500",
+                                                                       "RDcy 1k", "RDcy 2k",  "RDcy 4k",  "RDcy 8k" };
 
     // The wet EQ: a low shelf, four bells and a high shelf. The shelves have no Q.
     inline constexpr std::array<const char*, 6> eqFrequency { "eq1Freq", "eq2Freq", "eq3Freq", "eq4Freq", "eq5Freq", "eq6Freq" };
     inline constexpr std::array<const char*, 6> eqGain { "eq1Gain", "eq2Gain", "eq3Gain", "eq4Gain", "eq5Gain", "eq6Gain" };
     inline constexpr std::array<const char*, 4> eqQ { "eq2Q", "eq3Q", "eq4Q", "eq5Q" };
     inline constexpr std::array<const char*, 6> eqNames { "EQ low", "EQ 2", "EQ 3", "EQ 4", "EQ 5", "EQ high" };
+    inline constexpr std::array<const char*, 6> eqShortNames { "EQ L", "EQ 2", "EQ 3", "EQ 4", "EQ 5", "EQ H" };
 
     /** Every id, in a fixed order, for code that keeps per-parameter state. */
     inline constexpr std::array<const char*, 63> ordered { mix, output, predelay, size, brightness, earlyLate, distance, freeze,
@@ -139,14 +148,71 @@ namespace SceneIDs
     }
 }
 
+/** A parameter as hosts show it. Hosts and control surfaces with room for only a few
+    characters get a short name (a VST3 host's short title holds 8), so no two read the same,
+    and a value typed into the host reads as the interface reads it (see TypedValues.h):
+    "14 kHz" in the high cut, "1.5 s" in the pre-delay, "1,5" for 1.5, "off" for the lowest
+    of a control that turns off there. Text with no number in it gives the default. */
+template <typename Base>
+class Hosted final : public Base
+{
+public:
+    template <typename... Args>
+    explicit Hosted (juce::String shortNameToUse, Args&&... args)
+        : Base (std::forward<Args> (args)...), shortName (std::move (shortNameToUse))
+    {
+    }
+
+    juce::String getName (int maximumStringLength) const override
+    {
+        return this->name.length() <= maximumStringLength ? this->name : shortName.substring (0, maximumStringLength);
+    }
+
+    float getValueForText (const juce::String& text) const override
+    {
+        if constexpr (std::is_same_v<Base, juce::AudioParameterBool>)
+        {
+            return typed::isOn (text) ? 1.0f : 0.0f;
+        }
+        else
+        {
+            const auto& bounds = this->getNormalisableRange();
+            const auto values = typed::numbers (text, bounds.end >= 1000.0f);
+            const auto id = this->getParameterID();
+            const auto across = id == ParamIDs::listenerX || id == ParamIDs::sourceX;
+
+            if (across && text.containsIgnoreCase ("cent"))
+                return this->convertTo0to1 (50.0f);
+
+            if (values.isEmpty())
+            {
+                const auto turnsOff = std::abs (bounds.start) < 1.0e-6f || id == ParamIDs::directLevel;
+                return text.containsIgnoreCase ("off") && turnsOff ? 0.0f : static_cast<const juce::AudioProcessorParameter*> (this)->getDefaultValue();
+            }
+
+            auto typedValue = values.getLast();
+
+            if (across && typed::side (text) != 0)
+                typedValue = 50.0f + static_cast<float> (typed::side (text)) * typedValue / 2.0f;
+            else
+                typedValue *= typed::scaleFor (this->getLabel(), text, typedValue, bounds.start, bounds.end);
+
+            return this->convertTo0to1 (typedValue);
+        }
+    }
+
+    const juce::String shortName;
+};
+
 /** The default decay-by-frequency curve of the first bundled space (Grand Hall), in seconds. */
 inline constexpr std::array<float, 8> defaultDecay { 2.9f, 2.8f, 2.6f, 2.4f, 2.3f, 2.0f, 1.6f, 1.1f };
 
 inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
 {
     using namespace juce;
-    using Float = AudioParameterFloat;
-    using Bool = AudioParameterBool;
+    using Float = Hosted<AudioParameterFloat>;
+    using Bool = Hosted<AudioParameterBool>;
+    using Int = Hosted<AudioParameterInt>;
 
     const auto percent = AudioParameterFloatAttributes().withLabel ("%");
     const auto decibels = AudioParameterFloatAttributes().withLabel ("dB");
@@ -156,19 +222,15 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
 
     // Across the room, 0 at the left wall and 100 at the right, shown from the centre.
     const auto across = AudioParameterFloatAttributes()
-        .withStringFromValueFunction ([] (float v, int)
+        .withStringFromValueFunction ([] (float v, int length)
         {
             const auto off = juce::roundToInt ((v - 50.0f) * 2.0f);
-            return off == 0 ? String ("Centre") : String (std::abs (off)) + "% " + (off < 0 ? "left" : "right");
-        })
-        .withValueFromStringFunction ([] (const String& text)
-        {
-            const auto amount = text.retainCharacters ("0123456789.").getFloatValue();
-            if (text.containsIgnoreCase ("left"))
-                return 50.0f - amount / 2.0f;
-            if (text.containsIgnoreCase ("right"))
-                return 50.0f + amount / 2.0f;
-            return text.containsIgnoreCase ("centre") || text.containsIgnoreCase ("center") ? 50.0f : amount;
+            const auto text = off == 0 ? String ("Centre") : String (std::abs (off)) + "% " + (off < 0 ? "left" : "right");
+
+            if (length <= 0 || text.length() <= length)
+                return text;
+
+            return (off == 0 ? String ("C") : String (std::abs (off)) + "% " + (off < 0 ? "L" : "R")).substring (0, length);
         });
 
     const auto logRange = [] (float lo, float hi, float step)
@@ -182,45 +244,45 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
 
     AudioProcessorValueTreeState::ParameterLayout layout;
 
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::mix, 1 }, "Mix",
+    layout.add (std::make_unique<Float> ("Mix", ParameterID { ParamIDs::mix, 1 }, "Mix",
                                          NormalisableRange<float> (0.0f, 100.0f, 1.0f), 30.0f, percent));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::output, 1 }, "Output",
+    layout.add (std::make_unique<Float> ("Output", ParameterID { ParamIDs::output, 1 }, "Output",
                                          NormalisableRange<float> (-24.0f, 12.0f, 0.1f), 0.0f, decibels));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::predelay, 1 }, "Pre-delay",
+    layout.add (std::make_unique<Float> ("Predelay", ParameterID { ParamIDs::predelay, 1 }, "Pre-delay",
                                          NormalisableRange<float> (0.0f, 250.0f, 1.0f), 18.0f, millis));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::size, 1 }, "Size",
+    layout.add (std::make_unique<Float> ("Size", ParameterID { ParamIDs::size, 1 }, "Size",
                                          NormalisableRange<float> (50.0f, 150.0f, 1.0f), 100.0f, percent));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::brightness, 1 }, "Brightness",
+    layout.add (std::make_unique<Float> ("Bright", ParameterID { ParamIDs::brightness, 1 }, "Brightness",
                                          NormalisableRange<float> (-12.0f, 12.0f, 0.5f), 0.0f, decibels));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::earlyLate, 1 }, "Early/Late",
+    layout.add (std::make_unique<Float> ("Erly/Lte", ParameterID { ParamIDs::earlyLate, 1 }, "Early/Late",
                                          NormalisableRange<float> (0.0f, 100.0f, 1.0f), 55.0f, percent));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::distance, 1 }, "Distance",
+    layout.add (std::make_unique<Float> ("Distance", ParameterID { ParamIDs::distance, 1 }, "Distance",
                                          NormalisableRange<float> (0.0f, 100.0f, 1.0f), 40.0f, percent));
-    layout.add (std::make_unique<Bool> (ParameterID { ParamIDs::freeze, 1 }, "Freeze", false));
-    layout.add (std::make_unique<Bool> (ParameterID { ParamIDs::predelaySync, 1 }, "Pre-delay sync", false));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::crossover, 1 }, "Crossover",
+    layout.add (std::make_unique<Bool> ("Freeze", ParameterID { ParamIDs::freeze, 1 }, "Freeze", false));
+    layout.add (std::make_unique<Bool> ("PD sync", ParameterID { ParamIDs::predelaySync, 1 }, "Pre-delay sync", false));
+    layout.add (std::make_unique<Float> ("X-over", ParameterID { ParamIDs::crossover, 1 }, "Crossover",
                                          logRange (100.0f, 1000.0f, 1.0f), 320.0f, hertz));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::wetLowCut, 1 }, "Wet low cut",
+    layout.add (std::make_unique<Float> ("Low cut", ParameterID { ParamIDs::wetLowCut, 1 }, "Wet low cut",
                                          logRange (20.0f, 1000.0f, 1.0f), 80.0f, hertz));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::wetHighCut, 1 }, "Wet high cut",
+    layout.add (std::make_unique<Float> ("High cut", ParameterID { ParamIDs::wetHighCut, 1 }, "Wet high cut",
                                          logRange (1000.0f, 20000.0f, 10.0f), 14000.0f, hertz));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::width, 1 }, "Width",
+    layout.add (std::make_unique<Float> ("Width", ParameterID { ParamIDs::width, 1 }, "Width",
                                          NormalisableRange<float> (0.0f, 200.0f, 1.0f), 100.0f, percent));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::ducking, 1 }, "Ducking",
+    layout.add (std::make_unique<Float> ("Ducking", ParameterID { ParamIDs::ducking, 1 }, "Ducking",
                                          NormalisableRange<float> (0.0f, 100.0f, 1.0f), 0.0f, percent));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::monoBelow, 1 }, "Mono below",
+    layout.add (std::make_unique<Float> ("Mono lo", ParameterID { ParamIDs::monoBelow, 1 }, "Mono below",
                                          NormalisableRange<float> (0.0f, 500.0f, 1.0f), 0.0f, hertz));
 
     for (size_t band = 0; band < ParamIDs::decay.size(); ++band)
-        layout.add (std::make_unique<Float> (ParameterID { ParamIDs::decay[band], 1 }, ParamIDs::decayNames[band],
+        layout.add (std::make_unique<Float> (ParamIDs::decayShortNames[band], ParameterID { ParamIDs::decay[band], 1 }, ParamIDs::decayNames[band],
                                              logRange (0.1f, 20.0f, 0.01f), defaultDecay[band], seconds));
 
     // Added after the decays so earlier sessions and automation keep their order.
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::living, 1 }, "Living tail",
+    layout.add (std::make_unique<Float> ("Living", ParameterID { ParamIDs::living, 1 }, "Living tail",
                                          NormalisableRange<float> (0.0f, 100.0f, 1.0f), 0.0f, percent));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::movement, 1 }, "Movement",
+    layout.add (std::make_unique<Float> ("Movement", ParameterID { ParamIDs::movement, 1 }, "Movement",
                                          NormalisableRange<float> (0.0f, 100.0f, 1.0f), 20.0f, percent));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::movementRate, 1 }, "Movement rate",
+    layout.add (std::make_unique<Float> ("Mvt rate", ParameterID { ParamIDs::movementRate, 1 }, "Movement rate",
                                          logRange (0.05f, 5.0f, 0.01f), 0.7f, hertz));
 
     // How the response plays: backwards, cut short, or fading in. 0 ms is off.
@@ -231,72 +293,71 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
         return range;
     };
 
-    layout.add (std::make_unique<Bool> (ParameterID { ParamIDs::reverse, 1 }, "Reverse", false));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::gate, 1 }, "Gate",
+    layout.add (std::make_unique<Bool> ("Reverse", ParameterID { ParamIDs::reverse, 1 }, "Reverse", false));
+    layout.add (std::make_unique<Float> ("Gate", ParameterID { ParamIDs::gate, 1 }, "Gate",
                                          skewed (2000.0f, 250.0f), 0.0f, millis));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::attack, 1 }, "Attack",
+    layout.add (std::make_unique<Float> ("Attack", ParameterID { ParamIDs::attack, 1 }, "Attack",
                                          skewed (500.0f, 60.0f), 0.0f, millis));
 
     // The direct sound in the room: its own level (-60 dB removes it), delay and colour.
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::directLevel, 1 }, "Direct level",
+    layout.add (std::make_unique<Float> ("Dir lvl", ParameterID { ParamIDs::directLevel, 1 }, "Direct level",
                                          NormalisableRange<float> (-60.0f, 6.0f, 0.1f), 0.0f, decibels));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::directDelay, 1 }, "Direct delay",
+    layout.add (std::make_unique<Float> ("Dir dly", ParameterID { ParamIDs::directDelay, 1 }, "Direct delay",
                                          NormalisableRange<float> (0.0f, 50.0f, 0.1f), 0.0f, millis));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::directColour, 1 }, "Direct colour",
+    layout.add (std::make_unique<Float> ("Dir col", ParameterID { ParamIDs::directColour, 1 }, "Direct colour",
                                          NormalisableRange<float> (-12.0f, 12.0f, 0.5f), 0.0f, decibels));
 
     // How much each input feeds the opposite side: 0 makes two separate reverbs.
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::crossFeed, 1 }, "Cross-feed",
+    layout.add (std::make_unique<Float> ("X-feed", ParameterID { ParamIDs::crossFeed, 1 }, "Cross-feed",
                                          NormalisableRange<float> (0.0f, 100.0f, 1.0f), 100.0f, percent));
 
     // Where the listener sits and the sound plays from, across the room (the map
     // drags them). Both default to the centre, where earlier versions put them.
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::listenerX, 1 }, "Listener position",
+    layout.add (std::make_unique<Float> ("Listener", ParameterID { ParamIDs::listenerX, 1 }, "Listener position",
                                          NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f, across));
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::sourceX, 1 }, "Source position",
+    layout.add (std::make_unique<Float> ("Source", ParameterID { ParamIDs::sourceX, 1 }, "Source position",
                                          NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f, across));
 
     // Low-CPU mode trades about 21 ms of latency, which the host makes up, for a
     // third of the convolution's cost. Changing latency mid-song is no use to
     // automate, so hosts don't offer it.
-    layout.add (std::make_unique<Bool> (ParameterID { ParamIDs::lowCpu, 1 }, "Low CPU", false,
+    layout.add (std::make_unique<Bool> ("Low CPU", ParameterID { ParamIDs::lowCpu, 1 }, "Low CPU", false,
                                         AudioParameterBoolAttributes().withAutomatable (false)));
 
     // How far the reverb spreads from where the sound is panned: 100 fills the
     // room as captured (how every earlier version played).
-    layout.add (std::make_unique<Float> (ParameterID { ParamIDs::cloudSize, 1 }, "Cloud size",
+    layout.add (std::make_unique<Float> ("Cloud", ParameterID { ParamIDs::cloudSize, 1 }, "Cloud size",
                                          NormalisableRange<float> (0.0f, 100.0f, 1.0f), 100.0f, percent));
 
     // The scene to recall: automating it changes every setting and the space at once.
     // Off (0, how every earlier version played) leaves the settings alone.
-    layout.add (std::make_unique<AudioParameterInt> (ParameterID { ParamIDs::scene, 1 }, "Scene", 0, SceneIDs::maxScenes, 0,
+    layout.add (std::make_unique<Int> ("Scene", ParameterID { ParamIDs::scene, 1 }, "Scene", 0, SceneIDs::maxScenes, 0,
         AudioParameterIntAttributes()
-            .withStringFromValueFunction ([] (int v, int) { return v == 0 ? String ("Off") : "Scene " + String (v); })
-            .withValueFromStringFunction ([] (const String& text) { return text.retainCharacters ("0123456789").getIntValue(); })));
+            .withStringFromValueFunction ([] (int v, int) { return v == 0 ? String ("Off") : "Scene " + String (v); })));
 
     // The wet EQ, flat by default (how every earlier version played).
     for (size_t band = 0; band < WetEqualiser::numBands; ++band)
     {
         const auto& flat = WetEqualiser::flat[band];
-        const String name (ParamIDs::eqNames[band]);
+        const String name (ParamIDs::eqNames[band]), shortName (ParamIDs::eqShortNames[band]);
 
-        layout.add (std::make_unique<Float> (ParameterID { ParamIDs::eqFrequency[band], 1 }, name + " frequency",
+        layout.add (std::make_unique<Float> (shortName + " Hz", ParameterID { ParamIDs::eqFrequency[band], 1 }, name + " frequency",
                                              logRange (20.0f, 20000.0f, 1.0f), flat.frequencyHz, hertz));
-        layout.add (std::make_unique<Float> (ParameterID { ParamIDs::eqGain[band], 1 }, name + " gain",
+        layout.add (std::make_unique<Float> (shortName + " dB", ParameterID { ParamIDs::eqGain[band], 1 }, name + " gain",
                                              NormalisableRange<float> (WetEqualiser::minGainDb, WetEqualiser::maxGainDb, 0.1f),
                                              flat.gainDb, decibels));
 
         if (WetEqualiser::shapeOf (band) == WetEqualiser::Shape::bell)
-            layout.add (std::make_unique<Float> (ParameterID { ParamIDs::eqQ[band - 1], 1 }, name + " Q",
+            layout.add (std::make_unique<Float> (shortName + " Q", ParameterID { ParamIDs::eqQ[band - 1], 1 }, name + " Q",
                                                  logRange (WetEqualiser::minQ, WetEqualiser::maxQ, 0.01f), flat.q));
     }
 
     // One decay curve for both sides unless unlinked (linked is how every earlier
     // version played); unlinked, the decays above are the left side's and these the right's.
-    layout.add (std::make_unique<Bool> (ParameterID { ParamIDs::decayLink, 1 }, "Decay linked", true));
+    layout.add (std::make_unique<Bool> ("Dcy link", ParameterID { ParamIDs::decayLink, 1 }, "Decay linked", true));
 
     for (size_t band = 0; band < ParamIDs::decayRight.size(); ++band)
-        layout.add (std::make_unique<Float> (ParameterID { ParamIDs::decayRight[band], 1 }, ParamIDs::decayRightNames[band],
+        layout.add (std::make_unique<Float> (ParamIDs::decayRightShortNames[band], ParameterID { ParamIDs::decayRight[band], 1 }, ParamIDs::decayRightNames[band],
                                              logRange (0.1f, 20.0f, 0.01f), defaultDecay[band], seconds));
 
     return layout;

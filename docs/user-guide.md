@@ -286,6 +286,7 @@ On a track with nothing playing, Drenched rests once the room has died away, so 
 - Sessions from earlier betas load and sound the same. New controls start at the setting that matches how older versions played.
 - Bouncing offline, changes to the room (decay, size and the other settings that reshape it) take effect at the moment they are automated, so a bounce sounds the same every time. Rebuilding the room makes a bounce with a lot of room automation take a little longer.
 - Every parameter can be automated except Low CPU. Decay is shaped through its eight bands, as hosts see them; the positions, the wet EQ and Scene are all automatable.
+- Values you type into your host's own fields (an automation lane or its parameter list) read as they do in Drenched: "12k", "0.1 s", "1,5", "off" and "20% left" all work. Hosts and control surfaces with room for only a few characters show short names, such as "Dcy 1k" and "RDcy 1k", so no two controls look the same.
 - Your own IR files and captures are files on disk, and a session remembers where. If a file has moved, or the session came from another computer, Drenched looks for it in the same place under your home folder, in the folder you last loaded an IR from, and in your captures. If it still can't find it, open **Spaces** and choose **Find** with the file's name: your decay and other settings stay as the session saved them.
 
 ## 32-bit notes
