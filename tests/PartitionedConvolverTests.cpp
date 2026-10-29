@@ -12,6 +12,7 @@
 #include <cmath>
 #include <random>
 #include <span>
+#include <utility>
 #include <vector>
 
 using drenched::DirectConvolver;
@@ -113,6 +114,68 @@ TEST_CASE ("Long, sparse responses null across the large stages", "[partitioned]
     const auto actual = runInRandomBlocks (conv, input, 5)[0];
 
     REQUIRE (maxDifference (actual, expected) <= 1.0e-4f * peak (expected));
+}
+
+TEST_CASE ("Silence rests every stage and plays exactly what working it out would", "[partitioned]")
+{
+    // Sound, a silence long enough for every stage to rest, sound again starting at an
+    // odd place in each stage's blocks, a silence too short to rest the large stages,
+    // then sound once more: all against the exact sparse reference.
+    const auto length = GENERATE (std::size_t (40000), std::size_t (300000));
+    const auto latency = GENERATE (std::size_t (0), std::size_t (256));
+    INFO ("length " << length << ", latency " << latency);
+    std::vector<float> ir (length, 0.0f);
+    std::mt19937 rng (4);
+    std::uniform_int_distribution<std::size_t> where (0, length - 1);
+    std::uniform_real_distribution<float> value (-1.0f, 1.0f);
+
+    for (int i = 0; i < 60; ++i)
+        ir[where (rng)] = value (rng);
+
+    ir[0] = 1.0f;
+    ir[length - 1] = 0.5f;
+
+    const auto burst = [] (std::size_t n, unsigned seed) { return testing::noise (n, seed); };
+    const auto restLength = 2 * length + 3 * PartitionedConvolver::largestBlock;
+    std::vector<std::pair<std::vector<float>, bool>> parts { { burst (5000, 21), false },
+                                                             { std::vector<float> (restLength, 0.0f), true },
+                                                             { burst (3001, 22), false },
+                                                             { std::vector<float> (5000, 0.0f), false },
+                                                             { burst (777, 23), false },
+                                                             { std::vector<float> (restLength, 0.0f), true } };
+
+    std::vector<float> input;
+
+    for (const auto& [part, rests] : parts)
+        input.insert (input.end(), part.begin(), part.end());
+
+    std::vector<float> expected (input.size(), 0.0f);
+
+    for (std::size_t k = 0; k < length; ++k)
+        if (ir[k] != 0.0f)
+            for (std::size_t n = k + latency; n < input.size(); ++n)
+                expected[n] += ir[k] * input[n - k - latency];
+
+    PartitionedConvolver conv ({ std::span<const float> (ir) }, latency);
+    CHECK (conv.atRest()); // nothing has played yet
+
+    std::vector<float> actual;
+    unsigned seed = 30;
+
+    for (const auto& [part, rests] : parts)
+    {
+        const auto out = runInRandomBlocks (conv, part, seed++)[0];
+        actual.insert (actual.end(), out.begin(), out.end());
+        CHECK (conv.atRest() == rests);
+    }
+
+    REQUIRE (maxDifference (actual, expected) <= 1.0e-4f * peak (expected));
+
+    // At rest the output is silent, exactly.
+    CHECK (std::all_of (actual.end() - 1000, actual.end(), [] (float x) { return x == 0.0f; }));
+
+    conv.reset();
+    CHECK (conv.atRest());
 }
 
 TEST_CASE ("The large stages work out each block during the next, with or without a latency", "[partitioned][latency]")

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <new>
 #include <stdexcept>
@@ -89,7 +90,8 @@ struct PartitionedConvolver::Stage
           setup (pffft_new_setup (static_cast<int> (2 * blockSize), PFFFT_REAL)),
           history (N), work (N), timeDomain (N),
           filters (numOut * P * N), fdl (P * N), acc (numOut * N), outBlock (numOut * B),
-          nextBlock (slack ? numOut * B : 0), pendingInput (slack ? N : 0)
+          nextBlock (slack ? numOut * B : 0), pendingInput (slack ? N : 0),
+          memory ((P + (slack ? 5 : 3)) * B)
     {
         if (setup == nullptr)
             throw std::bad_alloc();
@@ -120,6 +122,10 @@ struct PartitionedConvolver::Stage
         auto bits = std::size_t { 0 };
         while ((std::size_t { 1 } << bits) < N)
             ++bits;
+
+        // Resting is only the same as working it out while every filter is a number:
+        // a response that isn't (0 times it isn't either) never rests.
+        rests = std::all_of (filters.data(), filters.data() + filters.size(), [] (float x) { return std::isfinite (x); });
 
         transformCost = std::max<std::size_t> (1, bits * 3 / 5);
         numTasks = 1 + numOut * (P + 1);
@@ -255,6 +261,20 @@ struct PartitionedConvolver::Stage
         costDone = 0;
     }
 
+    /** For numSamples of silence once the stage holds nothing but silence: every buffer
+        is zero, so working them out would add zeros to zeros. Only the place in the
+        block moves on, as it would have; the multiplies and transforms that would have
+        run so far this block are left to catch up when sound arrives, on spectra that
+        are zero either way. */
+    void rest (std::size_t numSamples) noexcept
+    {
+        newest = (newest + (fill + numSamples) / B) % P;
+        fill = (fill + numSamples) % B;
+        macDone = 0;
+        tasksDone = 0;
+        costDone = 0;
+    }
+
     /** Adds this stage's contribution for numSamples into the outputs. */
     void process (const float* input, float* const* outputs, std::size_t numSamples) noexcept
     {
@@ -307,6 +327,12 @@ struct PartitionedConvolver::Stage
     AlignedFloats history, work, timeDomain, filters, fdl, acc, outBlock, nextBlock, pendingInput;
     std::size_t fill = 0, macDone = 0, newest = 0;
     std::size_t transformCost = 1, numTasks = 0, totalCost = 0, tasksDone = 0, costDone = 0;
+
+    // How many samples of silence in a row leave every buffer zero: the input
+    // window and the P partitions' spectra, the block worked out and (with slack)
+    // the one being worked out, plus a block for where the silence began in one.
+    const std::size_t memory;
+    bool rests = true;
 };
 
 PartitionedConvolver::PartitionedConvolver (const std::vector<std::span<const float>>& impulseResponses,
@@ -369,6 +395,17 @@ PartitionedConvolver::PartitionedConvolver (const std::vector<std::span<const fl
 
         begin = nextBegin;
     }
+
+    restingAfter = heads.empty() ? 0 : headLength;
+
+    for (const auto& ir : impulseResponses)
+        headRests = headRests && std::all_of (ir.begin(), ir.begin() + static_cast<std::ptrdiff_t> (std::min (headLength, ir.size())),
+                                              [] (float x) { return std::isfinite (x); });
+
+    for (const auto& stage : stages)
+        restingAfter = std::max (restingAfter, stage->memory);
+
+    quiet = restingAfter; // nothing has played yet
 }
 
 PartitionedConvolver::~PartitionedConvolver() = default;
@@ -380,19 +417,43 @@ void PartitionedConvolver::reset() noexcept
 
     for (auto& stage : stages)
         stage->reset();
+
+    quiet = restingAfter;
+}
+
+bool PartitionedConvolver::atRest() const noexcept
+{
+    return quiet >= restingAfter && (headRests || heads.empty())
+        && std::all_of (stages.begin(), stages.end(), [] (const auto& stage) { return stage->rests; });
 }
 
 void PartitionedConvolver::process (const float* input, float* const* outputs, std::size_t numSamples) noexcept
 {
-    if (heads.empty())
+    // How much silence ends this input: all of it, or the run after its last sound.
+    auto silentTail = numSamples;
+
+    while (silentTail > 0 && input[silentTail - 1] == 0.0f)
+        --silentTail;
+
+    const auto allSilent = silentTail == 0;
+
+    // The head too rests once its taps hold only silence.
+    if (heads.empty() || (allSilent && headRests && quiet >= headLength))
         for (std::size_t k = 0; k < numOutputs(); ++k)
             std::fill_n (outputs[k], numSamples, 0.0f);
-
-    for (std::size_t k = 0; k < heads.size(); ++k)
-        heads[k].process ({ input, numSamples }, { outputs[k], numSamples });
+    else
+        for (std::size_t k = 0; k < heads.size(); ++k)
+            heads[k].process ({ input, numSamples }, { outputs[k], numSamples });
 
     for (auto& stage : stages)
-        stage->process (input, outputs, numSamples);
+    {
+        if (allSilent && stage->rests && quiet >= stage->memory)
+            stage->rest (numSamples);
+        else
+            stage->process (input, outputs, numSamples);
+    }
+
+    quiet = allSilent ? std::min (quiet + numSamples, restingAfter) : numSamples - silentTail;
 }
 
 } // namespace drenched

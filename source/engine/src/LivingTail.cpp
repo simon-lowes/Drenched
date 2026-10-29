@@ -214,6 +214,7 @@ void LivingTail::reset() noexcept
 
     glideRemaining = 0;
     allpass.fill (0.0f);
+    quietWrites = capacity;
 }
 
 void LivingTail::setShelf (std::size_t shelf, std::size_t line, const Biquad::Coefficients& c) noexcept
@@ -405,6 +406,65 @@ void LivingTail::readMoving (Lines& taps) noexcept
     }
 }
 
+bool LivingTail::atRest() const noexcept
+{
+    // Every line has held only silence for longer than any line is long, nothing is
+    // gliding, and the filters and interpolators hold nothing.
+    if (quietWrites < capacity || glideRemaining > 0 || filterGlideLength > 0 || depthNow != (frozen ? 0.0f : depthTarget))
+        return false;
+
+    for (const auto* state : { &z1, &z2 })
+        for (const auto& shelf : *state)
+            for (auto z : shelf)
+                if (z != 0.0f)
+                    return false;
+
+    if (! std::all_of (allpass.begin(), allpass.end(), [] (float a) { return a == 0.0f; }))
+        return false;
+
+    // Zero times something that isn't a number isn't zero, so such a loop works it out.
+    const auto finite = [] (const auto& lines) { return std::all_of (lines.begin(), lines.end(), [] (float x) { return std::isfinite (x); }); };
+
+    for (const auto* bank : { &now.b0, &now.b1, &now.b2, &now.a1, &now.a2 })
+        for (const auto& shelf : *bank)
+            if (! finite (shelf))
+                return false;
+
+    return finite (now.gain) && std::isfinite (now.output);
+}
+
+void LivingTail::rest (float* const* outputs, std::size_t numOutputs, std::size_t numSamples) noexcept
+{
+    // The loop holds only silence, so working it out would write silence and play it.
+    // Only the movement goes on as it would have, so it carries on where it would be.
+    for (std::size_t k = 0; k < numOutputs; ++k)
+        std::fill_n (outputs[k], numSamples, 0.0f);
+
+    write = (write + numSamples) & mask;
+
+    if (depthNow != 0.0f)
+        for (std::size_t n = 0; n < numSamples; ++n)
+            for (std::size_t i = 0; i < N; ++i)
+            {
+                const auto s = lfoSin[i], c = lfoCos[i];
+                lfoSin[i] = s * rotCos[i] + c * rotSin[i];
+                lfoCos[i] = c * rotCos[i] - s * rotSin[i];
+            }
+
+    keepPhasorsRound();
+}
+
+void LivingTail::keepPhasorsRound() noexcept
+{
+    // Keep the movement phasors on the unit circle.
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        const auto r = 1.0f / std::sqrt (lfoSin[i] * lfoSin[i] + lfoCos[i] * lfoCos[i]);
+        lfoSin[i] *= r;
+        lfoCos[i] *= r;
+    }
+}
+
 void LivingTail::process (const float* inL, const float* inR, float* outL, float* outR, std::size_t numSamples) noexcept
 {
     float* const outputs[] { outL, outR };
@@ -421,6 +481,15 @@ void LivingTail::process (const float* inL, const float* inR, float* const* outp
         for (std::size_t k = 0; k < numOutputs; ++k)
             std::fill_n (outputs[k], numSamples, 0.0f);
 
+        return;
+    }
+
+    const auto silentIn = [numSamples] (const float* x) { return std::all_of (x, x + numSamples, [] (float s) { return s == 0.0f; }); };
+    const auto inputSilent = silentIn (inL) && silentIn (inR);
+
+    if (inputSilent && std::isfinite (scale) && atRest())
+    {
+        rest (outputs, numOutputs, numSamples);
         return;
     }
 
@@ -478,16 +547,34 @@ void LivingTail::process (const float* inL, const float* inR, float* const* outp
         for (std::size_t i = 0; i < N; ++i)
             buffer[i * capacity + write] = 0.25f * v[i] + inLeft[i] * a + inRight[i] * b;
 
+        // While nothing comes in, the dying tail goes to silence once it is far too quiet
+        // to matter (200 dB down, 56 dB under a 24-bit file's quietest step) rather than
+        // after the half a minute or more it takes to fall out of float's range, and the
+        // count runs of how long only silence has gone round the loop.
+        if (inputSilent)
+        {
+            bool wroteSilence = true;
+
+            for (std::size_t i = 0; i < N; ++i)
+            {
+                auto& w = buffer[i * capacity + write];
+
+                if (std::abs (w) < 1.0e-10f)
+                    w = 0.0f;
+
+                wroteSilence = wroteSilence && w == 0.0f;
+            }
+
+            quietWrites = wroteSilence ? std::min (quietWrites + 1, capacity) : 0;
+        }
+
         write = (write + 1) & mask;
     }
 
-    // Keep the movement phasors on the unit circle.
-    for (std::size_t i = 0; i < N; ++i)
-    {
-        const auto r = 1.0f / std::sqrt (lfoSin[i] * lfoSin[i] + lfoCos[i] * lfoCos[i]);
-        lfoSin[i] *= r;
-        lfoCos[i] *= r;
-    }
+    if (! inputSilent)
+        quietWrites = 0;
+
+    keepPhasorsRound();
 
     // Flush state too small to matter, so a dying tail leaves no denormals.
     for (auto* state : { &z1, &z2 })
