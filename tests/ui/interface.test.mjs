@@ -322,6 +322,8 @@ test ('A dropped impulse response reaches the plugin whole, and nothing else is 
 
         window.__fromPlugin ('dropFailed', { name: 'Hall "B".WAV' });
         out.failedNote = st.note;
+        window.__fromPlugin ('dropFailed', { name: 'Huge.wav', large: true });
+        out.largeNote = st.note;
         return out;
     });
 
@@ -334,6 +336,7 @@ test ('A dropped impulse response reaches the plugin whole, and nothing else is 
     assert.equal (result.otherSent, 0);
     assert.match (result.otherNote, /photo\.jpg.*isn.t an impulse response/);
     assert.match (result.failedNote, /Drop it again/);
+    assert.match (result.largeNote, /Huge\.wav.*too large to drop here.*Load your own IR/);
     assert.ok (page.url().includes ('index.html'));
     assert.deepEqual (errors, []);
 });

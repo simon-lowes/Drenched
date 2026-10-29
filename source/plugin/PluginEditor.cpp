@@ -437,6 +437,7 @@ void DrenchedEditor::onDropIr (const juce::var& payload)
         dropped.cancel (id);
         auto reply = std::make_unique<juce::DynamicObject>();
         reply->setProperty ("name", stage == "start" ? payload["name"].toString() : name);
+        reply->setProperty ("large", stage == "start"); // no room for it: the file chooser reads only what it needs
         web.emitEventIfBrowserIsVisible ("dropFailed", juce::var (reply.release()));
     }
 }
