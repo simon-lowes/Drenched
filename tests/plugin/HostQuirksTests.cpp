@@ -455,3 +455,70 @@ TEST_CASE ("A sample rate no audio runs at leaves the plugin playing", "[plugin]
         CHECK (energy (after, 2400) > 1.0e-6);
     }
 }
+
+TEST_CASE ("Hosts are told a tail long enough for every room to die away", "[plugin][host]")
+{
+    // Hosts stop calling a plugin, or end a bounce, once its tail has passed after the
+    // input stops. A tail shorter than the room's would cut the reverb off.
+    struct Room { const char* space; std::vector<std::pair<const char*, float>> values; };
+    std::vector<std::pair<const char*, float>> longest { { ParamIDs::living, 100.0f }, { ParamIDs::size, 150.0f },
+                                                         { ParamIDs::predelay, 250.0f }, { ParamIDs::directDelay, 50.0f } };
+
+    for (const auto* id : ParamIDs::decay)
+        longest.push_back ({ id, 20.0f });
+
+    const std::vector<Room> rooms { { nullptr, {} }, { nullptr, { { ParamIDs::living, 100.0f }, { ParamIDs::predelay, 250.0f } } },
+                                    { "modelled-hall", {} }, { "modelled-hall", longest } };
+
+    for (const auto& room : rooms)
+    {
+        testing::Plugin p;
+        p->setNonRealtime (true);
+        prepare (*p, 48000.0, 512);
+
+        testing::onMessageThread ([&]
+        {
+            if (room.space != nullptr)
+            {
+                p->getUiState().setProperty (UiIDs::spaceId, room.space, nullptr);
+                p->storeScene (8, room.space);
+                p->recallScene (8, true);
+            }
+
+            for (const auto& [id, value] : room.values)
+            {
+                auto* param = dynamic_cast<juce::RangedAudioParameter*> (p->getState().getParameter (id));
+                param->setValueNotifyingHost (param->convertTo0to1 (value));
+            }
+        });
+
+        play (*p, std::vector<float> (48000, 0.0f), [] (int) { return 512; });
+
+        const auto told = p->getTailLengthSeconds();
+        INFO ((room.space != nullptr ? room.space : "new instance") << " with " << room.values.size() << " changes, tail " << told << " s");
+        REQUIRE (std::isfinite (told));
+
+        std::vector<float> click (static_cast<size_t> ((told + 2.0) * 48000.0) + static_cast<size_t> (p->getLatencySamples()), 0.0f);
+        click[0] = 1.0f;
+        const auto out = play (*p, click, [] (int) { return 512; });
+
+        float peak = 0.0f;
+        size_t last = 0;
+
+        for (const auto sample : out)
+            peak = std::max (peak, std::abs (sample));
+
+        // The last sample within 80 dB of the loudest.
+        for (size_t i = 0; i < out.size(); ++i)
+            if (std::abs (out[i]) > peak * 1.0e-4f)
+                last = i;
+
+        CHECK (static_cast<double> (last) <= told * 48000.0 + p->getLatencySamples());
+    }
+
+    testing::Plugin p;
+    prepare (*p, 48000.0, 512);
+    dynamic_cast<juce::RangedAudioParameter*> (p->getState().getParameter (ParamIDs::freeze))->setValueNotifyingHost (1.0f);
+    play (*p, std::vector<float> (4096, 0.0f), [] (int) { return 512; });
+    CHECK (std::isinf (p->getTailLengthSeconds()));
+}

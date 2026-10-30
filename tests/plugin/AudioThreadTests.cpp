@@ -230,6 +230,11 @@ TEST_CASE ("Rooms, scenes, bypass, tempo and captures play without memory taken 
         for (int i = 0; i < 20; ++i)
             host.block (size);
 
+    // Offline, hosts hand over blocks far larger than they prepared for.
+    for (const auto size : { 65536, 1048576 })
+        for (int i = 0; i < 2; ++i)
+            host.block (size);
+
     host.check ("odd block sizes");
 
     testing::onMessageThread ([&]
