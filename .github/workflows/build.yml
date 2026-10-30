@@ -46,7 +46,7 @@ jobs:
       matrix:
         include:
           - name: macOS (Universal)
-            os: macos-14
+            os: macos-15
             artifact: Drenched-macOS
             pluginval: pluginval_macOS.zip
             pluginval_bin: pluginval.app/Contents/MacOS/pluginval
