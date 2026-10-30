@@ -12,7 +12,7 @@ You need macOS 11 or later (Apple Silicon or Intel), or Windows 10 or 11 (32 or 
 
 ### macOS
 
-1. Open the .pkg installer. It is unsigned, so macOS won't open it with a double-click at first:
+1. Open the disk image (.dmg), then the .pkg installer inside it. The installer is unsigned, so macOS won't open it with a double-click at first:
    - On macOS 15 (Sequoia) or later, double-click it once and click **Done** when macOS refuses. Then go to System Settings > Privacy & Security, scroll down to the message about Drenched, click **Open Anyway** and confirm with your password.
    - On macOS 11 to 14, right-click it and choose **Open**, then **Open** again. If macOS still refuses, use **Open Anyway** in System Settings > Privacy & Security as above.
 2. Choose **Customise** if you want to leave out any of the Audio Unit, VST3, CLAP or the app.
@@ -29,7 +29,7 @@ xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/Drenched.vst3
 
 ### Windows
 
-Run the setup program. It is unsigned, so when Windows warns you, choose **More info > Run anyway**. You can install everything or pick the VST3, CLAP and app.
+Run the setup program (.exe). It is unsigned, so when Windows warns you, choose **More info > Run anyway**. You can install everything or pick the VST3, CLAP and app.
 
 If Windows instead says **Smart App Control** blocked it, there is no way past that for an unsigned program. Please tell us: this beta can't install on that PC until Drenched is signed.
 
