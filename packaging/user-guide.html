@@ -134,7 +134,11 @@ th, td, h1 { border-color: #3a3e43; } a { color: #8cb8ec; }
 <p>You need macOS 11 or later (Apple Silicon or Intel), or Windows 10 or 11 (32 or 64-bit).</p>
 <h2 id="macos">macOS</h2>
 <ol type="1">
-<li>Open the .pkg installer. It is unsigned, so right-click it and choose <strong>Open</strong>, then <strong>Open</strong> again. If macOS still refuses, go to System Settings &gt; Privacy &amp; Security and click <strong>Open Anyway</strong>.</li>
+<li>Open the .pkg installer. It is unsigned, so macOS won’t open it with a double-click at first:
+<ul>
+<li>On macOS 15 (Sequoia) or later, double-click it once and click <strong>Done</strong> when macOS refuses. Then go to System Settings &gt; Privacy &amp; Security, scroll down to the message about Drenched, click <strong>Open Anyway</strong> and confirm with your password.</li>
+<li>On macOS 11 to 14, right-click it and choose <strong>Open</strong>, then <strong>Open</strong> again. If macOS still refuses, use <strong>Open Anyway</strong> in System Settings &gt; Privacy &amp; Security as above.</li>
+</ul></li>
 <li>Choose <strong>Customise</strong> if you want to leave out any of the Audio Unit, VST3, CLAP or the app.</li>
 </ol>
 <p>The plug-ins go in <code>/Library/Audio/Plug-Ins</code> (Components, VST3 and CLAP), the app in <code>/Applications</code>, and this guide in <code>/Library/Application Support/Drenched</code>.</p>
