@@ -317,7 +317,7 @@ function changeSpace(i){var old=snap(st),sp=SPACES[i],held=[];st.sp=i;st.bands=s
  ['mix','bright','el','dist'].forEach(function(k){if(st.locks[k])held.push(P[k].l);});
  st.hint=null;st.note='<b>'+esc(sp.name)+'</b> loaded.'+(held.length?' Locked and held: '+held.join(', ')+'.':' Lock a value to hold it when you change space.')+(sp.credit?' Recording: '+esc(sp.credit)+', '+esc(sp.licence)+'.':'');return held;}
 var drag=null,eqTap=null;
-live.addEventListener('pointerdown',function(e){var t=e.target;if(t.closest('input,button'))return;
+live.addEventListener('pointerdown',function(e){var t=e.target;endDrag();if(t.closest('input,button'))return;
  var kn=t.closest('[data-knob]'),lis=t.closest('[data-drag]'),dg=t.closest('svg[data-decay]'),en=t.closest('[data-eqn]');
  if(en){var es=en.closest('svg'),ei=+en.getAttribute('data-eqn'),alt=(e.altKey||e.ctrlKey)&&eqBell(ei),now=Date.now();
   // the page is redrawn between the two clicks, so a double click is counted here: it returns the band to 0 dB
@@ -346,7 +346,10 @@ live.addEventListener('pointermove',function(e){if(!drag)return;
   if(drag.mode==='plan'){st.lx=clamp(Math.round((px-drag.ox)/(drag.rw*drag.sc)*1000)/10,6,94);st.dist=Math.round(distFromM(st,(py-drag.oy)/drag.sc));}else st.dist=Math.round(distFromM(st,(px-drag.ox)/drag.sc));
   st.hint='dist';st.note=null;schedule();}});
 function endDrag(){if(drag){var ids=drag.ids;drag=null;schedule();gesture(ids,false);}}
-live.addEventListener('pointerup',endDrag);live.addEventListener('pointercancel',endDrag);
+/* A drag tells the host its controls are held until it ends, however it ends: let go,
+   cancelled, the pointer taken (a host dialog, a second touch) or the window left. */
+live.addEventListener('pointerup',endDrag);live.addEventListener('pointercancel',endDrag);live.addEventListener('lostpointercapture',endDrag);
+window.addEventListener('blur',endDrag);document.addEventListener('visibilitychange',function(){if(document.hidden)endDrag();});
 /* on a bell, the wheel sets Q */
 live.addEventListener('wheel',function(e){var en=e.target.closest&&e.target.closest('[data-eqn]');if(!en||drag)return;var i=+en.getAttribute('data-eqn');e.preventDefault();if(!eqBell(i)||!e.deltaY)return;
  eqSet(i,'q',st[eqKey(i,'q')]*Math.pow(e.shiftKey?1.015:1.06,e.deltaY<0?1:-1));st.note=null;schedule();},{passive:false});

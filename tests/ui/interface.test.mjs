@@ -229,6 +229,60 @@ test ('A redraw while a field is being edited completes', async () =>
     assert.deepEqual (errors, []);
 });
 
+test ('Every control a drag takes is let go however the drag ends', async () =>
+{
+    // A fresh page: going to the same address again keeps an earlier test's open panels.
+    await page.goto ('about:blank');
+    await open ('anodised');
+
+    // How a drag can end: let go, cancelled, the pointer taken away, the window left, or
+    // a second pointer starting another drag before the first ends.
+    for (const ending of ['pointerup', 'pointercancel', 'lostpointercapture', 'blur', 'second'])
+    {
+        const held = await page.evaluate ((how) =>
+        {
+            const knobs = [...document.querySelectorAll ('[data-knob]')].filter (k => k.getBoundingClientRect().width > 0);
+            if (knobs.length < 2)
+                return { knobs: knobs.length, count: {}, began: false };
+
+            const at = (k, type, dy) =>
+            {
+                const r = k.getBoundingClientRect();
+                k.dispatchEvent (new PointerEvent (type, { bubbles: true, cancelable: true, pointerId: 7, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 + dy }));
+            };
+
+            window.__sent = [];
+            at (knobs[0], 'pointerdown', 0);
+            at (knobs[0], 'pointermove', -20);
+
+            if (how === 'blur')
+                window.dispatchEvent (new Event ('blur'));
+            else if (how === 'second')
+            {
+                at (knobs[1], 'pointerdown', 0);
+                at (knobs[1], 'pointerup', 0);
+            }
+            else
+                at (knobs[0], how, -20);
+
+            // Taken minus let go, for each control the page told the plugin about.
+            const count = {};
+
+            for (const [name, payload] of window.__sent)
+                if (name === 'gesture')
+                    for (const id of payload.ids)
+                        count[id] = (count[id] || 0) + (payload.begin ? 1 : -1);
+
+            return { count, began: window.__sent.some (([name, payload]) => name === 'gesture' && payload.begin) };
+        }, ending);
+
+        assert.ok (held.began, ending + ': the drag never took its control ' + JSON.stringify (held));
+        assert.ok (Object.values (held.count).every (n => n === 0), ending + ' left controls held: ' + JSON.stringify (held.count));
+    }
+
+    assert.deepEqual (errors, []);
+});
+
 test ('Automation that isn\'t a number leaves the controls as they were', async () =>
 {
     await open ('anodised');
