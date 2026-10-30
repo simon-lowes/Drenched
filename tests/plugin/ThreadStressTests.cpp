@@ -400,3 +400,55 @@ TEST_CASE ("The host can load a session from a thread of its own while things ch
     REQUIRE (xml != nullptr);
     CHECK (juce::ValueTree::fromXml (*xml).getChildWithName (UiIDs::tree).getProperty (UiIDs::spaceId).toString() == bundledSpaces.front().id);
 }
+
+TEST_CASE ("The host can prepare the plugin from a thread of its own while things change", "[plugin][stress]")
+{
+    // Some hosts prepare and release plugins away from the message thread (an AU can be
+    // initialised from any thread), while the interface goes on changing things.
+    testing::Plugin plugin;
+    auto& p = *plugin;
+    testing::onMessageThread ([&] { p.prepareToPlay (48000.0, 128); });
+    std::atomic<bool> running { true };
+    std::atomic<int> prepares { 0 };
+    std::thread host ([&]
+    {
+        juce::MidiBuffer midi;
+        while (running.load())
+        {
+            p.prepareToPlay (prepares.load() % 2 == 0 ? 44100.0 : 48000.0, 256);
+            for (int b = 0; b < 20; ++b)
+            {
+                juce::AudioBuffer<float> buffer (2, 256);
+                buffer.clear();
+                buffer.setSample (0, 0, 0.5f);
+                p.processBlock (buffer, midi);
+            }
+            p.releaseResources();
+            prepares.fetch_add (1);
+        }
+    });
+    testing::onMessageThread ([&]
+    {
+        std::vector<juce::String> spaces;
+        for (const auto& space : library::spaces())
+            spaces.push_back (space.id);
+        std::mt19937 rng (5u);
+        std::uniform_real_distribution<float> unit (0.0f, 1.0f);
+        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds (4);
+        for (int step = 0; std::chrono::steady_clock::now() < end; ++step)
+        {
+            switch (step % 4)
+            {
+                case 0: if (! spaces.empty()) p.getUiState().setProperty (UiIDs::spaceId, spaces[rng() % spaces.size()], nullptr); break;
+                case 1: set (p, ParamIDs::brightness, unit (rng)); break;
+                case 2: p.storeScene (1 + static_cast<int> (rng() % 4), {}); break;
+                default: { juce::MemoryBlock saved; p.getStateInformation (saved); } break;
+            }
+            ((juce::Timer&) p).timerCallback();
+        }
+    });
+    running.store (false);
+    host.join();
+    INFO (prepares.load());
+    CHECK (prepares.load() > 0);
+}

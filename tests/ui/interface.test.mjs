@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 
 const page0 = pathToFileURL (path.resolve (path.dirname (fileURLToPath (import.meta.url)), '../../source/ui/index.html')).href;
+// DRENCHED_UI_ACTIONS and DRENCHED_UI_SEED run the random test longer, or on other seeds.
 const actionsPerLook = +(process.env.DRENCHED_UI_ACTIONS || 200);
 
 /** Stands in for JUCE's bridge: records what the page sends, and lets the test send. */
@@ -208,7 +209,7 @@ test ('Random use of every look raises no script errors', async (t) =>
         await t.test (look, async () =>
         {
             await open (look);
-            const last = await randomly (look, 1000 + i);
+            const last = await randomly (look, +(process.env.DRENCHED_UI_SEED || 1000) + i);
             assert.deepEqual (errors, [], 'after: ' + last);
             assert.equal (await page.evaluate (() => window.__ran), undefined, 'a name was shown as markup');
         });
