@@ -69,6 +69,9 @@ public:
         betas before it and need nothing else. */
     static constexpr int stateVersion = 2;
 
+    /** The rates the plugin prepares at: a host's rate outside them is taken as the nearest. */
+    static constexpr double lowestRate = 8000.0, highestRate = 768000.0;
+
     /** Brings a loaded session up to date before it replaces the current state. */
     void migrateState (juce::ValueTree& session) const;
 
