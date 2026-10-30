@@ -764,7 +764,7 @@ juce::var DrenchedProcessor::analysisToVar (const ResponseAnalysis& analysis)
 
 SpectrumTap::Levels DrenchedProcessor::wetSpectrum()
 {
-    const auto rate = getSampleRate();
+    const auto rate = preparedRate.load();
     return reverb.wetSpectrum().read (rate > 0.0 ? rate : 48000.0);
 }
 
@@ -1451,8 +1451,13 @@ bool DrenchedProcessor::isBusesLayoutSupported (const BusesLayout& layouts) cons
     return in == juce::AudioChannelSet::mono() || in == juce::AudioChannelSet::stereo() || in == out;
 }
 
-void DrenchedProcessor::prepareToPlay (double sampleRate, int)
+void DrenchedProcessor::prepareToPlay (double hostRate, int)
 {
+    // A host can report a rate no audio runs at: 0 before its audio has started, or a
+    // value it failed to read. Building a room for that could take forever, so the plugin
+    // prepares at the nearest rate it can play; the host prepares it again before playing.
+    const auto sampleRate = std::isfinite (hostRate) && hostRate > 0.0 ? std::clamp (hostRate, lowestRate, highestRate) : 48000.0;
+
     // A capture can't carry on across new audio settings: the audio thread is stopped now,
     // so the take is dropped and the message thread says why.
     if (capture.state() == CaptureRecorder::State::running)

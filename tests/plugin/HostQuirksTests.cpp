@@ -14,8 +14,8 @@ using namespace drenched;
 
 /*  Hosts call plugins in all sorts of ways: blocks of any size (including none, and larger
     than they promised), audio before the plugin was prepared, the sample rate (8 kHz to
-    384 kHz) or speaker layout changed mid-session. The sound must never depend on how the
-    audio was cut into blocks. */
+    384 kHz, or one no audio runs at) or speaker layout changed mid-session. The sound must
+    never depend on how the audio was cut into blocks. */
 
 namespace
 {
@@ -422,5 +422,36 @@ TEST_CASE ("A block with fewer or more channels than the buses plays without har
             block (false, false);
 
         CHECK (allFinite);
+    }
+}
+
+TEST_CASE ("A sample rate no audio runs at leaves the plugin playing", "[plugin][host]")
+{
+    // Hosts have prepared plugins at 0 Hz before their audio starts, and with a rate they
+    // failed to read. Preparing at 0 Hz used to hang the host while the room was built.
+    for (const auto rate : { 0.0, -48000.0, 1.0, 100.0, 1.0e7, std::numeric_limits<double>::quiet_NaN(),
+                             std::numeric_limits<double>::infinity() })
+    {
+        INFO (rate);
+        testing::Plugin p;
+        prepare (*p, rate, 0);
+
+        std::vector<float> click (48000, 0.0f);
+        click[0] = 1.0f;
+        const auto out = play (*p, click, [] (int) { return 256; });
+
+        bool finite = true;
+
+        for (const auto sample : out)
+            finite = finite && std::isfinite (sample);
+
+        CHECK (finite);
+        CHECK (energy (out, 2400) > 1.0e-6);
+        CHECK (p->getLatencySamples() >= 0);
+
+        // The host's next prepare, at a real rate, plays as usual.
+        prepare (*p, 48000.0, 256);
+        const auto after = play (*p, click, [] (int) { return 256; });
+        CHECK (energy (after, 2400) > 1.0e-6);
     }
 }
