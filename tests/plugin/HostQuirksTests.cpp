@@ -373,3 +373,54 @@ TEST_CASE ("A host tempo that can't be right leaves synced predelay playing", "[
 
     REQUIRE (energy (got, got.size() / 2) > 1.0e-6);
 }
+
+TEST_CASE ("A block with fewer or more channels than the buses plays without harm", "[plugin][host]")
+{
+    // Hosts hand over fewer channels than the buses have when a bus is switched off or a
+    // call only passes on automation, and some hand over spare ones. Playing, bypassed and
+    // capturing a space, only the channels that are there are touched.
+    for (const auto channels : { 0, 1, 3, 13 })
+    {
+        INFO (channels << " channels for stereo buses");
+        testing::Plugin p;
+        prepare (*p, 48000.0, 512);
+        juce::MidiBuffer midi;
+        auto allFinite = true;
+
+        const auto block = [&] (bool bypassed, bool impulses)
+        {
+            juce::AudioBuffer<float> buffer (channels, 512);
+            buffer.clear();
+
+            if (impulses)
+                for (int c = 0; c < channels; ++c)
+                    for (int i = 0; i < 512; i += 50)
+                        buffer.setSample (c, i, 0.5f);
+
+            if (bypassed)
+                p->processBlockBypassed (buffer, midi);
+            else
+                p->processBlock (buffer, midi);
+
+            for (int c = 0; c < channels; ++c)
+                for (int i = 0; i < 512; ++i)
+                    allFinite = allFinite && std::isfinite (buffer.getSample (c, i));
+        };
+
+        for (int b = 0; b < 40; ++b)
+            block (b % 4 == 3, true);
+
+        testing::onMessageThread ([&]
+        {
+            auto options = std::make_unique<juce::DynamicObject>();
+            options->setProperty ("sweepSeconds", 2.0);
+            options->setProperty ("tailSeconds", 1.0);
+            p->startCapture (juce::var (options.release()));
+        });
+
+        for (int b = 0; b < 400; ++b)
+            block (false, false);
+
+        CHECK (allFinite);
+    }
+}

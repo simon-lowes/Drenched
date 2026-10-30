@@ -1512,8 +1512,10 @@ void DrenchedProcessor::render (juce::AudioBuffer<float>& buffer, bool bypassed)
 {
     juce::ScopedNoDenormals noDenormals;
 
-    const auto numInputs = getTotalNumInputChannels();
-    const auto numOutputs = getTotalNumOutputChannels();
+    // A host can hand over fewer channels than the buses have (a bus switched off, a call
+    // only to pass on automation): only the channels that are there are read or written.
+    const auto numInputs = std::min (getTotalNumInputChannels(), buffer.getNumChannels());
+    const auto numOutputs = std::min (getTotalNumOutputChannels(), buffer.getNumChannels());
     const auto numSamples = buffer.getNumSamples();
 
     const auto notePeak = [this, &buffer, numSamples] (size_t slot, int numChannels)
