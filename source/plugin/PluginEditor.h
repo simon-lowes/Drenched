@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DroppedFile.h"
+#include "HeldControls.h"
 #include "PluginProcessor.h"
 
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -77,7 +78,7 @@ private:
     std::atomic<bool> uiDirty { true };
     std::atomic<bool> settingFromUi { false };
     bool pageReady = false;
-    std::set<juce::String> activeGestures;
+    HeldControls held { state };
     std::array<float, 4> meterDb { -60.0f, -60.0f, -60.0f, -60.0f };
     std::array<float, maxChannels> speakerDb = [] { std::array<float, maxChannels> a {}; a.fill (-60.0f); return a; }();
     bool metersWereLive = false;

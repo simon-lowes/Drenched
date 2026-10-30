@@ -307,6 +307,8 @@ void DrenchedEditor::sendFullState()
 //==============================================================================
 void DrenchedEditor::onReady (const juce::var&)
 {
+    // A page that reloaded mid-drag can't end that drag.
+    held.releaseAll();
     pageReady = true;
     sendFullState();
     startTimerHz (25);
@@ -323,7 +325,7 @@ void DrenchedEditor::onParams (const juce::var& payload)
         if (parameter == nullptr || ! (value.isDouble() || value.isInt() || value.isInt64()))
             return;
 
-        const auto inGesture = activeGestures.count (id) > 0;
+        const auto inGesture = held.isHeld (id);
 
         if (! inGesture)
             parameter->beginChangeGesture();
@@ -346,16 +348,10 @@ void DrenchedEditor::onGesture (const juce::var& payload)
     {
         for (const auto& idVar : *array)
         {
-            const auto id = idVar.toString();
-            auto* parameter = state.getParameter (id);
-
-            if (parameter == nullptr)
-                continue;
-
-            if (begin && activeGestures.insert (id).second)
-                parameter->beginChangeGesture();
-            else if (! begin && activeGestures.erase (id) > 0)
-                parameter->endChangeGesture();
+            if (begin)
+                held.hold (idVar.toString());
+            else
+                held.release (idVar.toString());
         }
     }
 }
