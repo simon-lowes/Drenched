@@ -46,7 +46,7 @@ jobs:
       matrix:
         include:
           - name: macOS (Universal)
-            os: macos-14
+            os: macos-15
             artifact: Drenched-macOS
             pluginval: pluginval_macOS.zip
             pluginval_bin: pluginval.app/Contents/MacOS/pluginval
@@ -245,12 +245,30 @@ jobs:
           killall -9 AudioComponentRegistrar 2>/dev/null || true
           auval -strict -v aufx Drn1 Drnc
 
-      - name: Upload installer (macOS)
+      # What testers download: a disk image holding the package and the user guide, since
+      # the guide is otherwise only there once Drenched is installed.
+      - name: Build disk image (macOS)
         if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v4
+        shell: bash
+        run: |
+          VERSION=$(sed -n 's/^project(Drenched VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          mkdir dmg
+          cp "Drenched-$VERSION-macOS.pkg" dmg/
+          cp packaging/user-guide.html "dmg/User guide.html"
+          hdiutil create -volname "Drenched $VERSION" -srcfolder dmg -fs HFS+ -format UDZO -ov "Drenched-$VERSION-macOS.dmg"
+          hdiutil verify "Drenched-$VERSION-macOS.dmg"
+          hdiutil attach -nobrowse -mountpoint dmg-check "Drenched-$VERSION-macOS.dmg"
+          ls -la dmg-check
+          [ -f "dmg-check/Drenched-$VERSION-macOS.pkg" ] && [ -f "dmg-check/User guide.html" ] || { echo "disk image is missing a file"; exit 1; }
+          hdiutil detach dmg-check
+
+      # Uploaded as the file itself rather than zipped, so it downloads as a .dmg.
+      - name: Upload disk image (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v7
         with:
-          name: Drenched-macOS-Installer
-          path: Drenched-*-macOS.pkg
+          path: Drenched-*-macOS.dmg
+          archive: false
           if-no-files-found: error
 
   linux-i686:
@@ -391,8 +409,9 @@ jobs:
           if ($left.Count -ne 0) { Write-Error "left behind: $($left -join ', ')"; exit 1 }
           Write-Host "Uninstalled cleanly"
 
-      - uses: actions/upload-artifact@v4
+      # Uploaded as the file itself rather than zipped, so it downloads as an .exe.
+      - uses: actions/upload-artifact@v7
         with:
-          name: Drenched-Windows-Installer
           path: installer/*.exe
+          archive: false
           if-no-files-found: error
