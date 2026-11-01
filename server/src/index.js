@@ -179,6 +179,16 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
         {
             const licences = await store.listByOrder (data.transaction_id);
 
+            // A partial refund gives only an amount, never which copies, and is as often a
+            // goodwill discount: the numbers stay, marked for support to look at.
+            if (data.action === 'refund' && data.type === 'partial')
+            {
+                for (const l of licences)
+                    await store.updateLicence (l.key, { note: `partial refund ${data.id ?? ''}`.trim() });
+
+                return json (200, { ok: true, revoked: 0, flagged: licences.length });
+            }
+
             for (const l of licences)
                 await store.updateLicence (l.key, { revoked: true, note: `${data.action} ${data.id ?? ''}`.trim() });
 

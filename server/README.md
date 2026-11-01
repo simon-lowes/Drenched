@@ -24,10 +24,10 @@ and it has no dependencies.
 5. **Refund or chargeback.** Paddle's approved `adjustment` withdraws the
    numbers, so they can't activate new computers. Computers already activated
    keep working, because activation is offline by design. A partial refund
-   withdraws every number of the order too: Paddle gives only an amount, not
-   which copies, and the amount may be a goodwill discount. Support gives back
-   the copies the buyer kept with `POST /v1/admin/licences/{key}`
-   `{"revoked": false}`. The `/thanks` page then says the numbers were withdrawn.
+   withdraws nothing: Paddle gives only an amount, not which copies, and the
+   amount may be a goodwill discount. The order's numbers are noted
+   `partial refund <adjustment id>`, and support withdraws any refunded copies
+   with `POST /v1/admin/licences/{key}` `{"revoked": true}`. The `/thanks` page then says the numbers were withdrawn.
 
 Paddle retries any answer but 200, 4xx included, up to 60 times over about two
 days. So `/v1/paddle` answers 200 to anything it can never act on (a signed

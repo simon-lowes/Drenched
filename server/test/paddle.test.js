@@ -308,12 +308,12 @@ storeTest ('the checkout page stops showing numbers once they are withdrawn', as
     assert.match (after, /withdrawn/);
 });
 
-storeTest ('a partial refund withdraws every copy of the order, as Paddle does not say which copies it was for', async (setup) =>
+storeTest ('a partial refund keeps every copy of the order and marks it for support', async (setup) =>
 {
     // A partial adjustment names the transaction item and an amount, never a quantity
     // (developer.paddle.com, adjustment.created), and the amount can as well be a goodwill
-    // discount as the price of some copies. So the whole order is withdrawn, and support
-    // gives back the copies the buyer kept (POST /v1/admin/licences/{key} {revoked: false}).
+    // discount as the price of some copies. So nothing is withdrawn; support withdraws the
+    // copies refunded (POST /v1/admin/licences/{key} {revoked: true}).
     const { store, send } = await setup();
     await send (sale ('txn_01h04vsc0qhwtsbsxh3422mmmm', [drenched (3)]));
 
@@ -321,13 +321,16 @@ storeTest ('a partial refund withdraws every copy of the order, as Paddle does n
         type: 'partial', items: [{ id: 'adjitm_1', item_id: 'txnitm_1', type: 'partial', amount: '4900' }],
     });
 
-    assert.deepEqual (await send (partial), { status: 200, body: { ok: true, revoked: 3 } });
+    assert.deepEqual (await send (partial), { status: 200, body: { ok: true, revoked: 0, flagged: 3 } });
     const licences = await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422mmmm');
-    assert.deepEqual (licences.map ((l) => l.revoked), [true, true, true]);
-    assert.ok (licences.every ((l) => l.note === 'refund adj_4'));
+    assert.deepEqual (licences.map ((l) => l.revoked), [false, false, false]);
+    assert.ok (licences.every ((l) => l.note === 'partial refund adj_4'));
 
     // Paddle delivering it again changes nothing more.
-    assert.deepEqual (await send (partial), { status: 200, body: { ok: true, revoked: 3 } });
+    assert.deepEqual (await send (partial), { status: 200, body: { ok: true, revoked: 0, flagged: 3 } });
+
+    // A full refund of the same order afterwards withdraws them all.
+    assert.deepEqual ((await send (refund ('adj_5', 'txn_01h04vsc0qhwtsbsxh3422mmmm'))).body, { ok: true, revoked: 3 });
 });
 
 storeTest ('a refund or chargeback for a transaction never seen is acknowledged and changes nothing', async (setup) =>
