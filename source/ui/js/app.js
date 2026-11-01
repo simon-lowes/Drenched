@@ -265,7 +265,7 @@ st.licence={state:'trial',daysLeft:14,name:'',licence:'',machine:'',page:'',busy
 function onLicence(m){if(!m)return;var was=st.licence.state;st.licence=Object.assign({},st.licence,m);
  if(st.licence.state==='licensed'&&was!=='licensed'){st.licKey='';st.licCode='';st.licOff=false;}schedule();}
 function onPasted(m){if(!m||(m.target!=='licKey'&&m.target!=='licCode'))return;st[m.target]=String(m.text||'').trim();renderLive();
- var f=live.querySelector(m.target==='licKey'?'#lic-key':'#lic-code');if(f){f.focus({preventScroll:true});f.selectionStart=f.selectionEnd=f.value.length;}}
+ var f=live.querySelector(m.target==='licKey'?'#lic-key':'#lic-code');if(f){f.value=st[m.target];f.focus({preventScroll:true});f.selectionStart=f.selectionEnd=f.value.length;}}
 function licenceHTML(){var L=st.licence,busy=!!L.busy,dis=busy?' disabled':'',body;
  var msg='<p class="lmsg'+(L.error?' err':'')+'" role="'+(L.error?'alert':'status')+'">'+esc(L.message||'')+'</p>';
  if(L.state==='licensed'){
@@ -294,12 +294,34 @@ function fit(){var w=live.clientWidth,h=live.clientHeight,sc=Math.min(w/W,h/H),e
 /* Replacing the page blurs an edited field, whose change handler redraws too: that redraw
    waits for this one to finish, as two at once fail. */
 var rendering=false,renderAgain=false;
+/* The control that has the keyboard is kept, not replaced: replacing it would blur a field
+   being typed in, committing half a value, break an input method's composition and make a
+   screen reader announce a new control. It and its ancestors stay; their attributes and
+   everything around them are brought up to date. What someone has typed and not yet entered
+   stays as typed, with its selection; the field the change handler is committing (committed)
+   takes the new, formatted value. Returns false, changing nothing, if the new page has no
+   such control in the same place. */
+var committed=null;
+function keepFocused(a,fid,html){var tmp=document.createElement('div');tmp.innerHTML=html;
+ var k=Array.prototype.indexOf.call(live.querySelectorAll('[data-fid="'+fid+'"]'),a),n=tmp.querySelectorAll('[data-fid="'+fid+'"]')[k];if(!n)return false;
+ var path=[],o=a,m=n;for(;o!==live;o=o.parentNode,m=m.parentNode){if(!m||m===tmp||o.tagName!==m.tagName)return false;path.push([o,m]);}if(m!==tmp)return false;
+ var text=a.matches('input,textarea'),v=a.value,s0=a.selectionStart,s1=a.selectionEnd,all=text&&s0===0&&s1===v.length,typed=text&&a!==committed&&v!==a.defaultValue;
+ var attrs=function(o,m){for(var i=o.attributes.length-1;i>=0;i--)if(!m.hasAttribute(o.attributes[i].name))o.removeAttribute(o.attributes[i].name);
+  for(i=0;i<m.attributes.length;i++){var at=m.attributes[i];if(!(typed&&o===a&&at.name==='value')&&o.getAttribute(at.name)!==at.value)o.setAttribute(at.name,at.value);}};
+ var around=function(o,m,keep,mk){var c=Array.prototype.slice.call(o.childNodes),nc=Array.prototype.slice.call(m.childNodes),at=nc.indexOf(mk);
+  c.forEach(function(x){if(x!==keep)o.removeChild(x);});for(var i=0;i<nc.length;i++)if(i<at)o.insertBefore(nc[i],keep);else if(i>at)o.appendChild(nc[i]);};
+ attrs(a,n);if(!(typed&&a.tagName==='TEXTAREA'))around(a,n,null,null);
+ for(var j=1;j<path.length;j++){attrs(path[j][0],path[j][1]);around(path[j][0],path[j][1],path[j-1][0],path[j-1][1]);}
+ around(live,tmp,path[path.length-1][0],path[path.length-1][1]);
+ if(typed){if(a.value!==v){a.value=v;a.setSelectionRange(s0,s1);}}
+ else if(text&&(a.value!==a.defaultValue||a.value!==v)){a.value=a.defaultValue;if(all)a.select();else a.selectionStart=a.selectionEnd=a.value.length;}
+ return true;}
 function renderLive(){if(rendering){renderAgain=true;return;}rendering=true;try{drawLive();}finally{rendering=false;}if(renderAgain){renderAgain=false;renderLive();}}
 function drawLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAttribute('data-fid'):null,bl=live.querySelector('.brw-list'),blt=bl?bl.scrollTop:0;
  var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.wf)html=html.slice(0,-6)+wfHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';
- live.innerHTML=html;fit();syncDisplays();
+ var kept=!!fid&&keepFocused(a,fid,html);if(!kept)live.innerHTML=html;fit();syncDisplays();
  if(blt){var bl2=live.querySelector('.brw-list');if(bl2)bl2.scrollTop=blt;}
- if(fid){var n=live.querySelector('[data-fid="'+fid+'"]');if(n){n.focus({preventScroll:true});if(n.matches('input,textarea'))n.selectionStart=n.selectionEnd=n.value.length;}}
+ if(fid&&!kept){var n=live.querySelector('[data-fid="'+fid+'"]');if(n){n.focus({preventScroll:true});if(n.matches('input,textarea'))n.selectionStart=n.selectionEnd=n.value.length;}}
  // A dialog keeps the keyboard even when the control that had it is redrawn away.
  if(st.browse&&!live.contains(document.activeElement))brwFocus();
  if((st.lic||st.capture||st.credits||st.spk||st.scn||st.eq||st.wf)&&!live.contains(document.activeElement)){var d=live.querySelector('.cap .cgo:not([disabled])')||live.querySelector('.cap .cx');if(d)d.focus({preventScroll:true});}}
@@ -390,7 +412,7 @@ function typedNumbers(raw,thousands){var t=raw.replace(/[\u2212\u2013]/g,'-');
 function typedScale(ty,raw,v){if(/^(pre|gate|attack|dDel|spkDelay)$/.test(ty))return /\d\s*s(ec(ond)?s?)?\b/i.test(raw)&&!/ms|millisec/i.test(raw)?1000:1;
  if(ty==='decay'||ty==='band')return /ms|millisec/i.test(raw)?0.001:1;
  if(/^(hicut|locut|xover|mono|eq\df)$/.test(ty))return /k/i.test(raw)?1000:ty==='hicut'&&v<P.hicut.min&&v*1000<=P.hicut.max&&!/hz/i.test(raw)?1000:1;return 1;}
-live.addEventListener('change',function(e){var t=e.target;
+function onChange(e){var t=e.target;
  if(t.matches('input[data-spk]')){var si=+t.getAttribute('data-spk'),lv=t.getAttribute('data-f')==='l',sr=t.value,sn=typedNumbers(sr),cur=speakerOf(st,si).slice();
   if(lv)cur[0]=/off/i.test(sr)?SPK_LEVEL.min:sn.length?clamp(Math.round(sn[0]*10)/10,SPK_LEVEL.min,SPK_LEVEL.max):cur[0];else if(sn.length)cur[1]=clamp(Math.round(sn[0]*typedScale('spkDelay',sr,sn[0])*10)/10,SPK_DELAY.min,SPK_DELAY.max);
   while(st.speakers.length<=si)st.speakers.push([0,0]);st.speakers[si]=cur;renderLive();syncUi();return;}
@@ -402,9 +424,11 @@ live.addEventListener('change',function(e){var t=e.target;
  else if(ty==='dist'){st.dist=Math.round(distFromM(st,v));st.hint='dist';}
  else if((ty==='lx'||ty==='sx')&&/left|right/i.test(raw)){setParam(st,ty,50+(/left/i.test(raw)?-v:v)/2);}
  else setParam(st,ty,v);
- st.note=null;renderLive();sync();});
+ st.note=null;renderLive();sync();}
+/* the field being committed takes its new, formatted value when the page is redrawn */
+live.addEventListener('change',function(e){committed=e.target;try{onChange(e);}finally{committed=null;}});
 live.addEventListener('input',function(e){var k=e.target.getAttribute&&e.target.getAttribute('data-in');if(k==='licKey'||k==='licCode')st[k]=e.target.value;
- if(e.target.id==='brw-q'){var ss=e.target.selectionStart;st.brwQ=e.target.value;st.brwCur=0;renderLive();var q=live.querySelector('#brw-q');if(q){q.focus({preventScroll:true});q.selectionStart=q.selectionEnd=ss;}brwReveal();}});
+ if(e.target.id==='brw-q'){var ss=e.target.selectionStart;st.brwQ=e.target.value;st.brwCur=0;renderLive();var q=live.querySelector('#brw-q');if(q&&q!==e.target){q.focus({preventScroll:true});q.selectionStart=q.selectionEnd=ss;}brwReveal();}});
 live.addEventListener('focusin',function(e){if(e.target.matches('input.ro'))e.target.select();});
 live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
  if(!b){if(st.browse&&!e.target.closest('.brw .cbox')){st.browse=false;renderLive();}return;}
@@ -506,7 +530,7 @@ document.addEventListener('dragleave',function(e){if(!hasFiles(e))return;if(--dr
 document.addEventListener('drop',function(e){e.preventDefault();dropDepth=0;showDrop(false);var fs=e.dataTransfer&&e.dataTransfer.files;if(fs&&fs.length)dropFiles(fs);});
 function dropFiles(fs){var f=null;for(var i=0;i<fs.length&&!f;i++)if(DROP_TYPES.test(fs[i].name))f=fs[i];
  st.hint=null;st.browse=false;
- if(!f)st.note='<b>'+esc(fs[0].name)+'</b> isn’t an impulse response Drenched can load. Drop a WAV, AIFF, FLAC or SOFA file.';
+ if(!f)st.note='<b>'+esc(fs[0].name)+'</b> isn\u2019t an impulse response Drenched can load. Drop a WAV, AIFF, FLAC or SOFA file.';
  else if(dropping)st.note='Still reading <b>'+esc(dropping)+'</b>. Drop the next file once it has loaded.';
  else if(f.size>DROP_MAX)st.note='<b>'+esc(f.name)+'</b> is too large to drop. Use <b>Load your own IR</b> instead.';
  else if(!JUCE)st.note='Dropping a file loads it in the plugin.';
@@ -517,11 +541,11 @@ function onDropFailed(m){dropping=null;st.hint=null;var n='<b>'+esc(m&&m.name||'
 function base64(bytes){var s='';for(var i=0;i<bytes.length;i+=0x8000)s+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));return btoa(s);}
 /* A session whose file is missing keeps its settings when a file is dropped, as Find does. */
 function sendDropped(f,keep){var id=Date.now()%1e9,at=0;dropping=f.name;
- JUCE.emitEvent('dropIr',{stage:'start',id:id,name:f.name,size:f.size,keep:keep});st.note='Reading <b>'+esc(f.name)+'</b>…';
+ JUCE.emitEvent('dropIr',{stage:'start',id:id,name:f.name,size:f.size,keep:keep});st.note='Reading <b>'+esc(f.name)+'</b>\u2026';
  (function next(){if(at>=f.size){JUCE.emitEvent('dropIr',{stage:'end',id:id});dropping=null;return;}
   var end=Math.min(f.size,at+DROP_PIECE);
   f.slice(at,end).arrayBuffer().then(function(b){JUCE.emitEvent('dropIr',{stage:'piece',id:id,data:base64(new Uint8Array(b))});at=end;next();},
-   function(){JUCE.emitEvent('dropIr',{stage:'cancel',id:id});dropping=null;st.note='<b>'+esc(f.name)+'</b> couldn’t be read.';schedule();});})();}
+   function(){JUCE.emitEvent('dropIr',{stage:'cancel',id:id});dropping=null;st.note='<b>'+esc(f.name)+'</b> couldn\u2019t be read.';schedule();});})();}
 var init=null;
 try{var d=window.__JUCE__&&window.__JUCE__.initialisationData&&window.__JUCE__.initialisationData.drenched;if(d&&d.length)init=d[0];}catch(_){}
 if(init){setLibrary(init.library);Object.assign(st,{sp:0,bands:SPACES[0].bands.slice(),rbands:SPACES[0].bands.slice(),pre:SPACES[0].pre});applyFromHost(init);if(init.licence)Object.assign(st.licence,init.licence);st.bits=+init.bits||64;}
