@@ -419,7 +419,15 @@ void DrenchedProcessor::loadLibrarySpace (const juce::String& id, bool now)
     {
         const std::lock_guard lock (recordedLock);
 
-        if ((libraryLoadedId == id && libraryResponse != nullptr) || (! now && libraryWanted == id))
+        // Chosen again while another space loads: that load is no longer wanted, and the
+        // room this one plays is current again.
+        if (libraryLoadedId == id && libraryResponse != nullptr)
+        {
+            libraryWanted = id;
+            return;
+        }
+
+        if (! now && libraryWanted == id)
             return;
 
         libraryWanted = id;

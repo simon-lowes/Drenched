@@ -285,6 +285,39 @@ TEST_CASE ("Clicking through library spaces faster than they load plays only the
     p.releaseResources();
 }
 
+TEST_CASE ("Clicking away from the playing space and straight back keeps it playing", "[plugin][messageloop][library]")
+{
+    // The second space's load is still on its way when the first is chosen again. It used
+    // to stay wanted: the room held, as if waiting for it, and then it played, while the
+    // browser showed the first space.
+    DRENCHED_NEEDS_MESSAGE_LOOP();
+    const auto& spaces = library::spaces();
+    REQUIRE (spaces.size() >= 2);
+    RecordingCache::shared().clear();
+
+    testing::Plugin plugin;
+    auto& p = *plugin;
+    p.prepareToPlay (48000.0, 512);
+    settle (p);
+    REQUIRE (playingName (p) == nameOf (spaces.front()));
+
+    chooseSpace (p, spaces[1].id);
+    letTimerTick (p);
+    chooseSpace (p, spaces.front().id);
+    letTimerTick (p);
+
+    REQUIRE (testing::builderIdle (p));
+    CHECK (p.roomIsCurrent());
+
+    // The second space's load lands now, and changes nothing.
+    settle (p);
+    CHECK (playingName (p) == nameOf (spaces.front()));
+    CHECK (p.chosenSpaceId() == spaces.front().id);
+    CHECK (p.roomIsCurrent());
+
+    p.releaseResources();
+}
+
 TEST_CASE ("A plugin closed while a library space loads is left alone by the load", "[plugin][messageloop][library]")
 {
     DRENCHED_NEEDS_MESSAGE_LOOP();
