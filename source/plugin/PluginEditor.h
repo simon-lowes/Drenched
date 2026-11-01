@@ -2,6 +2,7 @@
 
 #include "DroppedFile.h"
 #include "HeldControls.h"
+#include "ParameterWatch.h"
 #include "PluginProcessor.h"
 
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -21,7 +22,6 @@ namespace drenched
     page's files from the binary, pushes parameter and session state to the page, and turns
     the page's events into parameter changes, gestures and saved interface state. */
 class DrenchedEditor final : public juce::AudioProcessorEditor,
-                             private juce::AudioProcessorValueTreeState::Listener,
                              private juce::ValueTree::Listener,
                              private juce::AsyncUpdater,
                              private juce::ChangeListener,
@@ -45,7 +45,7 @@ private:
     juce::WebBrowserComponent::Options makeOptions();
     static std::optional<juce::WebBrowserComponent::Resource> getResource (const juce::String& url);
 
-    juce::var parameterValues (bool onlyDirty);
+    juce::var parameterValues (bool onlyChanged);
     juce::var uiValues();
     void sendFullState();
 
@@ -61,7 +61,6 @@ private:
     void sendCaptureStatus();
     void sendLicenceStatus();
 
-    void parameterChanged (const juce::String& id, float value) override;
     void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override;
     void valueTreeChildAdded (juce::ValueTree&, juce::ValueTree&) override;
     void valueTreeChildRemoved (juce::ValueTree&, juce::ValueTree&, int) override;
@@ -73,10 +72,10 @@ private:
     DrenchedProcessor& processor;
     juce::AudioProcessorValueTreeState& state;
 
-    static constexpr size_t numParams = ParamIDs::ordered.size();
-    std::array<std::atomic<bool>, numParams> dirty {};
+    // The parameters are looked at every tick, not listened to (see ParameterWatch).
+    ParameterWatch watch { state };
     std::atomic<bool> uiDirty { true };
-    std::atomic<bool> settingFromUi { false };
+    bool settingFromUi = false;
     bool pageReady = false;
     HeldControls held { state };
     std::array<float, 4> meterDb { -60.0f, -60.0f, -60.0f, -60.0f };
