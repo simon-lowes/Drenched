@@ -14,14 +14,6 @@ namespace drenched
 
 namespace
 {
-    const juce::Identifier eventState { "state" };
-    const juce::Identifier eventMeters { "meters" };
-    const juce::Identifier eventCapture { "capture" };
-    const juce::Identifier eventLicence { "licence" };
-    const juce::Identifier eventMatched { "matched" };
-    const juce::Identifier eventAnalysis { "analysis" };
-    const juce::Identifier eventSpectrum { "spectrum" };
-
     juce::String mimeTypeFor (const juce::String& path)
     {
         const auto ext = path.fromLastOccurrenceOf (".", false, false).toLowerCase();
@@ -80,20 +72,13 @@ namespace
         juce::Label message;
         juce::TextButton download;
     };
-
-    template <typename Fn>
-    void forEachProperty (const juce::var& object, Fn&& fn)
-    {
-        if (auto* obj = object.getDynamicObject())
-            for (const auto& prop : obj->getProperties())
-                fn (prop.name.toString(), prop.value);
-    }
 }
 
 DrenchedEditor::DrenchedEditor (DrenchedProcessor& p)
     : AudioProcessorEditor (p),
       processor (p),
       state (p.getState()),
+      messages (p, p.getLicence(), watch, *this, settings::importedFolder()),
       web (makeOptions())
 {
     state.state.addListener (this);
@@ -150,44 +135,11 @@ juce::WebBrowserComponent::Options DrenchedEditor::makeOptions()
     auto options = Options()
         .withNativeIntegrationEnabled()
         .withKeepPageLoadedWhenBrowserIsHidden()
-        .withResourceProvider ([] (const auto& url) { return getResource (url); })
-        .withEventListener ("ready",   [this] (const juce::var& v) { onReady (v); })
-        .withEventListener ("params",  [this] (const juce::var& v) { onParams (v); })
-        .withEventListener ("gesture", [this] (const juce::var& v) { onGesture (v); })
-        .withEventListener ("ui",      [this] (const juce::var& v) { onUi (v); })
-        .withEventListener ("loadIr",  [this] (const juce::var& v) { onLoadIr (v); })
-        .withEventListener ("dropIr",  [this] (const juce::var& v) { onDropIr (v); })
-        .withEventListener ("match",   [this] (const juce::var& v) { onMatch (v); })
-        .withEventListener ("displays", [this] (const juce::var& v)
-        {
-            displaysOpen = static_cast<bool> (v.getProperty ("open", false));
-            analysedAny = analysedAny && displaysOpen; // reopening sends the analysis again
-        })
-        .withEventListener ("sceneStore",  [this] (const juce::var& v) { onScene ("store", v); })
-        .withEventListener ("sceneRename", [this] (const juce::var& v) { onScene ("rename", v); })
-        .withEventListener ("sceneDelete", [this] (const juce::var& v) { onScene ("delete", v); })
-        .withEventListener ("sceneRecall", [this] (const juce::var& v) { onScene ("recall", v); })
-        .withEventListener ("startCapture",  [this] (const juce::var& v) { processor.startCapture (v); sendCaptureStatus(); })
-        .withEventListener ("cancelCapture", [this] (const juce::var&) { processor.cancelCapture(); sendCaptureStatus(); })
-        .withEventListener ("licenceOpen",       [this] (const juce::var&) { processor.getLicence().open(); })
-        .withEventListener ("licenceActivate",   [this] (const juce::var& v) { processor.getLicence().activate (v["licence"].toString()); })
-        .withEventListener ("licenceCode",       [this] (const juce::var& v) { processor.getLicence().useCode (v["code"].toString()); })
-        .withEventListener ("licenceDeactivate", [this] (const juce::var&) { processor.getLicence().deactivate(); })
-        .withEventListener ("licencePage",       [this] (const juce::var&)
-        {
-            juce::URL (processor.getLicence().status()["page"].toString()).launchInDefaultBrowser();
-        })
-        // Some hosts keep copy and paste shortcuts from reaching a plugin window, so the page
-        // has its own buttons for them, served by the system clipboard.
-        .withEventListener ("copyText", [] (const juce::var& v) { juce::SystemClipboard::copyTextToClipboard (v["text"].toString()); })
-        .withEventListener ("copyReport", [this] (const juce::var&) { juce::SystemClipboard::copyTextToClipboard (processor.bugReportDetails()); })
-        .withEventListener ("pasteText", [this] (const juce::var& v)
-        {
-            auto reply = std::make_unique<juce::DynamicObject>();
-            reply->setProperty ("target", v["target"]);
-            reply->setProperty ("text", juce::SystemClipboard::getTextFromClipboard().substring (0, 4096));
-            web.emitEventIfBrowserIsVisible ("pasted", juce::var (reply.release()));
-        });
+        .withResourceProvider ([] (const auto& url) { return getResource (url); });
+
+    // Every event the page sends goes to PageMessages, which does what it says.
+    for (const auto& name : PageMessages::names())
+        options = options.withEventListener (name, [this, name] (const juce::var& v) { messages.handle (name, v); });
 
     auto initial = std::make_unique<juce::DynamicObject>();
     initial->setProperty ("params", parameterValues (false));
@@ -288,7 +240,7 @@ void DrenchedEditor::sendFullState()
     auto object = std::make_unique<juce::DynamicObject>();
     object->setProperty ("params", parameterValues (false));
     object->setProperty ("ui", uiValues());
-    web.emitEventIfBrowserIsVisible (eventState, juce::var (object.release()));
+    web.emitEventIfBrowserIsVisible (PageEvents::state, juce::var (object.release()));
 
     lastCaptureStatus.clear();
     sendCaptureStatus();
@@ -296,87 +248,62 @@ void DrenchedEditor::sendFullState()
 }
 
 //==============================================================================
-void DrenchedEditor::onReady (const juce::var&)
+void DrenchedEditor::send (const juce::Identifier& event, const juce::var& payload)
 {
-    // A page that reloaded mid-drag can't end that drag.
-    held.releaseAll();
-    pageReady = true;
+    web.emitEventIfBrowserIsVisible (event, payload);
+}
+
+void DrenchedEditor::pageReady()
+{
+    pageLoaded = true;
     sendFullState();
     startTimerHz (25);
 }
 
-void DrenchedEditor::onParams (const juce::var& payload)
+void DrenchedEditor::interfaceChanged()
 {
-    forEachProperty (payload, [this] (const juce::String& id, const juce::var& value)
-    {
-        auto* parameter = state.getParameter (id);
-
-        if (parameter == nullptr || ! (value.isDouble() || value.isInt() || value.isInt64()))
-            return;
-
-        const auto inGesture = held.isHeld (id);
-
-        if (! inGesture)
-            parameter->beginChangeGesture();
-
-        parameter->setValueNotifyingHost (parameter->convertTo0to1 (static_cast<float> (static_cast<double> (value))));
-
-        if (! inGesture)
-            parameter->endChangeGesture();
-
-        // The page already shows it, so only host and preset changes travel back.
-        watch.noteShown (id);
-    });
+    uiDirty.store (true);
+    triggerAsyncUpdate();
 }
 
-void DrenchedEditor::onGesture (const juce::var& payload)
+void DrenchedEditor::captureChanged()
 {
-    const auto begin = static_cast<bool> (payload.getProperty ("begin", false));
-    const auto ids = payload.getProperty ("ids", juce::var());
-
-    if (auto* array = ids.getArray())
-    {
-        for (const auto& idVar : *array)
-        {
-            if (begin)
-                held.hold (idVar.toString());
-            else
-                held.release (idVar.toString());
-        }
-    }
+    sendCaptureStatus();
 }
 
-void DrenchedEditor::onUi (const juce::var& payload)
+void DrenchedEditor::displaysOpened (bool open)
 {
-    auto ui = processor.getUiState();
-    settingFromUi = true;
-
-    forEachProperty (payload, [&ui] (const juce::String& key, const juce::var& value)
-    {
-        if (key == "spaceId")    ui.setProperty (UiIDs::spaceId, value.toString(), nullptr);
-        else if (key == "locks") ui.setProperty (UiIDs::locks, value.toString(), nullptr);
-        else if (key == "mode")  ui.setProperty (UiIDs::mode, value.toString(), nullptr);
-        else if (key == "view")  ui.setProperty (UiIDs::view, value.toString(), nullptr);
-        else if (key == "speakers") ui.setProperty (UiIDs::speakers, value.toString().substring (0, 1024), nullptr);
-        else if (key == "skin")
-        {
-            ui.setProperty (UiIDs::skin, value.toString(), nullptr);
-            settings::saveDefaultSkin (value.toString());
-        }
-    });
-
-    settingFromUi = false;
+    displaysOpen = open;
+    analysedAny = analysedAny && displaysOpen; // reopening sends the analysis again
 }
 
-void DrenchedEditor::onLoadIr (const juce::var& payload)
+void DrenchedEditor::lookChosen (const juce::String& skin)
+{
+    settings::saveDefaultSkin (skin);
+}
+
+void DrenchedEditor::openInBrowser (const juce::URL& url)
+{
+    url.launchInDefaultBrowser();
+}
+
+void DrenchedEditor::copyToClipboard (const juce::String& text)
+{
+    juce::SystemClipboard::copyTextToClipboard (text);
+}
+
+juce::String DrenchedEditor::clipboardText()
+{
+    return juce::SystemClipboard::getTextFromClipboard();
+}
+
+void DrenchedEditor::chooseImpulseResponse (bool keep)
 {
     if (choosing)
         return; // already open
 
     // Finding a session's missing file keeps the session's settings; loading a new one
     // starts from the file's own decay.
-    const auto keep = static_cast<bool> (payload["keep"]);
-
     choosing = true;
     chooser = std::make_unique<juce::FileChooser> (keep ? "Find this session's impulse response" : "Load an impulse response",
                                                    settings::loadIrFolder(), "*.wav;*.wave;*.amb;*.aif;*.aiff;*.flac;*.sofa");
@@ -398,38 +325,7 @@ void DrenchedEditor::onLoadIr (const juce::var& payload)
                           });
 }
 
-void DrenchedEditor::onDropIr (const juce::var& payload)
-{
-    const auto stage = payload["stage"].toString();
-    const auto id = static_cast<int> (payload["id"]);
-    const auto name = dropped.fileName();
-    auto ok = true;
-
-    if (stage == "start")
-        ok = dropped.start (id, payload["name"].toString(), static_cast<juce::int64> (payload["size"]), static_cast<bool> (payload["keep"]));
-    else if (stage == "piece")
-        ok = dropped.add (id, payload["data"].toString());
-    else if (stage == "cancel")
-        dropped.cancel (id);
-    else if (stage == "end" && dropped.complete (id))
-    {
-        const auto keep = dropped.keepsSettings();
-        processor.importImpulseResponseAsync (name, dropped.take(), keep, settings::importedFolder());
-    }
-    else if (stage == "end")
-        ok = ! dropped.isCurrent (id); // a drop abandoned earlier has said so already
-
-    if (! ok)
-    {
-        dropped.cancel (id);
-        auto reply = std::make_unique<juce::DynamicObject>();
-        reply->setProperty ("name", stage == "start" ? payload["name"].toString() : name);
-        reply->setProperty ("large", stage == "start"); // no room for it: the file chooser reads only what it needs
-        web.emitEventIfBrowserIsVisible ("dropFailed", juce::var (reply.release()));
-    }
-}
-
-void DrenchedEditor::onMatch (const juce::var&)
+void DrenchedEditor::chooseRecordingToMatch()
 {
     if (choosing)
         return;
@@ -455,41 +351,14 @@ void DrenchedEditor::onMatch (const juce::var&)
                               auto listening = std::make_unique<juce::DynamicObject>();
                               listening->setProperty ("listening", true);
                               listening->setProperty ("file", file.getFileName());
-                              web.emitEventIfBrowserIsVisible (eventMatched, juce::var (listening.release()));
+                              web.emitEventIfBrowserIsVisible (PageEvents::matched, juce::var (listening.release()));
 
                               processor.matchRoomAsync (file, [editor = juce::Component::SafePointer<DrenchedEditor> (this)] (const juce::var& result)
                               {
                                   if (editor != nullptr)
-                                      editor->web.emitEventIfBrowserIsVisible (eventMatched, result);
+                                      editor->web.emitEventIfBrowserIsVisible (PageEvents::matched, result);
                               });
                           });
-}
-
-void DrenchedEditor::onScene (const juce::String& action, const juce::var& payload)
-{
-    const auto number = static_cast<int> (payload.getProperty ("number", 0));
-    const auto name = payload.getProperty ("name", "").toString();
-
-    if (action == "store")
-    {
-        if (const auto stored = processor.storeScene (number, name); stored > 0 && number == 0)
-            processor.recallScene (stored); // a new scene is the one playing
-    }
-    else if (action == "rename")
-    {
-        processor.renameScene (number, name);
-    }
-    else if (action == "delete")
-    {
-        processor.deleteScene (number);
-    }
-    else if (action == "recall")
-    {
-        processor.recallScene (number);
-    }
-
-    uiDirty.store (true);
-    triggerAsyncUpdate();
 }
 
 //==============================================================================
@@ -497,7 +366,7 @@ void DrenchedEditor::valueTreePropertyChanged (juce::ValueTree& tree, const juce
 {
     const auto isUi = tree.getType() == UiIDs::tree && property != UiIDs::width;
 
-    if ((! isUi && tree.getType() != SceneIDs::scene) || settingFromUi)
+    if ((! isUi && tree.getType() != SceneIDs::scene) || messages.isSettingInterface())
         return;
 
     uiDirty.store (true);
@@ -529,7 +398,7 @@ void DrenchedEditor::valueTreeRedirected (juce::ValueTree&)
 
 void DrenchedEditor::handleAsyncUpdate()
 {
-    if (! pageReady || ! web.isShowing())
+    if (! pageLoaded || ! web.isShowing())
         return; // the flags stay set, and visibilityChanged() delivers them later
 
     auto object = std::make_unique<juce::DynamicObject>();
@@ -538,12 +407,12 @@ void DrenchedEditor::handleAsyncUpdate()
     if (uiDirty.exchange (false))
         object->setProperty ("ui", uiValues());
 
-    web.emitEventIfBrowserIsVisible (eventState, juce::var (object.release()));
+    web.emitEventIfBrowserIsVisible (PageEvents::state, juce::var (object.release()));
 }
 
 void DrenchedEditor::sendCaptureStatus()
 {
-    if (! pageReady || ! web.isShowing())
+    if (! pageLoaded || ! web.isShowing())
         return;
 
     // Only changes are sent, so an idle capture costs nothing.
@@ -554,13 +423,13 @@ void DrenchedEditor::sendCaptureStatus()
         return;
 
     lastCaptureStatus = text;
-    web.emitEventIfBrowserIsVisible (eventCapture, status);
+    web.emitEventIfBrowserIsVisible (PageEvents::capture, status);
 }
 
 void DrenchedEditor::sendLicenceStatus()
 {
-    if (pageReady)
-        web.emitEventIfBrowserIsVisible (eventLicence, processor.getLicence().status());
+    if (pageLoaded)
+        web.emitEventIfBrowserIsVisible (PageEvents::licence, processor.getLicence().status());
 }
 
 void DrenchedEditor::changeListenerCallback (juce::ChangeBroadcaster*)
@@ -570,7 +439,7 @@ void DrenchedEditor::changeListenerCallback (juce::ChangeBroadcaster*)
 
 void DrenchedEditor::timerCallback()
 {
-    if (! pageReady || ! web.isShowing())
+    if (! pageLoaded || ! web.isShowing())
         return;
 
     sendCaptureStatus();
@@ -620,7 +489,7 @@ void DrenchedEditor::timerCallback()
         speakers.add (speakerDb[static_cast<size_t> (i)]);
 
     object->setProperty ("spk", speakers);
-    web.emitEventIfBrowserIsVisible (eventMeters, juce::var (object.release()));
+    web.emitEventIfBrowserIsVisible (PageEvents::meters, juce::var (object.release()));
 }
 
 void DrenchedEditor::sendDisplays()
@@ -635,7 +504,7 @@ void DrenchedEditor::sendDisplays()
 
     auto spectrum = std::make_unique<juce::DynamicObject>();
     spectrum->setProperty ("levels", levels);
-    web.emitEventIfBrowserIsVisible (eventSpectrum, juce::var (spectrum.release()));
+    web.emitEventIfBrowserIsVisible (PageEvents::spectrum, juce::var (spectrum.release()));
 
     const auto version = processor.responseVersion();
 
@@ -654,7 +523,7 @@ void DrenchedEditor::sendDisplays()
         editor->analysedAny = ! result.isVoid();
 
         if (editor->analysedAny)
-            editor->web.emitEventIfBrowserIsVisible (eventAnalysis, result);
+            editor->web.emitEventIfBrowserIsVisible (PageEvents::analysis, result);
     });
 }
 

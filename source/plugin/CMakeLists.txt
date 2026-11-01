@@ -72,6 +72,7 @@ juce_add_plugin(Drenched
 target_sources(Drenched PRIVATE
     Library.cpp
     LicenceManager.cpp
+    PageMessages.cpp
     PluginProcessor.cpp
     PluginEditor.cpp
     WebView.cpp)
