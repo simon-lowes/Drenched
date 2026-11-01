@@ -28,4 +28,22 @@ bool runtimeAvailable()
    #endif
 }
 
+Navigation navigationFor (const juce::String& url, const juce::String& pageRoot)
+{
+    // The root ends in "/", so a host that merely begins with the root's host doesn't match.
+    if (pageRoot.endsWithChar ('/') && url.startsWithIgnoreCase (pageRoot))
+        return Navigation::load;
+
+    if (url.equalsIgnoreCase ("about:blank"))
+        return Navigation::load;
+
+    if (url.startsWithIgnoreCase ("file:"))
+        return Navigation::openFile;
+
+    if (url.startsWithIgnoreCase ("https://"))
+        return Navigation::openInBrowser;
+
+    return Navigation::refuse;
+}
+
 } // namespace drenched::webView

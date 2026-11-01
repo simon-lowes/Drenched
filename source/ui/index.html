@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
+<!-- Only the interface's own files run here. JUCE gives this page the native bridge, so no inline
+     script, remote file, frame, form or request may get in. juce: and https://juce.backend are where
+     the plugin serves the page (macOS and Linux, Windows); 'self' covers a preview from disk. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' juce: https://juce.backend; style-src 'self' juce: https://juce.backend 'unsafe-inline'; img-src 'self' juce: https://juce.backend data:; connect-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Drenched</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="css/skins.css">
