@@ -39,11 +39,46 @@ namespace
         return files;
     }
 
+    /** The session as a host hands it back, from this computer. A session that plays a
+        file of the person's own names it by the path it had on the computer that saved it;
+        that file is kept next to the session here (v0.2-everything.wav), so the path is
+        pointed at it, as a person who copied the file over would find it. */
     juce::MemoryBlock bytesOf (const juce::File& file)
     {
         juce::MemoryBlock block;
         file.loadFileAsData (block);
-        return block;
+
+        auto xml = juce::AudioProcessor::getXmlFromBinary (block.getData(), static_cast<int> (block.getSize()));
+
+        if (xml == nullptr)
+            return block;
+
+        auto moved = false;
+        const auto place = [&moved] (juce::XmlElement& element)
+        {
+            const auto saved = element.getStringAttribute ("irPath");
+            const auto name = saved.fromLastOccurrenceOf ("/", false, false).fromLastOccurrenceOf ("\\", false, false);
+
+            if (name.isNotEmpty() && sessionsDir().getChildFile (name).existsAsFile())
+            {
+                element.setAttribute ("irPath", sessionsDir().getChildFile (name).getFullPathName());
+                moved = true;
+            }
+        };
+
+        if (auto* ui = xml->getChildByName ("ui"))
+            place (*ui);
+
+        if (auto* scenes = xml->getChildByName ("scenes"))
+            for (auto* scene : scenes->getChildIterator())
+                place (*scene);
+
+        if (! moved)
+            return block;
+
+        juce::MemoryBlock placed;
+        juce::AudioProcessor::copyXmlToBinary (*xml, placed);
+        return placed;
     }
 
     /** The PARAM values written in a session, plus settings older versions kept
@@ -397,6 +432,165 @@ TEST_CASE ("A session saved now loads back exactly", "[sessions]")
     REQUIRE (xml != nullptr);
     CHECK (xml->getIntAttribute ("version") == DrenchedProcessor::stateVersion);
     file.deleteFile();
+}
+
+TEST_CASE ("Scenes in saved sessions bring back what they stored", "[sessions][scenes]")
+{
+    // A scene names its parameters by id, as the session does, and its space; recalled
+    // in this version it plays what it stored, with a parameter newer than the scene at
+    // its default.
+    auto scenesSeen = 0;
+
+    for (const auto& file : savedSessions())
+    {
+        INFO (file.getFileName());
+        const auto session = bytesOf (file);
+        const auto xml = juce::AudioProcessor::getXmlFromBinary (session.getData(), static_cast<int> (session.getSize()));
+        REQUIRE (xml != nullptr);
+        const auto* stored = xml->getChildByName ("scenes");
+
+        if (stored == nullptr)
+            continue;
+
+        testing::Plugin plugin;
+        load (*plugin, session);
+
+        for (const auto* scene : stored->getChildIterator())
+        {
+            const auto number = scene->getIntAttribute ("number");
+            INFO ("scene " << number << " (" << scene->getStringAttribute ("name") << ")");
+            ++scenesSeen;
+
+            testing::onMessageThread ([&] { plugin->recallScene (number, true); });
+
+            for (const auto& [id, value] : valuesOf (*plugin))
+            {
+                if (! SceneIDs::isStored (id))
+                    continue;
+
+                auto* param = dynamic_cast<juce::RangedAudioParameter*> (plugin->getState().getParameter (id));
+                const auto wanted = scene->hasAttribute (id) ? param->convertFrom0to1 (param->convertTo0to1 (static_cast<float> (scene->getDoubleAttribute (id))))
+                                                             : param->convertFrom0to1 (param->getDefaultValue());
+                INFO (id << ": " << value << ", wanted " << wanted);
+                CHECK (std::abs (value - wanted) <= 1.0e-3f * std::max (1.0f, std::abs (wanted)));
+            }
+
+            testing::onMessageThread ([&]
+            {
+                CHECK (plugin->chosenSpaceId() == scene->getStringAttribute ("spaceId"));
+                CHECK (plugin->getUiState().getProperty (UiIDs::speakers).toString() == scene->getStringAttribute ("speakers"));
+
+                if (scene->getStringAttribute ("spaceId") == "user")
+                {
+                    const auto info = plugin->impulseResponseInfo();
+                    CHECK_FALSE (static_cast<bool> (info["missing"]));
+                    CHECK (plugin->getUiState().getProperty (UiIDs::irName).toString() == scene->getStringAttribute ("irName"));
+                }
+            });
+        }
+    }
+
+    CHECK (scenesSeen >= 3);
+}
+
+TEST_CASE ("Every parameter that has shipped is still there, the same", "[sessions]")
+{
+    // Sessions, scenes and host automation name a parameter by id, and a session that
+    // doesn't mention one plays it at its default, as the version before it did. So no
+    // parameter that has shipped may go or be renamed, nor its default or range change,
+    // unnoticed, and a new one's default is signed off when it is added:
+    // tests/sessions/parameters.txt lists them all, in the order hosts see them.
+    const auto listFile = sessionsDir().getChildFile ("parameters.txt");
+    constexpr std::array<float, 3> marks { 0.25f, 0.5f, 0.75f };
+
+    const auto number = [] (float v) { return juce::String::formatted ("%.6g", static_cast<double> (v)); };
+    const auto describe = [&] (const juce::RangedAudioParameter& param)
+    {
+        juce::StringArray fields { param.paramID, number (param.convertFrom0to1 (param.getDefaultValue())),
+                                   number (param.getNormalisableRange().start), number (param.getNormalisableRange().end) };
+
+        for (const auto mark : marks)
+            fields.add (number (param.convertFrom0to1 (mark)));
+
+        return fields;
+    };
+
+    testing::Plugin plugin;
+    juce::StringArray shipped, rewritten;
+    std::map<juce::String, juce::StringArray> now;
+
+    for (auto* parameter : plugin->getParameters())
+    {
+        auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter);
+        REQUIRE (ranged != nullptr);
+        const auto fields = describe (*ranged);
+        shipped.add (ranged->paramID);
+        now[ranged->paramID] = fields;
+        rewritten.add (fields.joinIntoString (" "));
+    }
+
+    juce::StringArray listed, lines;
+    lines.addLines (listFile.loadFileAsString());
+
+    if (updating())
+    {
+        // A deliberate change, or a new parameter whose default is how the plugin played
+        // before it existed: DRENCHED_UPDATE_SESSIONS=1, saying why.
+        juce::StringArray kept;
+
+        for (const auto& line : lines)
+            if (line.trim().startsWith ("#"))
+                kept.add (line);
+
+        kept.addArray (rewritten);
+        listFile.replaceWithText (kept.joinIntoString ("\n") + "\n");
+        return;
+    }
+
+    REQUIRE (listFile.existsAsFile());
+
+    for (const auto& line : lines)
+    {
+        const auto fields = juce::StringArray::fromTokens (line.upToFirstOccurrenceOf ("#", false, false), " ", "");
+
+        if (fields.isEmpty())
+            continue;
+
+        const auto& id = fields[0];
+        INFO (id);
+        listed.add (id);
+
+        // Gone or renamed: every session that set it would play it at its default.
+        CHECK (now.count (id) > 0);
+
+        if (now.count (id) == 0)
+            continue;
+
+        const auto& current = now.at (id);
+        REQUIRE (fields.size() == current.size());
+
+        for (int i = 1; i < fields.size(); ++i)
+        {
+            const auto wanted = fields[i].getDoubleValue(), value = current[i].getDoubleValue();
+            INFO ((i == 1 ? "default" : i == 2 ? "lowest" : i == 3 ? "highest" : "value at a mark of the host's range")
+                  << ": " << current[i] << ", listed " << fields[i]);
+            CHECK (std::abs (value - wanted) <= 1.0e-4 * std::max (1.0, std::abs (wanted)));
+        }
+    }
+
+    juce::StringArray unlisted;
+
+    for (const auto& id : shipped)
+        if (! listed.contains (id))
+            unlisted.add (id);
+
+    INFO ("Not in tests/sessions/parameters.txt (once its default is how the plugin played before it, run with "
+          "DRENCHED_UPDATE_SESSIONS=1 to add): " << unlisted.joinIntoString (", "));
+    CHECK (unlisted.isEmpty());
+
+    // In the same order, which some hosts follow.
+    if (unlisted.isEmpty() && listed.size() == shipped.size())
+        CHECK (listed == shipped);
 }
 
 TEST_CASE ("Every parameter is in the list the interface follows", "[session]")

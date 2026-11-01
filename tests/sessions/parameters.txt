@@ -1,0 +1,70 @@
+# Every parameter Drenched has shipped, in the order hosts see them, which sessions, scenes
+# and automation name by id. Never remove or rename one, or change its default or range
+# (see tests/sessions/README.md): a session that doesn't mention a parameter plays it at its
+# default, so a new parameter's default must be how the plugin played before it, and adding
+# one here, with DRENCHED_UPDATE_SESSIONS=1, signs that off.
+# id, default, lowest, highest, then its value a quarter, half and three quarters of the way
+# along the host's 0 to 1 (which automation is written in).
+mix 30 0 100 25 50 75
+output 0 -24 12 -15 -6 3
+predelay 18 0 250 63 125 188
+size 100 50 150 75 100 125
+brightness 0 -12 12 -6 0 6
+earlyLate 55 0 100 25 50 75
+distance 40 0 100 25 50 75
+freeze 0 0 1 0 1 1
+predelaySync 0 0 1 0 1 1
+crossover 320 100 1000 178 316 562
+wetLowCut 80 20 1000 53 141 376
+wetHighCut 14000 1000 20000 2110 4470 9460
+width 100 0 200 50 100 150
+ducking 0 0 100 25 50 75
+monoBelow 0 0 500 125 250 375
+decay63 2.9 0.1 20 0.38 1.41 5.32
+decay125 2.8 0.1 20 0.38 1.41 5.32
+decay250 2.6 0.1 20 0.38 1.41 5.32
+decay500 2.4 0.1 20 0.38 1.41 5.32
+decay1k 2.3 0.1 20 0.38 1.41 5.32
+decay2k 2 0.1 20 0.38 1.41 5.32
+decay4k 1.6 0.1 20 0.38 1.41 5.32
+decay8k 1.1 0.1 20 0.38 1.41 5.32
+living 0 0 100 25 50 75
+movement 20 0 100 25 50 75
+movementRate 0.7 0.05 5 0.16 0.5 1.58
+reverse 0 0 1 0 1 1
+gate 0 0 2000 31 250 844
+attack 0 0 500 7 60 207
+directLevel 0 -60 6 -43.5 -27 -10.5
+directDelay 0 0 50 12.5 25 37.5
+directColour 0 -12 12 -6 0 6
+crossFeed 100 0 100 25 50 75
+listenerX 50 0 100 25 50 75
+sourceX 50 0 100 25 50 75
+lowCpu 0 0 1 0 1 1
+cloudSize 100 0 100 25 50 75
+scene 0 0 32 8 16 24
+eq1Freq 100 20 20000 112 632 3557
+eq1Gain 0 -18 18 -9 0 9
+eq2Freq 250 20 20000 112 632 3557
+eq2Gain 0 -18 18 -9 0 9
+eq2Q 0.9 0.1 10 0.32 1 3.16
+eq3Freq 700 20 20000 112 632 3557
+eq3Gain 0 -18 18 -9 0 9
+eq3Q 0.9 0.1 10 0.32 1 3.16
+eq4Freq 2000 20 20000 112 632 3557
+eq4Gain 0 -18 18 -9 0 9
+eq4Q 0.9 0.1 10 0.32 1 3.16
+eq5Freq 5000 20 20000 112 632 3557
+eq5Gain 0 -18 18 -9 0 9
+eq5Q 0.9 0.1 10 0.32 1 3.16
+eq6Freq 10000 20 20000 112 632 3557
+eq6Gain 0 -18 18 -9 0 9
+decayLink 1 0 1 0 1 1
+decayR63 2.9 0.1 20 0.38 1.41 5.32
+decayR125 2.8 0.1 20 0.38 1.41 5.32
+decayR250 2.6 0.1 20 0.38 1.41 5.32
+decayR500 2.4 0.1 20 0.38 1.41 5.32
+decayR1k 2.3 0.1 20 0.38 1.41 5.32
+decayR2k 2 0.1 20 0.38 1.41 5.32
+decayR4k 1.6 0.1 20 0.38 1.41 5.32
+decayR8k 1.1 0.1 20 0.38 1.41 5.32
