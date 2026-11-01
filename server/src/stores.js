@@ -12,7 +12,7 @@ export function d1Store (db)
 
     const fromRow = (row) => row && {
         key: row.key, name: row.name, email: row.email, created: row.created,
-        revoked: !! row.revoked, orderRef: row.order_ref ?? null, emailed: row.emailed ?? null, note: row.note ?? null,
+        revoked: !! row.revoked, orderRef: row.order_ref ?? null, copy: row.copy ?? null, emailed: row.emailed ?? null, note: row.note ?? null,
     };
 
     return {
@@ -21,10 +21,11 @@ export function d1Store (db)
             return fromRow (await one ('SELECT * FROM licences WHERE key = ?1', key));
         },
 
-        async createLicence ({ key, name, email, created, orderRef = null, note = null })
+        /** False if the key is taken, or the order already has this copy. */
+        async createLicence ({ key, name, email, created, orderRef = null, copy = null, note = null })
         {
-            return await run ('INSERT OR IGNORE INTO licences (key, name, email, created, revoked, order_ref, note) VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6)',
-                              key, name, email, created, orderRef, note) === 1;
+            return await run ('INSERT OR IGNORE INTO licences (key, name, email, created, revoked, order_ref, copy, note) VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6, ?7)',
+                              key, name, email, created, orderRef, copy, note) === 1;
         },
 
         async updateLicence (key, { name, email, revoked, note })
@@ -41,12 +42,18 @@ export function d1Store (db)
 
         async listByOrder (orderRef)
         {
-            return (await all ('SELECT * FROM licences WHERE order_ref = ?1 ORDER BY created, key', orderRef)).map (fromRow);
+            return (await all ('SELECT * FROM licences WHERE order_ref = ?1 ORDER BY copy, created, key', orderRef)).map (fromRow);
         },
 
         async markEmailed (key, date)
         {
             await run ('UPDATE licences SET emailed = ?2 WHERE key = ?1', key, date);
+        },
+
+        /** Marks a licence emailed if it wasn't, in one statement: true for the one caller that did. */
+        async claimEmail (key, date)
+        {
+            return await run ('UPDATE licences SET emailed = ?2 WHERE key = ?1 AND emailed IS NULL', key, date) === 1;
         },
 
         async listActivations (key)
@@ -110,7 +117,7 @@ export function memoryStore()
 
         async listByOrder (orderRef)
         {
-            return [...licences.values()].filter ((l) => l.orderRef === orderRef).sort ((a, b) => a.order - b.order)
+            return [...licences.values()].filter ((l) => l.orderRef === orderRef).sort ((a, b) => (a.copy ?? -1) - (b.copy ?? -1) || a.order - b.order)
                                          .map (({ order, ...copy }) => copy);
         },
 
@@ -122,12 +129,26 @@ export function memoryStore()
                 l.emailed = date;
         },
 
-        async createLicence ({ key, name, email, created, orderRef = null, note = null })
+        async claimEmail (key, date)
+        {
+            const l = licences.get (key);
+
+            if (! l || l.emailed)
+                return false;
+
+            l.emailed = date;
+            return true;
+        },
+
+        async createLicence ({ key, name, email, created, orderRef = null, copy = null, note = null })
         {
             if (licences.has (key))
                 return false;
 
-            licences.set (key, { key, name, email, created, revoked: false, orderRef, emailed: null, note, order: licences.size });
+            if (orderRef !== null && copy !== null && [...licences.values()].some ((l) => l.orderRef === orderRef && l.copy === copy))
+                return false;
+
+            licences.set (key, { key, name, email, created, revoked: false, orderRef, copy, emailed: null, note, order: licences.size });
             return true;
         },
 

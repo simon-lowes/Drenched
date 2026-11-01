@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS licences (
     created   TEXT NOT NULL,              -- YYYY-MM-DD
     revoked   INTEGER NOT NULL DEFAULT 0, -- refunds and chargebacks
     order_ref TEXT,                       -- the shop's transaction
+    copy      INTEGER,                    -- which copy of the order, from 0
     emailed   TEXT,                       -- when the number was emailed to the buyer
     note      TEXT
 );
@@ -29,3 +30,6 @@ CREATE TABLE IF NOT EXISTS moves (
 
 CREATE INDEX IF NOT EXISTS moves_by_key ON moves (key, moved);
 CREATE INDEX IF NOT EXISTS licences_by_order ON licences (order_ref);
+
+-- Paddle can deliver one sale twice at once; this keeps it to one licence per copy.
+CREATE UNIQUE INDEX IF NOT EXISTS licences_by_order_copy ON licences (order_ref, copy);
