@@ -111,9 +111,14 @@ struct ReverbControls
     thread swaps them in without a gap: over 40 ms the input moves from the
     outgoing kernel to the new one, and the outgoing kernel rings out its own
     tail, so changing the decay or the space while sound is playing never
-    clicks or cuts off what is already reverberating.
+    clicks or cuts off what is already reverberating. A kernel that arrives
+    during a handover waits for it to finish; the reverb keeps two outgoing
+    kernels, so a third arrival within one tail fades the oldest out over
+    40 ms.
     Kernels the audio thread is finished with go back through takeRetired()
-    to be freed off the audio thread.
+    to be freed off the audio thread. Should nothing take them for a long
+    while, new kernels wait (and submit() replaces the waiting one) rather
+    than any being lost.
 
     The living tail runs alongside, following the same input, and plays at
     the level the kernel asks for (none unless the living blend is up).
@@ -192,6 +197,7 @@ private:
     const ReverbControls& finiteControls (const ReverbControls& asked) noexcept;
     void installIncoming() noexcept;
     void retire (ReverbKernel* kernel) noexcept;
+    void flushDeferred() noexcept;
     void settleTone (const ReverbControls& controls) noexcept;
     void glideTone (const ReverbControls& controls) noexcept;
     void designTone (bool cuts, bool shelves, bool mono, std::size_t rampSamples) noexcept; // 0: at once

@@ -1,6 +1,7 @@
 #include "TestHelpers.h"
 
 #include <drenched/ConvolutionReverb.h>
+#include <drenched/DirectConvolver.h>
 #include <drenched/KernelBuilder.h>
 #include <drenched/LivingTail.h>
 #include <drenched/Mix.h>
@@ -12,11 +13,14 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <numbers>
+#include <random>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -963,4 +967,532 @@ TEST_CASE ("The tail reported to hosts covers the pre-delay, the response and th
     CHECK (reported (false, 1000.0f, 40.0f) >= plain + 1.04 - 1.0e-6);
     CHECK (reported (true, 0.0f, 0.0f) >= plain + ConvolutionReverb::lowCpuLatency (48000.0) / 48000.0 - 1.0e-6);
     CHECK (reported (false, 0.0f, 1.0e6f) <= plain + SpeakerTrim::maxDelayMs / 1000.0 + 1.0e-6);
+}
+
+//==============================================================================
+// The whole reverb nulled against DirectConvolver, and kernels changing faster
+// than their tails ring out.
+
+namespace
+{
+    /** Noise under an exponential envelope, scaled to unit energy: a response
+        nothing could mistake for one built from another seed. */
+    std::vector<float> noiseResponse (std::size_t length, unsigned seed, double decaySamples)
+    {
+        auto h = testing::noise (length, seed);
+        double e = 0.0;
+
+        for (std::size_t n = 0; n < length; ++n)
+        {
+            h[n] *= static_cast<float> (std::exp (-static_cast<double> (n) / decaySamples));
+            e += static_cast<double> (h[n]) * h[n];
+        }
+
+        for (auto& s : h)
+            s = static_cast<float> (s / std::sqrt (e));
+
+        return h;
+    }
+
+    ImpulseResponseSet noiseResponses (std::size_t length, unsigned seed, double decaySamples)
+    {
+        ImpulseResponseSet set;
+        set.sampleRate = 48000.0;
+
+        for (unsigned p = 0; p < 4; ++p)
+            set.paths[p] = noiseResponse (length, seed + p, decaySamples);
+
+        return set;
+    }
+
+    /** The reference: input, then silence, through DirectConvolver; `length` samples of it. */
+    std::vector<float> directlyConvolved (const std::vector<float>& input, const std::vector<float>& response, std::size_t length)
+    {
+        std::vector<float> x (length, 0.0f), y (length, 0.0f);
+        std::copy_n (input.begin(), std::min (input.size(), length), x.begin());
+
+        DirectConvolver direct;
+        direct.setImpulseResponse (response);
+        direct.process (x, y);
+        return y;
+    }
+
+    /** Settings at which the wet path is nothing but the convolution: fully
+        wet, no pre-delay, the cuts at their ends (off), no brightness, EQ
+        flat, width 100 % (mean + spread x 1 gives each speaker back), Cloud
+        100 % (Cloud's neutral: lower gathers the reverb towards the sound),
+        no mono bass, ducking, freeze or movement, every speaker at 0 dB and
+        0 ms, and the living tail silent (a kernel's living level is 0 unless
+        set).
+
+        Two things remain that aren't exactly nothing, both far under the
+        tolerance: the dry gain at full wet is cos (pi / 2) in float, -4.4e-8,
+        and the width stage rounds mean + (x - mean) in the last bit. */
+    ReverbControls neutral()
+    {
+        ReverbControls c;
+        c.mix = 1.0f;
+        c.predelayMs = 0.0f;
+        c.brightnessDb = 0.0f;
+        c.lowCutHz = 20.0f;
+        c.highCutHz = 20000.0f;
+        c.widthPercent = 100.0f;
+        c.cloudPercent = 100.0f;
+        c.monoBelowHz = 0.0f;
+        c.ducking = 0.0f;
+        c.outputGain = 1.0f;
+        c.freeze = false;
+        c.movement = 0.0f;
+        c.eq = WetEqualiser::flat;
+        c.speakerLevelDb.fill (0.0f);
+        c.speakerDelayMs.fill (0.0f);
+        return c;
+    }
+
+    /** Plays every channel through the reverb in blocks of random length, from
+        a single sample to several chunks. */
+    void playInRandomBlocks (ConvolutionReverb& reverb, std::vector<std::vector<float>>& channels,
+                             const ReverbControls& c, unsigned seed)
+    {
+        std::mt19937 rng (seed);
+        std::uniform_int_distribution<std::size_t> sizes (1, 3 * ConvolutionReverb::chunkSize + 37);
+        std::vector<float*> pointers (channels.size());
+        const auto length = channels.front().size();
+
+        for (std::size_t pos = 0; pos < length;)
+        {
+            const auto n = std::min (sizes (rng), length - pos);
+
+            for (std::size_t ch = 0; ch < channels.size(); ++ch)
+                pointers[ch] = channels[ch].data() + pos;
+
+            reverb.process (pointers.data(), pointers.size(), n, c);
+            pos += n;
+        }
+    }
+
+    struct WorstError
+    {
+        float error = 0.0f;
+        std::size_t at = 0;
+    };
+
+    /** The largest difference between out and the reference played `latency`
+        samples later (and silent before and after it). */
+    WorstError worstError (const std::vector<float>& out, const std::vector<float>& reference, std::size_t latency)
+    {
+        WorstError worst;
+
+        for (std::size_t n = 0; n < out.size(); ++n)
+        {
+            const auto wanted = n >= latency && n - latency < reference.size() ? reference[n - latency] : 0.0f;
+            const auto error = std::abs (out[n] - wanted);
+
+            if (! (error <= worst.error)) // a NaN is the worst of all
+            {
+                worst.error = std::isfinite (error) ? error : std::numeric_limits<float>::infinity();
+                worst.at = n;
+            }
+        }
+
+        return worst;
+    }
+
+    float peakOf (const std::vector<float>& x, std::size_t from = 0, std::size_t to = SIZE_MAX)
+    {
+        float most = 0.0f;
+
+        for (auto n = from; n < std::min (to, x.size()); ++n)
+            most = std::max (most, std::abs (x[n]));
+
+        return most;
+    }
+}
+
+TEST_CASE ("At neutral settings each output is each input through exactly its own true-stereo path", "[reverb][null]")
+{
+    // A response longer than 8192 taps reaches every stage of the partitioned
+    // convolver: the head, the 64 and 512 stages and the 4096 one from tap 8192.
+    constexpr double sr = 48000.0;
+    const auto set = noiseResponses (9000, 300, 2500.0);
+    const auto input = testing::noise (4000, 31);
+    const auto length = input.size() + set.length();
+
+    using P = ImpulseResponseSet;
+    const std::array<std::array<P::Path, 2>, 2> paths { { { P::leftToLeft, P::leftToRight }, { P::rightToLeft, P::rightToRight } } };
+    std::array<std::array<std::vector<float>, 2>, 2> reference; // [input][output]
+    float peak = 0.0f;
+
+    for (std::size_t i = 0; i < 2; ++i)
+    {
+        for (std::size_t k = 0; k < 2; ++k)
+        {
+            reference[i][k] = directlyConvolved (input, set.paths[paths[i][k]], length);
+            peak = std::max (peak, peakOf (reference[i][k]));
+        }
+    }
+
+    // Low CPU leaves out the time-domain head and the small stages: the same
+    // response, exactly its latency late.
+    for (const auto latency : { std::size_t { 0 }, ConvolutionReverb::lowCpuLatency (sr) })
+    {
+        for (std::size_t i = 0; i < 2; ++i)
+        {
+            ConvolutionReverb reverb;
+            reverb.prepare (sr);
+            reverb.submit (std::make_unique<ReverbKernel> (set, LivingTailDesign {}, latency));
+
+            std::vector<std::vector<float>> channels (2, std::vector<float> (length + latency, 0.0f));
+            std::copy (input.begin(), input.end(), channels[i].begin());
+            playInRandomBlocks (reverb, channels, neutral(), static_cast<unsigned> (latency + i));
+            REQUIRE (reverb.latency() == latency);
+
+            for (std::size_t k = 0; k < 2; ++k)
+            {
+                const auto worst = worstError (channels[k], reference[i][k], latency);
+                INFO ("latency " << latency << ", input " << i << " to output " << k << ": worst error "
+                                 << worst.error / peak << " of the peak, at sample " << worst.at);
+                CHECK (worst.error <= 1.0e-4f * peak);
+            }
+        }
+    }
+}
+
+TEST_CASE ("At neutral settings each surround output is each input speaker through exactly its own paths", "[reverb][null][surround]")
+{
+    constexpr double sr = 48000.0;
+    const auto which = GENERATE (0, 1);
+    const auto layout = which == 0 ? layouts::fivePointOne() : layouts::sevenPointOnePointFour();
+    const auto numSpeakers = layout.size();
+
+    // Each stage source to each speaker its own noise, the LFE's included (a
+    // kernel has a path per output; the reverb never plays the LFE's).
+    SpatialResponseSet set;
+    set.sampleRate = sr;
+    unsigned seed = 500;
+
+    for (auto& source : set.paths)
+        for (std::size_t k = 0; k < numSpeakers; ++k)
+            source.push_back (noiseResponse (4600, seed++, 1500.0));
+
+    const auto input = testing::noise (2048, 41);
+    const auto length = input.size() + set.length();
+
+    std::array<std::vector<std::vector<float>>, 2> reference; // [source][speaker]
+    float peak = 0.0f;
+
+    for (std::size_t s = 0; s < 2; ++s)
+    {
+        for (std::size_t k = 0; k < numSpeakers; ++k)
+        {
+            reference[s].push_back (directlyConvolved (input, set.paths[s][k], length));
+            peak = std::max (peak, peakOf (reference[s].back()));
+        }
+    }
+
+    for (const auto latency : { std::size_t { 0 }, ConvolutionReverb::lowCpuLatency (sr) })
+    {
+        for (std::size_t j = 0; j < numSpeakers; ++j)
+        {
+            // The documented routing: left-hand speakers feed the left stage source,
+            // right-hand ones the right, centred ones both at -3 dB, the LFE neither.
+            const auto& from = layout[j];
+            const auto toLeft = from.isLeft() ? 1.0f : from.isCentred() ? std::sqrt (0.5f) : 0.0f;
+            const auto toRight = from.isRight() ? 1.0f : from.isCentred() ? std::sqrt (0.5f) : 0.0f;
+
+            ConvolutionReverb reverb;
+            reverb.prepare (sr, layout, layout);
+            reverb.submit (std::make_unique<ReverbKernel> (set, LivingTailDesign {}, latency));
+
+            std::vector<std::vector<float>> channels (numSpeakers, std::vector<float> (length + latency, 0.0f));
+            std::copy (input.begin(), input.end(), channels[j].begin());
+            playInRandomBlocks (reverb, channels, neutral(), static_cast<unsigned> (100 * which + static_cast<int> (latency + j)));
+            REQUIRE (reverb.latency() == latency);
+
+            for (std::size_t k = 0; k < numSpeakers; ++k)
+            {
+                std::vector<float> wanted (length, 0.0f);
+
+                if (! layout[k].lfe)
+                    for (std::size_t n = 0; n < length; ++n)
+                        wanted[n] = toLeft * reference[0][k][n] + toRight * reference[1][k][n];
+
+                const auto worst = worstError (channels[k], wanted, latency);
+                INFO ((which == 0 ? "5.1" : "7.1.4") << ", latency " << latency << ", input speaker " << j << " to speaker " << k
+                                                     << ": worst error " << worst.error / peak << " of the peak, at sample " << worst.at);
+                CHECK (worst.error <= 1.0e-4f * peak);
+            }
+        }
+    }
+}
+
+namespace
+{
+    /** Steady noise, low-passed at 200 Hz (fourth order), so that what the reverb
+        makes of it is smooth: its third difference is then tiny and a click (a
+        step, anything sharp) stands far out of it. White noise is as rough as a
+        click, and would hide one. */
+    std::vector<float> smoothNoise (std::size_t length, unsigned seed)
+    {
+        auto x = testing::noise (length, seed);
+
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            Biquad lp;
+            lp.setCoefficients (Biquad::lowPass (48000.0, 200.0));
+            lp.process (x.data(), x.size());
+        }
+
+        return x;
+    }
+
+    /** The largest third difference over [from, to) of either channel, as
+        tests/plugin/ClickTests.cpp measures a click. */
+    float roughness (const std::vector<float>& l, const std::vector<float>& r, std::size_t from, std::size_t to)
+    {
+        float most = 0.0f;
+
+        for (const auto* x : { &l, &r })
+            for (auto i = std::max<std::size_t> (from, 3); i < std::min (to, x->size()); ++i)
+                most = std::max (most, std::abs ((*x)[i] - 3.0f * (*x)[i - 1] + 3.0f * (*x)[i - 2] - (*x)[i - 3]));
+
+        return most;
+    }
+
+    float decibels (float x) { return 20.0f * std::log10 (std::max (x, 1.0e-10f)); }
+
+    /** Plays l and r in blocks, submitting the next of `kernels` (moved from)
+        at each of `at`, which fall on block boundaries. */
+    void playSwapping (ConvolutionReverb& reverb, std::vector<float>& l, std::vector<float>& r,
+                       std::vector<std::unique_ptr<ReverbKernel>>& kernels, const std::vector<std::size_t>& at,
+                       std::size_t block = 240)
+    {
+        std::size_t next = 0;
+
+        for (std::size_t pos = 0; pos < l.size(); pos += block)
+        {
+            while (next < at.size() && at[next] <= pos)
+                reverb.submit (std::move (kernels[next++]));
+
+            reverb.process (l.data() + pos, r.data() + pos, std::min (block, l.size() - pos), neutral());
+        }
+    }
+
+    /** Every kernel takeRetired() has to give, still alive, so that no address
+        is reused while they are compared. */
+    std::vector<std::unique_ptr<ReverbKernel>> drainRetired (ConvolutionReverb& reverb)
+    {
+        std::vector<std::unique_ptr<ReverbKernel>> back;
+
+        while (auto k = reverb.takeRetired())
+            back.push_back (std::move (k));
+
+        return back;
+    }
+
+    std::size_t timesBack (const std::vector<std::unique_ptr<ReverbKernel>>& back, const ReverbKernel* kernel)
+    {
+        return static_cast<std::size_t> (std::count_if (back.begin(), back.end(), [kernel] (const auto& k) { return k.get() == kernel; }));
+    }
+}
+
+TEST_CASE ("Rooms changing faster than their tails ring out never click, and every kernel comes back once", "[reverb][swap]")
+{
+    // Dragging a decay band, automating scenes or clicking through spaces: kernels
+    // A, B, C and D 30 ms apart, inside the 40 ms handover, into steady sound. As
+    // with a decay being dragged, they are one room with four decays, alike enough
+    // that a gain error in a handover adds up rather than averaging out.
+    constexpr double sr = 48000.0;
+    constexpr std::size_t settle = 24000, gap = 1440; // 0.5 s, then 30 ms apart
+    const std::array<double, 4> decays { 2400.0, 3600.0, 1800.0, 3000.0 };
+    std::vector<ImpulseResponseSet> rooms;
+
+    for (const auto decay : decays)
+        rooms.push_back (noiseResponses (9600, 700, decay));
+
+    const auto length = settle + 3 * gap + 28800;
+    const auto inputL = smoothNoise (length, 61), inputR = smoothNoise (length, 62);
+
+    std::vector<std::unique_ptr<ReverbKernel>> kernels;
+    std::vector<ReverbKernel*> submitted;
+
+    for (const auto& room : rooms)
+    {
+        kernels.push_back (std::make_unique<ReverbKernel> (room));
+        submitted.push_back (kernels.back().get());
+    }
+
+    ConvolutionReverb reverb;
+    reverb.prepare (sr);
+    auto l = inputL, r = inputR;
+    playSwapping (reverb, l, r, kernels, { 0, settle, settle + gap, settle + 2 * gap });
+
+    // Each room alone, for the level it plays at.
+    constexpr std::size_t window = 19200; // the swaps and 0.3 s after
+    float loudestAlone = 0.0f;
+
+    for (const auto& room : rooms)
+    {
+        ConvolutionReverb alone;
+        alone.prepare (sr);
+        alone.submit (std::make_unique<ReverbKernel> (room));
+        auto al = inputL, ar = inputR;
+        run (alone, al, ar, neutral(), 240);
+        loudestAlone = std::max ({ loudestAlone, peakOf (al, settle, settle + window), peakOf (ar, settle, settle + window) });
+    }
+
+    bool finite = true;
+
+    for (std::size_t n = 0; n < length; ++n)
+        finite = finite && std::isfinite (l[n]) && std::isfinite (r[n]);
+
+    REQUIRE (finite);
+
+    const auto level = std::max ({ peakOf (l, settle - 12000, settle), peakOf (r, settle - 12000, settle),
+                                   peakOf (l, length - 12000), peakOf (r, length - 12000) });
+    const auto steady = std::max (roughness (l, r, settle - 12000, settle), roughness (l, r, length - 12000, length));
+    const auto click = roughness (l, r, settle, settle + window);
+    const auto swapPeak = std::max (peakOf (l, settle, settle + window), peakOf (r, settle, settle + window));
+
+    INFO ("click " << decibels (click / level) << " dB, steady roughness " << decibels (steady / level) << " dB, peak while swapping "
+                   << decibels (swapPeak / loudestAlone) << " dB over the loudest room alone");
+    CHECK (decibels (click / level) < std::max (-40.0f, decibels (steady / level) + 6.0f));
+
+    // No louder than the loudest of the rooms alone: a gain error in a handover (both
+    // kernels at full input, say) goes over. Between identical rooms the next test
+    // holds the handover to the exact sum.
+    CHECK (decibels (swapPeak / loudestAlone) < 1.0f);
+
+    // Once the tails have rung out, every kernel but D is back for freeing, once.
+    const auto back = drainRetired (reverb);
+
+    for (std::size_t k = 0; k < 3; ++k)
+        CHECK (timesBack (back, submitted[k]) == 1);
+
+    CHECK (back.size() == 3);
+}
+
+TEST_CASE ("Swapping to the same room while sound plays changes nothing", "[reverb][swap]")
+{
+    // The input moves from the outgoing kernel to the new one over 40 ms while the
+    // outgoing one rings out what it heard. Between identical rooms the two shares
+    // add up to the input exactly, so the handover is transparent. Twice here, the
+    // second once the first one's tail has rung out.
+    //
+    // Two swaps closer together than a tail can't be: the reverb keeps two
+    // outgoing kernels, so a third arrival fades the oldest out over 40 ms, cutting
+    // its tail short by design. That case is held to no click and no jump in level
+    // by the test above.
+    constexpr double sr = 48000.0;
+    const auto room = noiseResponses (9600, 900, 3000.0);
+    constexpr std::size_t first = 12000, second = first + 9600 + 1920 + 4800;
+    const auto length = second + 24000;
+    const auto inputL = testing::noise (length, 71), inputR = testing::noise (length, 72);
+
+    ConvolutionReverb unswapped;
+    unswapped.prepare (sr);
+    unswapped.submit (std::make_unique<ReverbKernel> (room));
+    auto wantedL = inputL, wantedR = inputR;
+    run (unswapped, wantedL, wantedR, neutral(), 240);
+
+    std::vector<std::unique_ptr<ReverbKernel>> kernels;
+
+    for (int k = 0; k < 3; ++k)
+        kernels.push_back (std::make_unique<ReverbKernel> (room));
+
+    ConvolutionReverb swapped;
+    swapped.prepare (sr);
+    auto l = inputL, r = inputR;
+    playSwapping (swapped, l, r, kernels, { 0, first, second });
+
+    const auto worstL = worstError (l, wantedL, 0), worstR = worstError (r, wantedR, 0);
+    INFO ("worst error " << worstL.error << " at " << worstL.at << " (left), " << worstR.error << " at " << worstR.at << " (right)");
+    CHECK (worstL.error < 1.0e-5f);
+    CHECK (worstR.error < 1.0e-5f);
+    CHECK (drainRetired (swapped).size() == 2);
+}
+
+TEST_CASE ("Forty swaps while nothing frees kernels neither allocate nor lose a kernel", "[reverb][swap][realtime]")
+{
+    // The builder frees retired kernels; here it doesn't get to. However many swaps
+    // pile up, the audio thread must neither allocate nor free, nor drop a kernel.
+    // Each swap waits for the last one's tail to ring out, so every kernel has
+    // played and been finished with. A kernel is known by its length (one sample
+    // more each): one freed by submit() leaves its address to the next.
+    constexpr double sr = 48000.0;
+    constexpr std::size_t block = 240, between = 7200; // 150 ms: the tail (under 1600 taps) and the 40 ms handover
+    constexpr std::size_t shortest = 1500;
+    const auto inputL = testing::noise (between, 81), inputR = testing::noise (between, 82);
+    std::vector<float> l (block), r (block);
+
+    ConvolutionReverb reverb;
+    reverb.prepare (sr);
+
+    std::size_t submitted = 0;
+    std::vector<std::size_t> freedBySubmit; // lengths
+    std::size_t allocations = 0, frees = 0;
+
+    const auto submit = [&]
+    {
+        auto kernel = std::make_unique<ReverbKernel> (noiseResponses (shortest + submitted, 1100, 400.0));
+
+        // submit() frees a kernel that was waiting and never picked up: the one before.
+        testing::AllocationCounter counter;
+        reverb.submit (std::move (kernel));
+
+        if (counter.freed() > 0)
+            freedBySubmit.push_back (shortest + submitted - 1);
+
+        ++submitted;
+    };
+
+    const auto play = [&]
+    {
+        for (std::size_t pos = 0; pos < between; pos += block)
+        {
+            std::copy_n (inputL.begin() + static_cast<std::ptrdiff_t> (pos), block, l.begin());
+            std::copy_n (inputR.begin() + static_cast<std::ptrdiff_t> (pos), block, r.begin());
+
+            testing::AllocationCounter counter;
+            reverb.process (l.data(), r.data(), block, neutral());
+            allocations += counter.count();
+            frees += counter.freed();
+        }
+    };
+
+    submit();
+    play();
+
+    for (int swap = 0; swap < 40; ++swap)
+    {
+        submit();
+        play();
+    }
+
+    CHECK (allocations == 0);
+    CHECK (frees == 0);
+
+    // The builder comes back: what was finished with is there to free, and the rest
+    // once the reverb has played on (a kernel that had to wait goes in, and the one
+    // it replaces rings out).
+    auto back = drainRetired (reverb);
+    play();
+    play();
+
+    for (auto& k : drainRetired (reverb))
+        back.push_back (std::move (k));
+
+    CHECK (allocations == 0);
+    CHECK (frees == 0);
+
+    // Each kernel but the one playing came back exactly once, or was freed by
+    // submit() on the builder's thread without ever having played.
+    for (std::size_t k = 0; k < submitted; ++k)
+    {
+        const auto length = shortest + k;
+        const auto returned = std::count_if (back.begin(), back.end(), [length] (const auto& b) { return b->length() == length; });
+        const auto replaced = std::count (freedBySubmit.begin(), freedBySubmit.end(), length);
+        INFO ("kernel " << k << " of " << submitted << ": came back " << returned << " times, freed by submit " << replaced);
+        CHECK (returned + replaced == (k + 1 < submitted ? 1 : 0));
+    }
 }
