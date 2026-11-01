@@ -13,11 +13,21 @@ impulse response in octave bands over time, within 0.5 dB).
 | `v0.1-recorded-living.session` | 0.1 (session version 1) | A recorded library space, living tail, direct sound, cross-feed, Low CPU, a speaker trim |
 | `v0.1-modelled-gated.session` | 0.1 (session version 1) | A modelled space by id, Reverse, Gate, direct colour, cross-feed |
 | `v0.2-everything.session` | 0.2 before release (session version 2) | Every parameter off its default but Freeze (which would leave the impulse dry), the right decays unlinked, the wet EQ, cloud size, listener and source positions, playing a file of the person's own (`v0.2-everything.wav`) with speaker trims and locks; three scenes: a modelled space, a library space and that file, scene 3 playing and changed since |
+| `v0.2-file-level.session` | 0.2 before release (session version 2, with `loadedLevel`) | The first session to say a loaded response plays at the level it has at its own rate (`loadedLevel="fileRate"`): a 96 kHz file of the person's own (`v0.2-file-level.wav`), heard here at 48 kHz, where the sessions before it play 3 dB quieter; Size, early/late balance, mix and pre-delay moved |
 
 The beta 1 sessions were made by building the beta 1 source and saving from it; their
 `.expected` sound matched what beta 1 itself rendered to 0.00 dB in every band. The 0.2
 session was saved from main at `02f0639`, the build that first wrote session version 2
-in full (scenes, the wet EQ, unlinked decays), before 0.2 was released.
+in full (scenes, the wet EQ, unlinked decays), before 0.2 was released. The file-level
+session was saved by the build that first wrote `loadedLevel` (branch
+`claude/loaded-room-level`), before 0.2 was released.
+
+Sessions without `loadedLevel` (every one before it) play a loaded file or library
+recording at unit energy at the session's rate, which differs from its level at its own
+rate whenever the rates differ: louder above it (a 44.1 kHz file 3.4 dB at 96 kHz), and
+quieter below it by about as much as the file has little above the lower Nyquist (a
+96 kHz room recording about 3 dB at 48 kHz); loaded and saved again they keep that, and
+`tests/plugin/SessionTests.cpp` checks both rules.
 
 A session that plays a file of the person's own names it by the path it had on the
 computer that saved it. That file is kept here next to the session, and the tests point

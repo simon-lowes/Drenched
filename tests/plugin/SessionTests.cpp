@@ -119,11 +119,11 @@ namespace
 
     /** Prepares the plugin (which builds the response for the loaded session there and
         then) and plays an impulse through both inputs. */
-    std::array<std::vector<float>, 2> render (DrenchedProcessor& p)
+    std::array<std::vector<float>, 2> render (DrenchedProcessor& p, double sampleRate = rate)
     {
-        testing::onMessageThread ([&] { p.prepareToPlay (rate, blockSize); });
+        testing::onMessageThread ([&] { p.prepareToPlay (sampleRate, blockSize); });
 
-        const auto length = static_cast<int> (windows.back() * rate);
+        const auto length = static_cast<int> (windows.back() * sampleRate);
         std::array<std::vector<float>, 2> out;
         juce::AudioBuffer<float> buffer (2, blockSize);
         juce::MidiBuffer midi;
@@ -434,6 +434,158 @@ TEST_CASE ("A session saved now loads back exactly", "[sessions]")
     file.deleteFile();
 }
 
+namespace
+{
+    /** The 1 kHz octave of what both outputs played, in dB per second: an impulse of one
+        sample holds less of each band the higher the rate. */
+    double kilohertzDb (const std::array<std::vector<float>, 2>& sound, double sampleRate)
+    {
+        double energy = 0.0;
+
+        for (auto band : sound)
+        {
+            for (int pass = 0; pass < 2; ++pass)
+            {
+                Biquad hp, lp;
+                hp.setCoefficients (Biquad::highPass (sampleRate, 1000.0 / std::sqrt (2.0)));
+                lp.setCoefficients (Biquad::lowPass (sampleRate, 1000.0 * std::sqrt (2.0)));
+                hp.process (band.data(), band.size());
+                lp.process (band.data(), band.size());
+            }
+
+            for (const auto v : band)
+                energy += static_cast<double> (v) * v;
+        }
+
+        return 10.0 * std::log10 (energy * sampleRate + 1.0e-30);
+    }
+
+    /** Whether a session says how loud its loaded responses play (sessions saved before
+        that was written don't). */
+    bool hasLoadedLevel (const juce::MemoryBlock& session)
+    {
+        const auto xml = juce::AudioProcessor::getXmlFromBinary (session.getData(), static_cast<int> (session.getSize()));
+        return xml != nullptr && xml->hasAttribute ("loadedLevel");
+    }
+
+    /** The session as a version before the marker would have saved it. */
+    juce::MemoryBlock withoutLoadedLevel (const juce::MemoryBlock& session)
+    {
+        auto xml = juce::AudioProcessor::getXmlFromBinary (session.getData(), static_cast<int> (session.getSize()));
+        REQUIRE (xml != nullptr);
+        xml->removeAttribute ("loadedLevel");
+
+        juce::MemoryBlock older;
+        juce::AudioProcessor::copyXmlToBinary (*xml, older);
+        return older;
+    }
+}
+
+TEST_CASE ("A new session plays a loaded file at its own level at any rate, an older one as it always did", "[sessions][level]")
+{
+    // A 96 kHz file of the person's own, fully wet.
+    const auto file = sessionsDir().getChildFile ("v0.2-file-level.wav");
+    REQUIRE (file.existsAsFile());
+
+    juce::MemoryBlock fresh;
+    {
+        testing::Plugin first;
+        testing::onMessageThread ([&]
+        {
+            auto* mix = first->getState().getParameter (ParamIDs::mix);
+            mix->setValueNotifyingHost (mix->convertTo0to1 (100.0f));
+
+            auto ui = first->getUiState();
+            ui.setProperty (UiIDs::irPath, file.getFullPathName(), nullptr);
+            ui.setProperty (UiIDs::irName, "Level", nullptr);
+            ui.setProperty (UiIDs::spaceId, "user", nullptr);
+            first->getStateInformation (fresh);
+        });
+    }
+
+    // A new instance says so in what it saves. An older session doesn't, and saved again
+    // still doesn't.
+    REQUIRE (hasLoadedLevel (fresh));
+    const auto older = withoutLoadedLevel (fresh);
+    REQUIRE_FALSE (hasLoadedLevel (older));
+
+    for (const auto& session : { fresh, older })
+    {
+        testing::Plugin plugin;
+        load (*plugin, session);
+        juce::MemoryBlock again;
+        testing::onMessageThread ([&] { plugin->getStateInformation (again); });
+        CHECK (hasLoadedLevel (again) == hasLoadedLevel (session));
+        CHECK (again == session);
+    }
+
+    const auto played = [] (const juce::MemoryBlock& session, double sampleRate)
+    {
+        testing::Plugin plugin;
+        load (*plugin, session);
+        return kilohertzDb (render (*plugin, sampleRate), sampleRate);
+    };
+
+    // At the file's own rate both play the same.
+    const auto newAtFileRate = played (fresh, 96000.0), oldAtFileRate = played (older, 96000.0);
+    CHECK (std::abs (newAtFileRate - oldAtFileRate) < 0.01);
+
+    for (const auto sessionRate : { 48000.0, 192000.0 })
+    {
+        // A new session keeps the file's level. An older one is quieter at 48 kHz (what the
+        // file has above 24 kHz, next to nothing, made up across the whole band) and louder
+        // at 192 kHz (the band above 48 kHz the file doesn't have, made up), as it was.
+        const auto kept = played (fresh, sessionRate) - newAtFileRate;
+        const auto asBefore = played (older, sessionRate) - oldAtFileRate;
+        INFO (sessionRate << " Hz: " << kept << " dB in a new session, " << asBefore << " dB in an older one");
+        CHECK (std::abs (kept) < 0.2);
+        CHECK (std::abs (asBefore - 10.0 * std::log10 (sessionRate / 96000.0)) < 0.3);
+    }
+
+    // A scene recalled in an older session plays at that session's level too.
+    testing::Plugin plugin;
+    load (*plugin, older);
+    testing::onMessageThread ([&]
+    {
+        REQUIRE (plugin->storeScene (0, "File") == 1);
+        plugin->getUiState().setProperty (UiIDs::spaceId, bundledSpaces[0].id, nullptr);
+        plugin->recallScene (1, true);
+        CHECK (plugin->chosenSpaceId() == "user");
+    });
+
+    CHECK (std::abs (kilohertzDb (render (*plugin, 192000.0), 192000.0) - played (older, 192000.0)) < 0.01);
+}
+
+TEST_CASE ("The session saved with loaded files at their own level would sound different by the old rule", "[sessions][level]")
+{
+    // tests/sessions/v0.2-file-level.session plays a 96 kHz file at 48 kHz: by the rule
+    // of the sessions before it, 3 dB quieter. So its .expected sound holds the new rule.
+    const auto session = bytesOf (sessionsDir().getChildFile ("v0.2-file-level.session"));
+    REQUIRE (hasLoadedLevel (session));
+
+    // The reverb alone, without the dry sound the session mixes in.
+    const auto played = [] (const juce::MemoryBlock& s)
+    {
+        testing::Plugin plugin;
+        load (*plugin, s);
+        testing::onMessageThread ([&]
+        {
+            auto* mix = plugin->getState().getParameter (ParamIDs::mix);
+            mix->setValueNotifyingHost (mix->convertTo0to1 (100.0f));
+        });
+        return kilohertzDb (render (*plugin), rate);
+    };
+
+    const auto change = played (withoutLoadedLevel (session)) - played (session);
+    INFO ("by the old rule: " << change << " dB");
+    CHECK ((change < -2.5 && change > -3.5));
+
+    // Every session saved before it plays by the old rule.
+    for (const auto& file : savedSessions())
+        if (file.getFileName() != "v0.2-file-level.session")
+            CHECK_FALSE (hasLoadedLevel (bytesOf (file)));
+}
+
 TEST_CASE ("Scenes in saved sessions bring back what they stored", "[sessions][scenes]")
 {
     // A scene names its parameters by id, as the session does, and its space; recalled
@@ -688,3 +840,4 @@ TEST_CASE ("Every space a session or scene can name is still there, the same", "
         CHECK (unlisted.isEmpty());
     }
 }
+

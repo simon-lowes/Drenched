@@ -26,6 +26,13 @@ namespace
     const juce::Identifier stateVersionID { "version" };
     constexpr const char* stateType = "DrenchedState"; // the session's outermost tag
 
+    // How loud a loaded response plays (see LoadedLevel). New instances write "fileRate"
+    // and keep it in every session they save. A session saved before it was written
+    // doesn't have it, and plays at the session rate's level, as it always did, however
+    // often it is loaded and saved again.
+    const juce::Identifier loadedLevelID { "loadedLevel" };
+    constexpr const char* fileRateLevel = "fileRate";
+
     /** Where a session's own impulse response file is now: where it was saved, or where
         it most likely moved to (see MovedFiles.h). {} when it can't be found. */
     juce::File findImpulseResponse (const juce::String& savedPath)
@@ -108,6 +115,8 @@ DrenchedProcessor::DrenchedProcessor()
 
     params.decayLink = raw (ParamIDs::decayLink);
 
+    state.state.setProperty (loadedLevelID, fileRateLevel, nullptr);
+
     builder = std::make_unique<KernelBuilder> (reverb);
     cacheUiState();
     state.state.addListener (this);
@@ -183,6 +192,7 @@ void DrenchedProcessor::cacheUiState()
     }
 
     spaceIndex.store (index);
+    loadedLevel.store (state.state.hasProperty (loadedLevelID) ? LoadedLevel::fileRate : LoadedLevel::sessionRate);
     const auto speakers = juce::StringArray::fromTokens (ui.getProperty (UiIDs::speakers, "").toString(), ";", "");
 
     for (size_t k = 0; k < maxChannels; ++k)
@@ -223,6 +233,11 @@ std::optional<ImpulseResponseRequest> DrenchedProcessor::currentRequest (double 
         if (libraryResponse == nullptr || libraryLoadedId != libraryWanted)
             return std::nullopt;
     }
+
+    // A modelled space plays the same in any session, so its requests don't differ by it.
+    if (request.recorded != nullptr)
+        request.loadedLevel = loadedLevel.load();
+
     {
         const std::lock_guard lock (layoutLock);
         request.outputs = outputSpeakers;

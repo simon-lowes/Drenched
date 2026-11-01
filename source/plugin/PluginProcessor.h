@@ -383,6 +383,7 @@ private:
     SpeakerLayout outputSpeakers = layouts::stereo();
 
     std::atomic<int> spaceIndex { 0 };
+    std::atomic<LoadedLevel> loadedLevel { LoadedLevel::fileRate }; // the session's, kept by cacheUiState
     std::atomic<double> preparedRate { 0.0 };
 
     // The loaded impulse response, shared with the builder through requests. Read and

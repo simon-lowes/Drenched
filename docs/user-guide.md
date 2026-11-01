@@ -104,7 +104,7 @@ Three rooms were recorded from several places or with several microphone setups:
 
 Choose **Load your own IR...** in the browser, or drop a file anywhere on the window. Drenched reads WAV, AIFF, FLAC, SOFA and .amb files: mono, stereo, true stereo (four channels), surround up to 9.1.6, or B-format.
 
-- The file is resampled to the session rate and its decay is measured into the graph, so you can reshape it, and use Size, like any other space. Anything past 30 seconds is cut.
+- The file is resampled to the session rate and its decay is measured into the graph, so you can reshape it, and use Size, like any other space. It plays at the same level at any session rate, the level it has at its own. Anything past 30 seconds is cut.
 - **B-format** (first-order ambisonics) is recognised by its metadata, the .amb type, or "AmbiX", "B-format" or "FuMa" in the name. Higher-order AmbiX plays at first order. Any other four-channel file is true stereo.
 - **Surround files** play their own channels on a surround track and fold down on a stereo one.
 - **SOFA** files play a pair of sources about 30 degrees either side of the listener as true stereo, or else the source closest to straight ahead. Ambisonic SOFA plays as B-format. The limit is 512 MB.
@@ -289,6 +289,7 @@ On a track with nothing playing, Drenched rests once the room has died away, so 
 - Every setting, the space, locks, the view, the look, the speaker settings, the scenes and the window size are saved with the session.
 - Changing any of them tells your host the project has changed, so it asks you to save before closing. Resizing the window doesn't, and neither do scenes recalled by automation as it plays.
 - Sessions from earlier betas load and sound the same. New controls start at the setting that matches how older versions played.
+- Sessions saved before this version play your own files and the recorded spaces at the level they always did, saved again or not: louder when the session runs above the file's own rate (a 44.1 kHz file 3.4 dB louder at 96 kHz, 6.5 dB at 192 kHz), and usually quieter below it (a 96 kHz file about 3 dB quieter at 48 kHz). New sessions play each at the level it has at its own rate, at any session rate.
 - Bouncing offline, changes to the room (decay, size and the other settings that reshape it) take effect at the moment they are automated, so a bounce sounds the same every time. Rebuilding the room makes a bounce with a lot of room automation take a little longer.
 - Every parameter can be automated except Low CPU. Decay is shaped through its eight bands, as hosts see them; the positions, the wet EQ and Scene are all automatable.
 - Values you type into your host's own fields (an automation lane or its parameter list) read as they do in Drenched: "12k", "0.1 s", "1,5", "off" and "20% left" all work. Hosts and control surfaces with room for only a few characters show short names, such as "Dcy 1k" and "RDcy 1k", so no two controls look the same.
@@ -299,7 +300,7 @@ On a track with nothing playing, Drenched rests once the room has died away, so 
 Every feature is in both the 32-bit and 64-bit versions, and sessions move freely between them. The strip says **Beta · 32-bit** when the 32-bit version is loaded.
 
 - There is no 32-bit Mac version, and no AAX.
-- A 32-bit host has little memory, so long surround reverbs at high sample rates are shortened (stereo and mono never are), and Drenched tells you how far. For example, 7.1.4 plays 27.8 s at 48 kHz and 6.9 s at 192 kHz.
+- A 32-bit host has little memory, so long surround reverbs at high sample rates are shortened, and Drenched tells you how far. For example, 7.1.4 plays 27.8 s at 48 kHz and 6.9 s at 192 kHz. Stereo keeps 41.7 s at 192 kHz and mono twice that, which only a long file stretched by Size, or a long reverb above 192 kHz, goes past.
 - Use the version that matches your host. Bridge only if you must, for example to keep an old 32-bit session working in a 64-bit host; REAPER bridges by itself. Many other hosts' bridges only handle VST2, which Drenched doesn't offer.
 
 ## Reporting bugs

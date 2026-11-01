@@ -12,6 +12,23 @@ namespace drenched
 
 struct RecordedResponse;
 
+/** How loud a loaded response plays at the session's rate (see shapedEnergy()). */
+enum class LoadedLevel
+{
+    /** Unit energy at the session's rate. A file has nothing above its own Nyquist,
+        so above its rate the bands it has are raised to make up the energy: a 44.1 kHz
+        file plays 3.4 dB louder at 96 kHz than at 44.1 kHz. The other way, a file with
+        little above the session's Nyquist (most rooms) plays quieter: at its own rate
+        its unit energy is shared with a band it barely fills, so a 96 kHz file plays
+        about 3 dB quieter at 48 kHz. Sessions saved before
+        fileRate existed play this way, as they always have. */
+    sessionRate,
+
+    /** The level the response has at its own rate, in every band it has, whatever
+        rate the session runs at. */
+    fileRate
+};
+
 /** Everything that shapes a synthesised impulse response. Two equal requests
     always produce identical responses (the noise is seeded per path, not per
     request), so a small edit changes the sound smoothly instead of
@@ -48,6 +65,7 @@ struct ImpulseResponseRequest
     // stretches it in time; distance and the listener and source positions only shape
     // synthesised spaces.
     std::shared_ptr<const RecordedResponse> recorded {};
+    LoadedLevel loadedLevel = LoadedLevel::sessionRate; // how loud it plays, by the session it is in
 
     // The speakers the kernel feeds. The response itself is always true
     // stereo; the builder spreads it over these (see spreadResponses()).

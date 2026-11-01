@@ -186,6 +186,10 @@ void KernelBuilder::build (const ImpulseResponseRequest& wanted)
 
     if (native)
     {
+        // Each set of four channels takes the stereo paths' energy, the level the
+        // speakers are brought to in the end (see placeSpeakerResponses()).
+        const auto energy = shapedEnergy (*wanted.recorded, resampled, wanted);
+
         for (std::size_t s = 0; s < resampledSpeakers.size(); ++s)
         {
             // Each channel decays as its side asks; B-format channels have no
@@ -196,7 +200,7 @@ void KernelBuilder::build (const ImpulseResponseRequest& wanted)
                 if (const auto c = 4 * s + p; ! wanted.recorded->ambisonic && c < wanted.recorded->layout.size())
                     sides[p] = wanted.recorded->layout[c].isLeft() ? 0.0 : wanted.recorded->layout[c].isRight() ? 1.0 : 0.5;
 
-            auto& shaped = speakerSets.emplace_back (shapeRecordedResponse (resampledSpeakers[s], *wanted.recorded, wanted, sides));
+            auto& shaped = speakerSets.emplace_back (shapeRecordedResponse (resampledSpeakers[s], *wanted.recorded, wanted, sides, energy));
             applyDirect (shaped, wanted);
             applyEnvelope (shaped, wanted);
 
