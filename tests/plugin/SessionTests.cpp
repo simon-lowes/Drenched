@@ -313,16 +313,55 @@ TEST_CASE ("Sessions from every released version play the same sound", "[session
 
 TEST_CASE ("A session saved now loads back exactly", "[sessions]")
 {
+    // Every parameter gets a value of its own, and every switch the opposite of its
+    // default, so a value saved under another parameter's id, or dropped, shows. The
+    // interface state and two scenes (one of them a loaded file) come back too.
     testing::Plugin first, second;
+    const auto file = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Drenched round trip.wav");
+    {
+        file.deleteFile();
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> writer (wav.createWriterFor (file.createOutputStream().release(), 48000.0, 2, 24, {}, 0));
+        REQUIRE (writer != nullptr);
+        juce::AudioBuffer<float> ir (2, 4800);
+        juce::Random random (5);
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int n = 0; n < ir.getNumSamples(); ++n)
+                ir.setSample (ch, n, (random.nextFloat() - 0.5f) * std::exp (-0.001f * static_cast<float> (n)));
+
+        writer->writeFromAudioSampleBuffer (ir, 0, ir.getNumSamples());
+    }
 
     juce::MemoryBlock saved;
     testing::onMessageThread ([&]
     {
-        for (auto* param : first->getParameters())
-            param->setValueNotifyingHost (0.37f);
+        const auto params = first->getParameters();
 
-        first->getUiState().setProperty ("spaceId", "stpauls-hall", nullptr);
-        first->getUiState().setProperty ("skin", "rotunda", nullptr);
+        for (int i = 0; i < params.size(); ++i)
+        {
+            auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (params[i]);
+            REQUIRE (ranged != nullptr);
+            const auto distinct = static_cast<float> (i + 1) / static_cast<float> (params.size() + 2);
+            const auto isSwitch = ranged->getNumSteps() == 2;
+            ranged->setValueNotifyingHost (isSwitch ? 1.0f - std::round (ranged->getDefaultValue()) : distinct);
+        }
+
+        auto ui = first->getUiState();
+        ui.setProperty (UiIDs::locks, "decay predelay", nullptr);
+        ui.setProperty (UiIDs::mode, "stage", nullptr);
+        ui.setProperty (UiIDs::view, "waterfall", nullptr);
+        ui.setProperty (UiIDs::skin, "rotunda", nullptr);
+        ui.setProperty (UiIDs::width, 1111, nullptr);
+        ui.setProperty (UiIDs::speakers, "-3 0;2.5 12", nullptr);
+
+        // Scene 1 a library space, scene 2 a file of the person's own, which stays chosen.
+        ui.setProperty (UiIDs::spaceId, "stpauls-hall", nullptr);
+        REQUIRE (first->storeScene (0, "Hall") == 1);
+        ui.setProperty (UiIDs::irPath, file.getFullPathName(), nullptr);
+        ui.setProperty (UiIDs::irName, "Round trip", nullptr);
+        ui.setProperty (UiIDs::spaceId, "user", nullptr);
+        REQUIRE (first->storeScene (0, "My file") == 2);
         first->getStateInformation (saved);
     });
 
@@ -336,12 +375,28 @@ TEST_CASE ("A session saved now loads back exactly", "[sessions]")
         CHECK (std::abs (b.at (id) - value) <= 1.0e-4f * std::max (1.0f, std::abs (value)));
     }
 
-    CHECK (testing::onMessageThread ([&] { return second->getUiState().getProperty ("skin").toString(); }) == "rotunda");
+    testing::onMessageThread ([&]
+    {
+        for (const auto& id : { UiIDs::spaceId, UiIDs::locks, UiIDs::mode, UiIDs::view, UiIDs::skin, UiIDs::width,
+                                UiIDs::speakers, UiIDs::irPath, UiIDs::irName })
+        {
+            INFO (id.toString());
+            CHECK (second->getUiState().getProperty (id).toString() == first->getUiState().getProperty (id).toString());
+        }
+
+        CHECK (juce::JSON::toString (second->sceneList()) == juce::JSON::toString (first->sceneList()));
+
+        // Saving what was loaded gives the same session, byte for byte.
+        juce::MemoryBlock again;
+        second->getStateInformation (again);
+        CHECK (again == saved);
+    });
 
     // And it says which version wrote it.
     auto xml = juce::AudioProcessor::getXmlFromBinary (saved.getData(), static_cast<int> (saved.getSize()));
     REQUIRE (xml != nullptr);
     CHECK (xml->getIntAttribute ("version") == DrenchedProcessor::stateVersion);
+    file.deleteFile();
 }
 
 TEST_CASE ("Every parameter is in the list the interface follows", "[session]")
