@@ -79,7 +79,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Linux dependencies
+      # Shared with the licence job below (YAML aliases), so the two stay the same.
+      - &linux-dependencies
+        name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
@@ -270,6 +272,36 @@ jobs:
           path: Drenched-*-macOS.dmg
           archive: false
           if-no-files-found: error
+
+  licence:
+    # The trial and the licence. Every other build here is a beta (DRENCHED_BETA=ON),
+    # which leaves them out, so this one is configured as a release is and builds just
+    # the licence tests (tests/plugin/CMakeLists.txt) and the plugin code they load. The
+    # tests sign codes with the published test key, which a release build only accepts
+    # with DRENCHED_ALLOW_TEST_LICENCE.
+    name: Licence and trial (Linux, release build)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - *linux-dependencies
+
+      # The Linux (x64) build's fetched dependencies, only read: they don't depend on
+      # DRENCHED_BETA, and that job keeps the cache up to date.
+      - name: Restore dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: build/_deps
+          key: deps-Drenched-Linux-x64-${{ hashFiles('cmake/Dependencies.cmake') }}
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DDRENCHED_BETA=OFF -DDRENCHED_ALLOW_TEST_LICENCE=ON
+
+      - name: Build
+        run: cmake --build build --target drenched_licence_tests --parallel
+
+      - name: Licence tests
+        run: ctest --test-dir build --label-regex "^licence$" --no-tests=error --output-on-failure
 
   linux-i686:
     name: Linux (i686, 32-bit)
