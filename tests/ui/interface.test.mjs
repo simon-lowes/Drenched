@@ -187,8 +187,9 @@ async function randomly (look, seed)
         }
         catch (e)
         {
-            // The page redrew under the driver; only the page's own errors count.
-            if (! /Timeout|not attached|detached|outside of the viewport|intercepts pointer/.test (String (e)))
+            // The page redrew under the driver (a control hidden or replaced between finding it
+            // and clicking it); only the page's own errors count.
+            if (! /Timeout|not attached|detached|not visible|outside of the viewport|intercepts pointer/.test (String (e)))
                 errors.push (String (e));
         }
 

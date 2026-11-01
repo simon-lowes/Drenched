@@ -61,11 +61,15 @@ export async function signBody (rawBody, secret, nowSeconds = Math.floor (Date.n
     return `ts=${nowSeconds};h1=${hex (await crypto.subtle.sign ('HMAC', key, encoder.encode (nowSeconds + ':' + rawBody)))}`;
 }
 
-/** Copies of Drenched in a completed transaction: the quantity of its Drenched items. */
+/** Copies of Drenched in a completed transaction: the quantity of its Drenched items.
+    With no product id there is no telling which items are Drenched, so none count. */
 export function copiesIn (transaction, productId)
 {
+    if (! productId)
+        return 0;
+
     const copies = (transaction.items ?? [])
-        .filter ((item) => ! productId || item.price?.product_id === productId)
+        .filter ((item) => item.price?.product_id === productId)
         .reduce ((sum, item) => sum + Math.max (0, Math.floor (Number (item.quantity) || 0)), 0);
 
     return Math.min (copies, MAX_COPIES);
