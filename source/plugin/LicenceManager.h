@@ -6,6 +6,7 @@
 #include <juce_data_structures/juce_data_structures.h>
 
 #include <atomic>
+#include <functional>
 #include <optional>
 
 namespace drenched
@@ -29,7 +30,35 @@ class LicenceManager final : public juce::ChangeBroadcaster,
                              private juce::Timer
 {
 public:
-    LicenceManager();
+    /** An answer from the activation server: its HTTP status (0 when it couldn't be
+        reached) and the JSON it sent back. */
+    struct Reply
+    {
+        int status = 0;
+        juce::var body;
+    };
+
+    /** What the manager reads from outside: the clock, the licence file and the
+        activation server. The plugin always uses system(); tests put a fake clock, a
+        temporary file and a fake server here (tests/plugin/LicenceManagerTests.cpp). */
+    struct Environment
+    {
+        /** Today, in days since 1970 (UTC). */
+        std::function<std::int64_t()> today;
+
+        /** The licence file, which every host on the computer shares. */
+        juce::File file;
+
+        /** Sends a JSON body to a path on the activation server and waits for the
+            answer. Called on the manager's network thread. */
+        std::function<Reply (const juce::String& path, const juce::var& body)> post;
+
+        /** The computer's clock, the licence file in the user's settings folder and
+            the activation server at server(). */
+        static Environment system();
+    };
+
+    explicit LicenceManager (Environment = Environment::system());
     ~LicenceManager() override;
 
     /** True while licensed or in the trial. Real-time safe. */
@@ -70,14 +99,9 @@ private:
     std::optional<licence::Activation> readCode (const juce::String& code) const;
     void save (const juce::String& code);
 
-    struct Reply
-    {
-        int status = 0;
-        juce::var body;
-    };
-
     static Reply post (const juce::String& path, const juce::var& body);
 
+    const Environment environment;
     std::string machineCode;
     std::optional<licence::Activation> activation;
     std::int64_t trialFirstDay = 0;

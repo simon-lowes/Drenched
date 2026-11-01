@@ -96,6 +96,15 @@ ctest --test-dir build --output-on-failure
 
 Plugins land in `build/source/plugin/Drenched_artefacts/Release/`.
 
+The trial and licence tests need a release build, since a beta leaves that
+code out (they sign codes with the published test key, hence the second flag):
+
+```sh
+cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release -DDRENCHED_BETA=OFF -DDRENCHED_ALLOW_TEST_LICENCE=ON
+cmake --build build-release --target drenched_licence_tests
+ctest --test-dir build-release -L licence --output-on-failure
+```
+
 The interface has its own tests, run in a browser with Node 22:
 
 ```sh
