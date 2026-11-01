@@ -58,13 +58,13 @@ The hint line explains whatever you last touched, with its value and the capture
 
 - Drag any control up or down. Hold Shift for fine steps.
 - Click a value to type one. You can type "off" where a control has an Off, "centre" or "20% left" for the positions, and "12k" for frequencies. A decimal comma ("1,5") works as well as a point, and you can type in another unit: "0.1 s" for Pre-delay, "800 ms" for Decay.
-- With a control focused, the arrow keys nudge it, Page Up and Page Down take bigger steps, and Home and End go to the ends.
-- Escape closes any window.
+- With a control focused, the arrow keys nudge it, Page Up and Page Down take bigger steps, and Home and End go to the ends. Press Tab to reach the controls from the keyboard. A control you click or drag doesn't keep the keyboard, so your host's own keys, such as Space for play and Home for return to zero, still reach the host. Keys with Ctrl, Alt or Cmd held are always left to the host.
+- Escape closes any window. While a window is open, Tab and Shift+Tab move round its controls only; when it closes, the keyboard goes back to the control that opened it.
 - Drag the corner to resize the window. It keeps its shape, and the size is saved with the session.
 
 ### Studio and Stage
 
-The **Studio** and **Stage** buttons at the top switch views (the Catalogue look calls them Day and Night). Studio leads with the space and its decay. Stage is for post: large readouts for RT60, Pre-delay, Early, Tail and Mix, output meters, and the main controls in a list. Stage has no Spaces browser button; step through spaces with the arrows, or switch back to Studio.
+The **Studio** and **Stage** buttons at the top switch views (the Catalogue look calls them Day and Night). Studio leads with the space and its decay. Stage is for post: large readouts for RT60, Pre-delay, Early, Tail and Mix, a peak meter for each output channel (named with the track's layout, such as 5.1 or 7.1.4, and its channel count), and the main controls in a list. Stage has no Spaces browser button; step through spaces with the arrows, or switch back to Studio.
 
 ## Choosing a space
 
@@ -118,7 +118,7 @@ The session remembers where the file is, not the audio. A dropped file is copied
 | Control | What it does | Range | Default |
 | --- | --- | --- | --- |
 | Mix | Balance of dry and wet | 0 to 100% | 30% |
-| Decay | Scales the whole decay curve; reads the average of 500 Hz and 1 kHz. Not a host parameter: hosts see the eight bands | 0.2 to 12 s | The space's |
+| Decay | Scales the whole decay curve; reads the average of 500 Hz and 1 kHz. Not a host parameter: hosts see the eight bands | 0.1 to 20 s, as the bands | The space's |
 | Pre-delay | Gap before the first reflection | 0 to 250 ms | The space's |
 | Size | Makes the room bigger or smaller by moving its reflections later or sooner, keeping its decay and tone | 50 to 150% | 100% |
 | Brightness | Tilts the wet tone darker or brighter | -12 to +12 dB | 0 dB |

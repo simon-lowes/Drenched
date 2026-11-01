@@ -566,6 +566,441 @@ test ('A dropped impulse response reaches the plugin whole, and nothing else is 
     assert.deepEqual (errors, []);
 });
 
+/** Where the keyboard is: the open window it is in, and whether everything behind that window is inert. */
+const whereFocus = () => page.evaluate (() =>
+{
+    const a = document.activeElement, screen = document.querySelector ('#live .screen');
+    const dialog = [...screen.children].filter (c => c.getAttribute ('role') === 'dialog').pop() || null;
+    return { inDialog: !! dialog && dialog.contains (a), body: a === document.body,
+             behindInert: !! dialog && [...screen.children].every (c => c === dialog || c.hasAttribute ('inert')),
+             fid: a.getAttribute ('data-fid'), act: a.getAttribute ('data-act') };
+});
+
+test ('A window holds the keyboard, and gives it back to the control that opened it', async () =>
+{
+    await page.goto ('about:blank');
+    await open ('anodised');
+
+    // Opened from the keyboard: Tab and Shift+Tab go round the window, Escape gives the
+    // keyboard back to the control that opened it.
+    for (const opener of ['[data-act="eq"]', '[data-act="wf"]', '[data-act="licence"]', '.wmb[data-act="skins"]', '[data-act="browse"]'])
+    {
+        await page.focus (opener);
+        await page.keyboard.press ('Enter');
+        await page.waitForTimeout (50);
+        let at = await whereFocus();
+        assert.ok (at.inDialog && at.behindInert, opener + ' opened: ' + JSON.stringify (at));
+
+        for (const key of ['Tab', 'Shift+Tab'])
+            for (let i = 0; i < 40; ++i)
+            {
+                await page.keyboard.press (key);
+                at = await whereFocus();
+                assert.ok (at.inDialog, opener + ', ' + key + ' ' + (i + 1) + ' left the window: ' + JSON.stringify (at));
+            }
+
+        await page.keyboard.press ('Escape');
+        await page.waitForTimeout (50);
+        assert.ok (await page.evaluate ((sel) => document.activeElement === document.querySelector (sel) && ! document.querySelector ('#live [inert]'), opener),
+                   opener + ': Escape left the keyboard at ' + JSON.stringify (await whereFocus()));
+    }
+
+    // A window opened from another (the browser's tools) gives the keyboard back to the first opener.
+    await page.focus ('[data-act="browse"]');
+    await page.keyboard.press ('Enter');
+    await page.waitForTimeout (50);
+    await page.focus ('.brw [data-act="scenes"]');
+    await page.keyboard.press ('Enter');
+    await page.waitForTimeout (50);
+    assert.equal ((await whereFocus()).inDialog, true);
+    await page.focus ('.scn .cx');
+    await page.keyboard.press ('Enter');
+    await page.waitForTimeout (50);
+    assert.equal (await page.evaluate (() => document.activeElement.getAttribute ('data-act')), 'browse', 'closed with its Close button');
+
+    // A look picked from the keyboard: the keyboard is on the new look's own wordmark.
+    await page.focus ('.wmb[data-act="skins"]');
+    await page.keyboard.press ('Enter');
+    await page.waitForTimeout (50);
+    await page.focus ('.skins .sk[data-v="signal"]');
+    await page.keyboard.press ('Enter');
+    await page.waitForTimeout (50);
+    assert.deepEqual (await page.evaluate (() => [st.skin, document.activeElement.matches ('#live .s-signal .wmb[data-act="skins"]')]), ['signal', true]);
+
+    // Capture closes itself when the room is captured: the keyboard goes back as well.
+    await page.focus ('[data-act="browse"]');
+    await page.keyboard.press ('Enter');
+    await page.waitForTimeout (50);
+    await page.focus ('.brw [data-act="capture"]');
+    await page.keyboard.press ('Enter');
+    await page.waitForTimeout (50);
+    await fromPlugin ('capture', { stage: 'working', progress: 1, peakDb: -12, message: '' });
+    await page.waitForTimeout (50);
+    await fromPlugin ('capture', { stage: 'idle', progress: 0, peakDb: -100, message: '' });
+    await page.waitForTimeout (50);
+    assert.deepEqual (await page.evaluate (() => [st.capture, document.activeElement.getAttribute ('data-act')]), [false, 'browse']);
+    assert.deepEqual (errors, []);
+});
+
+test ('A control clicked or dragged leaves the host its keys, and the keyboard keeps every control', async () =>
+{
+    await page.goto ('about:blank');
+    await open ('anodised');
+    await page.evaluate (() =>
+    {
+        window.__prevented = [];
+        window.addEventListener ('keydown', e => window.__prevented.push ([e.key, e.defaultPrevented]));
+    });
+
+    const centre = async (sel) => { const b = await (await page.$ (sel)).boundingBox(); return [b.x + b.width / 2, b.y + b.height / 2]; };
+    const decay = () => page.evaluate (() => decayOf (st.bands));
+
+    // Click Decay, then Home (return to zero in many hosts): the decay stays, and the key isn't taken.
+    const d0 = await decay();
+    await page.mouse.click (...await centre ('[data-fid="kn-decay"]'));
+    await page.waitForTimeout (50);
+    await page.keyboard.press ('Home');
+    await page.keyboard.press ('ArrowUp');
+    await page.waitForTimeout (50);
+    assert.equal (await decay(), d0, 'Home or an arrow after a click changed Decay');
+    assert.deepEqual (await page.evaluate (() => window.__prevented.filter (([, p]) => p)), [], 'a key the page did not use was prevented');
+
+    // Drag Mix, then the arrows: Mix stays where the drag left it.
+    const [mx, my] = await centre ('[data-fid="kn-mix"]');
+    await page.mouse.move (mx, my);
+    await page.mouse.down();
+    await page.mouse.move (mx, my - 40, { steps: 4 });
+    await page.mouse.up();
+    await page.waitForTimeout (50);
+    const mix = await page.evaluate (() => st.mix);
+    await page.keyboard.press ('ArrowDown');
+    await page.keyboard.press ('End');
+    assert.equal (await page.evaluate (() => st.mix), mix);
+
+    // Click Freeze, then Space (play and stop in every host): Freeze stays on.
+    await page.click ('[data-act="freeze"]');
+    await page.waitForTimeout (50);
+    await page.keyboard.press (' ');
+    await page.waitForTimeout (50);
+    assert.equal (await page.evaluate (() => st.freeze), true, 'Space after a click toggled Freeze back');
+
+    // Click a point on the decay graph, then the arrows: the band stays.
+    const band = await page.evaluate (() => st.bands[3]);
+    const [nx, ny] = await centre ('[data-fid="nd-3"]');
+    await page.mouse.move (nx, ny);
+    await page.mouse.down();
+    await page.mouse.up();
+    await page.waitForTimeout (50);
+    const clicked = await page.evaluate (() => st.bands[3]);
+    await page.keyboard.press ('ArrowUp');
+    assert.equal (await page.evaluate (() => st.bands[3]), clicked);
+    assert.ok (Math.abs (clicked - band) < 0.2);
+
+    // Click an EQ point, then Delete: its gain stays. The window keeps the keyboard itself.
+    await page.click ('[data-act="eq"]');
+    await page.waitForTimeout (50);
+    await page.evaluate (() => { st.eq3g = 6; window.schedule(); });
+    await page.waitForTimeout (50);
+    await page.mouse.click (...await centre ('[data-eqn="2"] circle'));
+    await page.waitForTimeout (50);
+    await page.keyboard.press ('Delete');
+    await page.waitForTimeout (50);
+    assert.equal (await page.evaluate (() => st.eq3g), 6, 'Delete after a click reset the EQ point');
+    assert.deepEqual (await whereFocus(), { inDialog: true, body: false, behindInert: true, fid: 'dlg-eq', act: null });
+
+    // From the keyboard every one of them still works.
+    await page.focus ('[data-eqn="2"]');
+    await page.keyboard.press ('Delete');
+    assert.equal (await page.evaluate (() => st.eq3g), 0, 'Delete on an EQ point focused from the keyboard');
+    await page.keyboard.press ('Escape');
+    await page.waitForTimeout (50);
+    await page.focus ('[data-act="freeze"]');
+    await page.keyboard.press (' ');
+    await page.waitForTimeout (50);
+    assert.equal (await page.evaluate (() => st.freeze), false, 'Space on Freeze focused from the keyboard');
+    await page.focus ('[data-fid="kn-decay"]');
+    await page.keyboard.press ('Home');
+    const low = await decay();
+    assert.ok (low < 0.11, 'Home on Decay focused from the keyboard: ' + low);
+
+    // Keys with Ctrl, Alt or Cmd held are the host's, even on a focused control.
+    await page.evaluate (() => { window.__prevented = []; });
+    await page.keyboard.press ('Control+ArrowUp');
+    await page.keyboard.press ('Alt+End');
+    await page.keyboard.press ('Meta+ArrowUp');
+    assert.equal (await decay(), low);
+    assert.deepEqual (await page.evaluate (() => window.__prevented.filter (([, p]) => p)), []);
+
+    // A text field clicked keeps the keyboard, to type in.
+    await page.click ('input[data-fid="ro-mix"]');
+    await page.waitForTimeout (50);
+    assert.equal (await page.evaluate (() => document.activeElement.getAttribute ('data-fid')), 'ro-mix');
+    assert.deepEqual (errors, []);
+});
+
+test ('The Decay knob covers the whole range of the bands, and never moves against the key', async () =>
+{
+    await page.goto ('about:blank');
+    await open ('anodised');
+    const all = (v) => Object.fromEntries (['decay63', 'decay125', 'decay250', 'decay500', 'decay1k', 'decay2k', 'decay4k', 'decay8k'].map (id => [id, v]));
+    const knob = () => page.evaluate (() =>
+    {
+        const k = document.querySelector ('[data-fid="kn-decay"]');
+        return { bands: st.bands.slice(), now: +k.getAttribute ('aria-valuenow'), min: +k.getAttribute ('aria-valuemin'), max: +k.getAttribute ('aria-valuemax') };
+    });
+
+    // Every band at the 20 s ceiling: the knob reports 20 within its range, and Up leaves it there.
+    await fromPlugin ('state', { params: all (20) });
+    await page.waitForTimeout (50);
+    await page.focus ('[data-fid="kn-decay"]');
+    let k = await knob();
+    assert.deepEqual ([k.now, k.min, k.max], [20, 0.1, 20]);
+    for (const key of ['ArrowUp', 'PageUp', 'Shift+ArrowUp', 'End'])
+        await page.keyboard.press (key);
+    await page.waitForTimeout (50);
+    assert.deepEqual ((await knob()).bands, Array (8).fill (20), 'a step up pulled the bands down');
+    await page.keyboard.press ('ArrowDown');
+    await page.waitForTimeout (50);
+    k = await knob();
+    assert.ok (k.bands.every (b => b < 20) && k.now < 20 && k.now >= k.min, JSON.stringify (k));
+
+    // Long but under the old 12 s end: Up still lengthens it.
+    await fromPlugin ('state', { params: all (15) });
+    await page.waitForTimeout (50);
+    await page.keyboard.press ('ArrowUp');
+    await page.waitForTimeout (50);
+    assert.ok ((await knob()).bands.every (b => b > 15));
+
+    // At the 0.1 s floor, and just above it, a step down never raises it.
+    for (const v of [0.1, 0.14])
+    {
+        await fromPlugin ('state', { params: all (v) });
+        await page.waitForTimeout (50);
+        for (const key of ['ArrowDown', 'Shift+ArrowDown', 'PageDown', 'Home'])
+            await page.keyboard.press (key);
+        await page.waitForTimeout (50);
+        k = await knob();
+        assert.ok (k.bands.every (b => b <= v) && k.now >= k.min, v + ': ' + JSON.stringify (k));
+    }
+
+    // A small step up from just above the floor never lowers it either.
+    await fromPlugin ('state', { params: all (0.14) });
+    await page.waitForTimeout (50);
+    await page.keyboard.press ('Shift+ArrowUp');
+    await page.waitForTimeout (50);
+    assert.ok ((await knob()).bands.every (b => b >= 0.14));
+    assert.deepEqual (errors, []);
+});
+
+/** Pixels around the focused control whose colour focused and unfocused differ by 3:1 or more. */
+async function focusRing()
+{
+    const box = await page.evaluate (() =>
+    {
+        const a = document.activeElement;
+        if (! a || a === document.body)
+            return null;
+        const r = a.getBoundingClientRect();
+        return { x: r.left, y: r.top, w: r.width, h: r.height, id: a.getAttribute ('data-fid') || [a.getAttribute ('data-act'), a.getAttribute ('data-v'), a.getAttribute ('data-k')].filter (Boolean).join (' ') || a.tagName };
+    });
+
+    if (! box)
+        return null;
+
+    const m = 6, x = Math.max (0, Math.floor (box.x - m)), y = Math.max (0, Math.floor (box.y - m));
+    const clip = { x, y, width: Math.min (1200, Math.ceil (box.x + box.w + m)) - x, height: Math.min (760, Math.ceil (box.y + box.h + m)) - y };
+
+    if (clip.width <= 0 || clip.height <= 0)
+        return { ...box, count: 0 };
+
+    const focused = await page.screenshot ({ clip });
+    await page.evaluate (() => { window.__ring = document.activeElement; window.__ring.blur(); });
+    const plain = await page.screenshot ({ clip });
+    await page.evaluate (() => window.__ring.focus ({ preventScroll: true }));
+
+    const count = await page.evaluate (async ([a, b]) =>
+    {
+        const pixels = async (s) =>
+        {
+            const bitmap = await createImageBitmap (new Blob ([Uint8Array.from (atob (s), c => c.charCodeAt (0))], { type: 'image/png' }));
+            const ctx = new OffscreenCanvas (bitmap.width, bitmap.height).getContext ('2d');
+            ctx.drawImage (bitmap, 0, 0);
+            return ctx.getImageData (0, 0, bitmap.width, bitmap.height).data;
+        };
+        const lum = (r, g, b) => [r, g, b].map (v => (v /= 255) <= 0.03928 ? v / 12.92 : Math.pow ((v + 0.055) / 1.055, 2.4)).reduce ((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+        const p = await pixels (a), q = await pixels (b);
+        let n = 0;
+
+        for (let i = 0; i < p.length; i += 4)
+        {
+            const l1 = lum (p[i], p[i + 1], p[i + 2]), l2 = lum (q[i], q[i + 1], q[i + 2]);
+            n += (Math.max (l1, l2) + 0.05) / (Math.min (l1, l2) + 0.05) >= 3 ? 1 : 0;
+        }
+
+        return n;
+    }, [focused.toString ('base64'), plain.toString ('base64')]);
+
+    return { ...box, count };
+}
+
+test ('Every control shows where the keyboard is, at 3:1 or more, in every look', async () =>
+{
+    // Tab through each look, Studio and Stage, and through two windows, measuring the change
+    // focus makes around each control: at least its perimeter in pixels must change by 3:1.
+    const looks = await page.evaluate (() => SKINS.map (s => s.id));
+    const weak = [];
+
+    for (const look of looks)
+    {
+        for (const where of ['studio', 'stage', ...(look === 'signal' || look === 'catalogue' ? ['capture', 'eq'] : [])])
+        {
+            await page.goto ('about:blank');
+            await open (look);
+            await page.evaluate ((w) =>
+            {
+                if (w === 'stage')
+                    st.mode = 'stage';
+                else if (w === 'capture')
+                    st.capture = true;
+                else if (w === 'eq')
+                    st.eq = true;
+                window.schedule();
+            }, where);
+            await page.waitForTimeout (50);
+            await page.mouse.move (1199, 1);
+            const seen = new Set();
+
+            for (let i = 0; i < 80; ++i)
+            {
+                await page.keyboard.press ('Tab');
+                const r = await focusRing();
+
+                if (! r)
+                    break;
+
+                const key = r.id + '@' + Math.round (r.x) + ',' + Math.round (r.y);
+
+                if (seen.has (key))
+                    break;
+
+                seen.add (key);
+
+                if (r.count < 2 * (r.w + r.h))
+                    weak.push (look + ' ' + where + ' ' + r.id + ': ' + r.count + ' of ' + Math.round (2 * (r.w + r.h)));
+            }
+
+            assert.ok (seen.size >= (where === 'eq' || where === 'capture' ? 8 : 30), look + ' ' + where + ': only ' + seen.size + ' controls reached');
+        }
+    }
+
+    assert.deepEqual (weak, []);
+    assert.deepEqual (errors, []);
+});
+
+test ('Status messages are announced from one region the redraws never touch', async () =>
+{
+    await page.goto ('about:blank');
+    await open ('field');
+    const regions = () => page.evaluate (() =>
+    {
+        const say = document.getElementById ('say'), err = document.getElementById ('say-err');
+        return { polite: say.textContent.trim(), alert: err.textContent.trim(), role: say.getAttribute ('role'), live: say.getAttribute ('aria-live'), alertRole: err.getAttribute ('role'),
+                 outside: ! document.getElementById ('live').contains (say), same: say.__mark === true };
+    });
+    await page.evaluate (() => { document.getElementById ('say').__mark = true; });
+
+    // A space chosen: "<space> loaded" is said once, and stays through redraws and meter ticks.
+    await page.focus ('[data-act="next"]');
+    await page.keyboard.press ('Enter');
+    await page.waitForTimeout (50);
+    let r = await regions();
+    assert.match (r.polite, /loaded/);
+    assert.deepEqual ([r.role, r.live, r.alertRole, r.outside], ['status', 'polite', 'alert', true]);
+    const said = r.polite;
+
+    for (let i = 0; i < 5; ++i)
+    {
+        await fromPlugin ('meters', { inL: -10 - i, inR: -12, outL: -8, outR: -9, spk: [-8, -9] });
+        await fromPlugin ('state', { params: { size: 100 + i } });
+        await page.waitForTimeout (30);
+    }
+
+    r = await regions();
+    assert.equal (r.polite, said, 'redraws or meters changed what was said');
+    assert.ok (r.same, 'the region was replaced');
+
+    // The same message again is said again.
+    await page.evaluate (() => { st.note = null; window.schedule(); });
+    await page.waitForTimeout (50);
+    await page.evaluate ((n) => { st.note = n; window.schedule(); }, await page.evaluate (() => '<b>' + SPACES[st.sp].name + '</b> loaded. Lock a value to hold it when you change space.'));
+    await page.waitForTimeout (50);
+    assert.notEqual (await page.evaluate (() => document.getElementById ('say').textContent), said);
+
+    // Errors are said assertively: a match that failed, a file that didn't load, a capture that failed.
+    await fromPlugin ('matched', { error: 'The recording is too short.' });
+    await page.waitForTimeout (50);
+    r = await regions();
+    assert.match (r.alert, /No match\. The recording is too short\./);
+    assert.equal (r.polite, '');
+
+    await fromPlugin ('matched', { listening: true, file: 'Room.wav' });
+    await page.waitForTimeout (50);
+    r = await regions();
+    assert.match (r.polite, /Listening to Room\.wav/);
+
+    await fromPlugin ('state', { ui: { irEvent: 1, irError: '' } });
+    await fromPlugin ('state', { ui: { irEvent: 2, irError: 'Not a sound file.' } });
+    await page.waitForTimeout (50);
+    assert.match ((await regions()).alert, /didn.t load\. Not a sound file\./);
+
+    await page.evaluate (() => { st.capture = true; window.schedule(); });
+    await page.waitForTimeout (50);
+    await fromPlugin ('capture', { stage: 'failed', progress: 0, peakDb: -100, message: 'No microphone signal.' });
+    await page.waitForTimeout (50);
+    assert.equal ((await regions()).alert, 'No microphone signal.');
+    assert.deepEqual (await page.evaluate (() => [...document.querySelectorAll ('#live [aria-live],#live [role="status"],#live [role="alert"]')].length), 0, 'a live region inside the redrawn page');
+    assert.deepEqual (errors, []);
+});
+
+test ('Stage shows the output the plugin has: its layout, and a meter per channel', async () =>
+{
+    await page.goto ('about:blank');
+    await open ('anodised');
+
+    const layouts = [
+        ['2.0', ['L', 'R'], 'Output, Stereo, 2 channels'],
+        ['1.0', ['M'], 'Output, Mono, 1 channel'],
+        ['5.1', ['L', 'R', 'C', 'Lfe', 'Ls', 'Rs'], 'Output, 5.1, 6 channels'],
+        ['9.1.6', ['L', 'R', 'C', 'Lfe', 'Ls', 'Rs', 'Lss', 'Rss', 'Wl', 'Wr', 'Tfl', 'Tfr', 'Trl', 'Trr', 'Tsl', 'Tsr'], 'Output, 9.1.6, 16 channels'],
+    ];
+
+    for (const [layout, names, label] of layouts)
+    {
+        await fromPlugin ('state', { ui: { mode: 'stage', layout, outputs: names.map (n => ({ name: n, wet: n !== 'Lfe' })) } });
+        await page.waitForTimeout (50);
+        await fromPlugin ('meters', { inL: -20, inR: -20, outL: -6, outR: -9, spk: names.map ((_, i) => -6 - 3 * i) });
+        await page.waitForTimeout (20);
+
+        const shown = await page.evaluate (() =>
+        {
+            const met = document.querySelector ('.stg-met'), box = met.getBoundingClientRect();
+            return { label: met.querySelector ('.lbl').textContent, names: [...met.querySelectorAll ('.mt span')].map (s => s.textContent),
+                     levels: [...met.querySelectorAll ('.mt em')].map (e => e.textContent),
+                     inside: [...met.querySelectorAll ('.mt')].every (m => { const r = m.getBoundingClientRect(); return r.left >= box.left && r.right <= box.right; }) };
+        });
+
+        assert.equal (shown.label, label);
+        assert.deepEqual (shown.names, names);
+        assert.deepEqual (shown.levels, names.map ((_, i) => (-6 - 3 * i).toFixed (1).replace ('-', '−')));
+        assert.ok (shown.inside, layout + ': a meter is outside the panel');
+    }
+
+    // Back to Studio: the next test opens this look at the same address, which keeps the view.
+    await fromPlugin ('state', { ui: { mode: 'studio', layout: '2.0', outputs: [{ name: 'L', wet: true }, { name: 'R', wet: true }] } });
+    await page.waitForTimeout (50);
+    assert.deepEqual (errors, []);
+});
+
 test ('A space this version doesn\'t have stays the session\'s space', async () =>
 {
     // A session saved by a newer Drenched may name a space this one lacks. The plugin plays

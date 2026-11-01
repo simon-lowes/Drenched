@@ -166,12 +166,12 @@ th, td, h1 { border-color: #3a3e43; } a { color: #8cb8ec; }
 <ul>
 <li>Drag any control up or down. Hold Shift for fine steps.</li>
 <li>Click a value to type one. You can type “off” where a control has an Off, “centre” or “20% left” for the positions, and “12k” for frequencies. A decimal comma (“1,5”) works as well as a point, and you can type in another unit: “0.1 s” for Pre-delay, “800 ms” for Decay.</li>
-<li>With a control focused, the arrow keys nudge it, Page Up and Page Down take bigger steps, and Home and End go to the ends.</li>
-<li>Escape closes any window.</li>
+<li>With a control focused, the arrow keys nudge it, Page Up and Page Down take bigger steps, and Home and End go to the ends. Press Tab to reach the controls from the keyboard. A control you click or drag doesn’t keep the keyboard, so your host’s own keys, such as Space for play and Home for return to zero, still reach the host. Keys with Ctrl, Alt or Cmd held are always left to the host.</li>
+<li>Escape closes any window. While a window is open, Tab and Shift+Tab move round its controls only; when it closes, the keyboard goes back to the control that opened it.</li>
 <li>Drag the corner to resize the window. It keeps its shape, and the size is saved with the session.</li>
 </ul>
 <h2 id="studio-and-stage">Studio and Stage</h2>
-<p>The <strong>Studio</strong> and <strong>Stage</strong> buttons at the top switch views (the Catalogue look calls them Day and Night). Studio leads with the space and its decay. Stage is for post: large readouts for RT60, Pre-delay, Early, Tail and Mix, output meters, and the main controls in a list. Stage has no Spaces browser button; step through spaces with the arrows, or switch back to Studio.</p>
+<p>The <strong>Studio</strong> and <strong>Stage</strong> buttons at the top switch views (the Catalogue look calls them Day and Night). Studio leads with the space and its decay. Stage is for post: large readouts for RT60, Pre-delay, Early, Tail and Mix, a peak meter for each output channel (named with the track’s layout, such as 5.1 or 7.1.4, and its channel count), and the main controls in a list. Stage has no Spaces browser button; step through spaces with the arrows, or switch back to Studio.</p>
 <h1 id="choosing-a-space">Choosing a space</h1>
 <h2 id="the-spaces-browser">The Spaces browser</h2>
 <p>Click the space’s name. In Aperture, click the line under the name (its place and volume); some looks have a button such as <strong>All spaces</strong> or <strong>Browse the collection</strong>. There are 46 spaces: 42 recorded and 4 modelled.</p>
@@ -264,7 +264,7 @@ th, td, h1 { border-color: #3a3e43; } a { color: #8cb8ec; }
 <tr class="even">
 <td>Decay</td>
 <td>Scales the whole decay curve; reads the average of 500 Hz and 1 kHz. Not a host parameter: hosts see the eight bands</td>
-<td>0.2 to 12 s</td>
+<td>0.1 to 20 s, as the bands</td>
 <td>The space’s</td>
 </tr>
 <tr class="odd">
