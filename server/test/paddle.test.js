@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import { createApp } from '../src/index.js';
 import { licenceEmail, resendMailer } from '../src/mail.js';
 import { copiesIn, signBody, verifySignature } from '../src/paddle.js';
-import { memoryStore } from '../src/stores.js';
+import { d1Store, memoryStore } from '../src/stores.js';
+import { fakeD1 } from './fake-d1.js';
 import { testKeys } from './keys.js';
 
 const SECRET = 'pdl_ntfset_test_secret';
@@ -23,9 +24,19 @@ function paddleFetch (customers)
     return { fetch, calls };
 }
 
-async function setup ({ failMail = 0, productId = 'pro_drenched' } = {})
+// Every webhook case runs against both stores: memory, and the D1 SQL that
+// production uses, on SQLite with the real schema.
+const stores = [['memory', () => memoryStore()], ['D1', () => d1Store (fakeD1())]];
+
+/** Registers a test once per store; its body gets a setup() that uses that store. */
+function storeTest (name, body)
 {
-    const store = memoryStore();
+    for (const [kind, makeStore] of stores)
+        test (`${name} (${kind} store)`, () => body ((options = {}) => setup ({ ...options, store: makeStore() })));
+}
+
+async function setup ({ store, failMail = 0, productId = 'pro_drenched' })
+{
     const mail = [];
     let failures = failMail;
     const paddle = { webhookSecret: SECRET, apiKey: 'pdl_key', apiBase: 'https://sandbox-api.paddle.com', productId,
@@ -67,7 +78,7 @@ test ('Paddle signatures are checked, including age and rotation', async () =>
     assert.ok (await verifySignature (rotated, body, SECRET, NOW));
 });
 
-test ('sales are refused until the product id is set, so other products never issue licences', async () =>
+storeTest ('sales are refused until the product id is set, so other products never issue licences', async (setup) =>
 {
     const { send, store, mail } = await setup ({ productId: null });
     const result = await send (sale ('txn_1', [drenched (2), { price: { product_id: 'pro_other' }, quantity: 5 }]));
@@ -86,7 +97,7 @@ test ('copies count only Drenched items, capped', () =>
     assert.equal (copiesIn ({}, 'pro_drenched'), 0);
 });
 
-test ('a sale issues and emails a licence number once, however often Paddle retries', async () =>
+storeTest ('a sale issues and emails a licence number once, however often Paddle retries', async (setup) =>
 {
     const { app, store, mail, send, paddle } = await setup();
 
@@ -117,7 +128,7 @@ test ('a sale issues and emails a licence number once, however often Paddle retr
     assert.ok (! nonsense.includes ('<script>'));
 });
 
-test ('the same sale delivered twice at once issues and emails its numbers once', async () =>
+storeTest ('the same sale delivered twice at once issues and emails its numbers once', async (setup) =>
 {
     const { store, mail, send } = await setup();
     const statuses = await Promise.all ([1, 2, 3].map (() => send (sale ('txn_01h04vsc0qhwtsbsxh3422ffff', [drenched (2)]))));
@@ -129,7 +140,7 @@ test ('the same sale delivered twice at once issues and emails its numbers once'
     assert.ok (licences.every ((l) => mail[0].text.includes (l.key) && l.emailed));
 });
 
-test ('a signed body that is not JSON is refused, not retried for ever', async () =>
+storeTest ('a signed body that is not JSON is refused, not retried for ever', async (setup) =>
 {
     const { app } = await setup();
     const body = '{not json';
@@ -139,7 +150,7 @@ test ('a signed body that is not JSON is refused, not retried for ever', async (
     assert.equal (response.status, 400);
 });
 
-test ('several copies make several numbers in one email', async () =>
+storeTest ('several copies make several numbers in one email', async (setup) =>
 {
     const { store, mail, send } = await setup();
     await send (sale ('txn_01h04vsc0qhwtsbsxh3422aaaa', [drenched (3)]));
@@ -152,7 +163,7 @@ test ('several copies make several numbers in one email', async () =>
     assert.ok (licences.every ((l) => mail[0].text.includes (l.key)));
 });
 
-test ('a failed email is retried with the same numbers', async () =>
+storeTest ('a failed email is retried with the same numbers', async (setup) =>
 {
     const { store, mail, send } = await setup ({ failMail: 1 });
 
@@ -167,7 +178,7 @@ test ('a failed email is retried with the same numbers', async () =>
     assert.ok (mail[0].text.includes (licence.key));
 });
 
-test ('refunds and chargebacks withdraw the numbers; a reversed chargeback restores them', async () =>
+storeTest ('refunds and chargebacks withdraw the numbers; a reversed chargeback restores them', async (setup) =>
 {
     const { app, store, send } = await setup();
     await send (sale ('txn_01h04vsc0qhwtsbsxh3422cccc', [drenched()]));
@@ -192,7 +203,7 @@ test ('refunds and chargebacks withdraw the numbers; a reversed chargeback resto
     assert.equal ((await store.getLicence (licence.key)).revoked, false);
 });
 
-test ('unsigned, wrongly signed or other events issue nothing', async () =>
+storeTest ('unsigned, wrongly signed or other events issue nothing', async (setup) =>
 {
     const { store, send } = await setup();
     const event = sale ('txn_01h04vsc0qhwtsbsxh3422dddd', [drenched()]);
