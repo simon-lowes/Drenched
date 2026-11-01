@@ -4,6 +4,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <cmath>
+#include <cstdint>
 #include <functional>
 #include <limits>
 #include <random>
@@ -521,4 +522,24 @@ TEST_CASE ("Hosts are told a tail long enough for every room to die away", "[plu
     dynamic_cast<juce::RangedAudioParameter*> (p->getState().getParameter (ParamIDs::freeze))->setValueNotifyingHost (1.0f);
     play (*p, std::vector<float> (4096, 0.0f), [] (int) { return 512; });
     CHECK (std::isinf (p->getTailLengthSeconds()));
+}
+
+TEST_CASE ("A frozen tail reaches a CLAP host as endless, not as none", "[plugin][host]")
+{
+    // The CLAP wrapper turns the tail into samples with juce::roundToIntAccurate, which
+    // gives 0 for infinity. CLAP's endless is INT32_MAX samples or more.
+    testing::Plugin p;
+    p->is_clap = true;
+
+    for (const auto rate : { 44100.0, 48000.0, 96000.0, 192000.0 })
+    {
+        p->setRateAndBufferSizeDetails (rate, 512); // as the CLAP wrapper does before preparing
+        prepare (*p, rate, 512);
+        dynamic_cast<juce::RangedAudioParameter*> (p->getState().getParameter (ParamIDs::freeze))->setValueNotifyingHost (1.0f);
+        play (*p, std::vector<float> (4096, 0.0f), [] (int) { return 512; });
+
+        const auto samples = static_cast<std::uint32_t> (juce::roundToIntAccurate (rate * p->getTailLengthSeconds()));
+        INFO (rate);
+        CHECK (samples >= static_cast<std::uint32_t> (std::numeric_limits<std::int32_t>::max()));
+    }
 }

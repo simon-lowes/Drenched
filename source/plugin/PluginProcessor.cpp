@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -118,8 +119,25 @@ DrenchedProcessor::~DrenchedProcessor()
     stopTimer();
     state.state.removeListener (this);
     lifetime.reset();
-    loader.removeAllJobs (true, 10000);
+
+    // A capture still being worked out reads the recorder through this, so it has to end
+    // before the recorder does: waiting for ever is better than freeing it under the job.
+    loader.removeAllJobs (true, -1);
     builder.reset();
+}
+
+double DrenchedProcessor::getTailLengthSeconds() const
+{
+    const auto seconds = reverb.tailSeconds();
+
+    // CLAP counts the tail in samples, and its wrapper converts without a check, so a frozen
+    // (endless) tail would reach the host as none at all and the host could stop the plugin
+    // as soon as its input went quiet. INT32_MAX samples is how CLAP says endless.
+    if (is_clap && std::isinf (seconds))
+        if (const auto rate = getSampleRate() > 0.0 ? getSampleRate() : preparedRate.load(); rate > 0.0)
+            return static_cast<double> (std::numeric_limits<std::int32_t>::max()) / rate;
+
+    return seconds;
 }
 
 juce::String DrenchedProcessor::chosenSpaceId()
@@ -157,6 +175,11 @@ void DrenchedProcessor::cacheUiState()
 
     if (index == librarySpace)
         loadLibrarySpace (id, false);
+
+    {
+        const std::lock_guard lock (recordedLock);
+        keptSpaceId = id;
+    }
 
     spaceIndex.store (index);
     const auto speakers = juce::StringArray::fromTokens (ui.getProperty (UiIDs::speakers, "").toString(), ";", "");
@@ -298,16 +321,16 @@ std::shared_ptr<const RecordedResponse> DrenchedProcessor::readSofaFile (const j
         return nullptr;
     }
 
-    juce::MemoryBlock data;
-
-    if (! file.loadFileAsData (data) || data.getSize() == 0)
-    {
-        error = "Drenched couldn't read " + file.getFileName() + ".";
-        return nullptr;
-    }
-
     try
     {
+        juce::MemoryBlock data;
+
+        if (! file.loadFileAsData (data) || data.getSize() == 0)
+        {
+            error = "Drenched couldn't read " + file.getFileName() + ".";
+            return nullptr;
+        }
+
         return prepareSofaResponse (data.getData(), data.getSize(), file.getFileNameWithoutExtension().toStdString());
     }
     catch (const std::invalid_argument& e)
@@ -335,9 +358,19 @@ std::shared_ptr<const RecordedResponse> DrenchedProcessor::readImpulseResponse (
     if (auto kept = RecordingCache::shared().find (key))
         return kept;
 
-    auto response = readImpulseResponseFile (file, error);
-    RecordingCache::shared().add (key, response);
-    return response;
+    // Reading or preparing a large file can run out of memory, in a 32-bit host above all.
+    // Nothing above this expects an exception: on a loader thread it would end the host.
+    try
+    {
+        auto response = readImpulseResponseFile (file, error);
+        RecordingCache::shared().add (key, response);
+        return response;
+    }
+    catch (const std::exception&)
+    {
+        error = file.getFileName() + " is too large to load.";
+        return nullptr;
+    }
 }
 
 std::shared_ptr<const RecordedResponse> DrenchedProcessor::readImpulseResponseFile (const juce::File& file, juce::String& error)
@@ -1483,8 +1516,27 @@ void DrenchedProcessor::prepareToPlay (double hostRate, int)
     reverb.prepare (sampleRate, inputs, outputs);
     preparedRate.store (sampleRate);
     updateLatency (sampleRate);
-    loadLibrarySpace (chosenSpaceId(), true);
-    cacheUiState();
+
+    // Some hosts prepare on their own thread while the interface may be changing its state,
+    // and a tree read as it is written can corrupt the heap. There the space chosen when the
+    // message thread last looked is used; the timer catches up with anything newer.
+    if (const auto* messages = juce::MessageManager::getInstanceWithoutCreating();
+        messages == nullptr || messages->isThisTheMessageThread())
+    {
+        loadLibrarySpace (chosenSpaceId(), true);
+        cacheUiState();
+    }
+    else
+    {
+        juce::String id;
+
+        {
+            const std::lock_guard lock (recordedLock);
+            id = keptSpaceId;
+        }
+
+        loadLibrarySpace (id, true);
+    }
 
     // Build the first response now, so playback (and offline bounces) start with the right sound.
     try

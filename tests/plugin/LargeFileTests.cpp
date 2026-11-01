@@ -87,3 +87,59 @@ TEST_CASE ("Long, high-rate impulse responses load", "[plugin][large]")
 
     dir.deleteRecursively();
 }
+
+#if defined (__linux__) && ! defined (__SANITIZE_ADDRESS__) && ! defined (__SANITIZE_THREAD__)
+#include <cstdio>
+#include <fstream>
+#include <sys/resource.h>
+#include <unistd.h>
+
+TEST_CASE ("A file there isn't the memory to read is refused, not a crash", "[plugin][large]")
+{
+    // A 32-bit host may have less room than a large SOFA file needs, though it is under
+    // the size limit. The read runs on a loader thread, where an exception ends the host.
+    const auto file = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Drenched huge room.sofa");
+    {
+        auto* f = std::fopen (file.getFullPathName().toRawUTF8(), "wb");
+        REQUIRE (f != nullptr);
+        std::fseek (f, 300L * 1024 * 1024 - 1, SEEK_SET); // sparse: no time or disk to write
+        std::fputc (0, f);
+        std::fclose (f);
+    }
+
+    rlimit before {};
+    REQUIRE (getrlimit (RLIMIT_AS, &before) == 0);
+
+    long pages = 0;
+    {
+        std::ifstream statm ("/proc/self/statm");
+        statm >> pages;
+    }
+    REQUIRE (pages > 0);
+
+    rlimit tight = before;
+    tight.rlim_cur = static_cast<rlim_t> (pages) * static_cast<rlim_t> (sysconf (_SC_PAGESIZE)) + (200u << 20);
+    bool threw = false;
+    std::shared_ptr<const RecordedResponse> loaded;
+    juce::String error;
+
+    {
+        struct Restore { rlimit limit; ~Restore() { setrlimit (RLIMIT_AS, &limit); } } restore { before };
+        REQUIRE (setrlimit (RLIMIT_AS, &tight) == 0);
+
+        try
+        {
+            loaded = DrenchedProcessor::readImpulseResponse (file, error);
+        }
+        catch (...)
+        {
+            threw = true;
+        }
+    }
+
+    file.deleteFile();
+    CHECK_FALSE (threw);
+    CHECK (loaded == nullptr);
+    CHECK (error.isNotEmpty());
+}
+#endif

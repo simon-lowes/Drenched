@@ -13,6 +13,7 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <clap-juce-extensions/clap-juce-extensions.h>
 
 #include <array>
 #include <atomic>
@@ -26,6 +27,7 @@ namespace drenched
 {
 
 class DrenchedProcessor final : public juce::AudioProcessor,
+                                public clap_juce_extensions::clap_properties,
                                 private juce::Timer,
                                 private juce::ValueTree::Listener
 {
@@ -52,7 +54,7 @@ public:
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return reverb.tailSeconds(); }
+    double getTailLengthSeconds() const override;
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -230,7 +232,8 @@ private:
     int wantedLatency (double sampleRate) const;
     void updateLatency (double sampleRate);
 
-    /** Copies the chosen space and listener position out of the interface state, for other threads. */
+    /** Copies the chosen space and listener position out of the interface state, for other
+        threads. Message thread only (or while nothing else runs, as in the constructor). */
     void cacheUiState();
 
     float predelayMs (float requested);
@@ -375,6 +378,10 @@ private:
     // the id asked for most recently, so a slow load that is no longer wanted is dropped.
     std::shared_ptr<const RecordedResponse> libraryResponse;
     juce::String libraryLoadedId, libraryWanted;
+
+    // chosenSpaceId() as cacheUiState last read it, for a host that prepares on its own
+    // thread: only the message thread may read the interface state.
+    juce::String keptSpaceId;
 
     juce::ThreadPool loader { juce::ThreadPoolOptions{}.withThreadName ("Drenched IR loader").withNumberOfThreads (1) };
     juce::ThreadPool analyser { juce::ThreadPoolOptions{}.withThreadName ("Drenched analysis").withNumberOfThreads (1) };
