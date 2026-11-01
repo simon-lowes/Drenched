@@ -15,8 +15,8 @@ jobs:
     name: Activation server
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Tests
@@ -27,8 +27,8 @@ jobs:
     name: Interface
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Install Playwright and Chromium
@@ -77,7 +77,7 @@ jobs:
             cmake_args: -G Ninja
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -100,7 +100,7 @@ jobs:
         run: nuget install Microsoft.Web.WebView2 -Version 1.0.2903.40 -OutputDirectory packages
 
       - name: Cache dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build/_deps
           key: deps-${{ matrix.artifact }}-${{ hashFiles('cmake/Dependencies.cmake') }}
@@ -124,7 +124,7 @@ jobs:
 
       - name: Cache pluginval
         if: matrix.pluginval == 'source'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: pluginval-build/pluginval_artefacts
           key: pluginval-v1.0.4-${{ matrix.artifact }}-${{ hashFiles('.github/scripts/patch-pluginval.py') }}
@@ -207,7 +207,7 @@ jobs:
           ls -la dist
 
       - name: Upload plugins
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: dist
@@ -275,12 +275,12 @@ jobs:
     name: Linux (i686, 32-bit)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Ubuntu no longer has 32-bit GTK and WebKit, so this builds inside an i386
       # Debian container, which has every library JUCE needs.
       - name: Cache dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             build-i686/_deps
@@ -301,7 +301,7 @@ jobs:
           ls -la dist
 
       - name: Upload plugins
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Drenched-Linux-i686
           path: dist
@@ -313,12 +313,12 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: Drenched-Windows-x64
           path: x64
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: Drenched-Windows-x86
           path: x86
@@ -334,7 +334,7 @@ jobs:
           cp x86/Drenched.exe "dist/Drenched (32-bit).exe"
           find dist -maxdepth 4 | sort
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Drenched-Windows
           path: dist
@@ -346,9 +346,9 @@ jobs:
     needs: windows-bundle
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: Drenched-Windows
           path: dist
