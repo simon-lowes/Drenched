@@ -3,10 +3,12 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include <chrono>
 #include <cmath>
 #include <functional>
 #include <limits>
 #include <random>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -521,4 +523,67 @@ TEST_CASE ("Hosts are told a tail long enough for every room to die away", "[plu
     dynamic_cast<juce::RangedAudioParameter*> (p->getState().getParameter (ParamIDs::freeze))->setValueNotifyingHost (1.0f);
     play (*p, std::vector<float> (4096, 0.0f), [] (int) { return 512; });
     CHECK (std::isinf (p->getTailLengthSeconds()));
+}
+
+TEST_CASE ("A session the host loads on a thread of its own plays in a bounce started at once", "[plugin][host]")
+{
+    // A host can load a project or preset on a worker thread and bounce straight away,
+    // holding the message thread meanwhile, so no timer tick comes between the two. The
+    // bounce must play the session loaded, not the settings before it.
+    constexpr int block = 512;
+    testing::Plugin p;
+    p->setNonRealtime (true);
+    prepare (*p, 48000.0, block);
+
+    auto* mix = dynamic_cast<juce::RangedAudioParameter*> (p->getState().getParameter (ParamIDs::mix));
+    mix->setValueNotifyingHost (mix->convertTo0to1 (0.0f));
+    juce::MemoryBlock dry;
+    p->getStateInformation (dry);
+    mix->setValueNotifyingHost (mix->convertTo0to1 (100.0f));
+
+    std::thread host ([&] { p->setStateInformation (dry.getData(), static_cast<int> (dry.getSize())); });
+    host.join();
+
+    std::vector<float> click (static_cast<size_t> (block * 40), 0.0f);
+    const auto at = static_cast<size_t> (block * 4);
+    click[at] = 1.0f;
+    const auto out = play (*p, click, [] (int) { return block; });
+
+    CHECK (p->getState().getRawParameterValue (ParamIDs::mix)->load() == 0.0f);
+    CHECK (out[at] == 1.0f);
+    CHECK (energy (out, at + 1) < 1.0e-9);
+}
+
+TEST_CASE ("A bounce on a thread of its own waits only once for a session the host loaded", "[plugin][host]")
+{
+    // Bouncing on a thread of its own, the plugin waits for the message thread to apply a
+    // session just loaded. A host may hold that thread for the whole bounce (as the tests
+    // do: their message loop never runs), so the wait gives up, and only once.
+    constexpr int block = 512;
+    testing::Plugin p;
+    p->setNonRealtime (true);
+    prepare (*p, 48000.0, block);
+
+    auto* mix = dynamic_cast<juce::RangedAudioParameter*> (p->getState().getParameter (ParamIDs::mix));
+    mix->setValueNotifyingHost (mix->convertTo0to1 (0.0f));
+    juce::MemoryBlock dry;
+    p->getStateInformation (dry);
+    mix->setValueNotifyingHost (mix->convertTo0to1 (100.0f));
+
+    const auto start = std::chrono::steady_clock::now();
+
+    std::thread host ([&]
+    {
+        p->setStateInformation (dry.getData(), static_cast<int> (dry.getSize()));
+        play (*p, std::vector<float> (static_cast<size_t> (block * 10), 0.0f), [] (int) { return 512; });
+    });
+
+    host.join();
+    const auto seconds = std::chrono::duration<double> (std::chrono::steady_clock::now() - start).count();
+    INFO (seconds << " s for 10 blocks");
+    CHECK (seconds < 8.0);
+
+    // The session still lands, at the timer's next tick.
+    ((juce::Timer&) *p).timerCallback();
+    CHECK (p->getState().getRawParameterValue (ParamIDs::mix)->load() == 0.0f);
 }

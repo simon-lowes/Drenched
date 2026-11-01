@@ -347,7 +347,13 @@ private:
     std::mutex savedLock;
     juce::ValueTree savedSession, pendingSession;
     std::atomic<bool> sessionChanged { true };
+    std::atomic<bool> sessionWaiting { false }; // pendingSession holds one
     void keepSessionForSaving();
+
+    /** Bouncing: applies a session the host loaded on another thread before the block
+        plays, as followSceneOffline does a scene, so the bounce plays the session loaded
+        rather than the one before it until the timer runs. Audio thread, offline only. */
+    void applySessionOffline();
 
     void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override { sessionChanged.store (true); }
     void valueTreeChildAdded (juce::ValueTree&, juce::ValueTree&) override { sessionChanged.store (true); }

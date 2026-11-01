@@ -1554,6 +1554,10 @@ void DrenchedProcessor::render (juce::AudioBuffer<float>& buffer, bool bypassed)
 
     notePeak (0, numInputs);
 
+    // Before the controls are read, so the block plays the session's settings.
+    if (isNonRealtime())
+        applySessionOffline();
+
     ReverbControls controls;
     controls.mix = params.mix.load() / 100.0f;
     controls.outputGain = decibelsToGain (params.output.load());
@@ -1769,6 +1773,7 @@ void DrenchedProcessor::setStateInformation (const void* data, int sizeInBytes)
         {
             const std::lock_guard lock (savedLock);
             pendingSession = {}; // this load is newer
+            sessionWaiting.store (false);
         }
 
         applySession (session);
@@ -1787,6 +1792,7 @@ void DrenchedProcessor::setStateInformation (const void* data, int sizeInBytes)
 
     const std::lock_guard lock (savedLock);
     pendingSession = session;
+    sessionWaiting.store (true);
 }
 
 void DrenchedProcessor::applyPendingSession()
@@ -1796,10 +1802,44 @@ void DrenchedProcessor::applyPendingSession()
     {
         const std::lock_guard lock (savedLock);
         session = std::exchange (pendingSession, {});
+        sessionWaiting.store (false);
     }
 
     if (session.isValid())
         applySession (session);
+}
+
+void DrenchedProcessor::applySessionOffline()
+{
+    // Once per session loaded: a wait that timed out isn't tried again every block.
+    if (! sessionWaiting.exchange (false))
+        return;
+
+    // Applying a session changes the state, which belongs to the message thread. As for a
+    // scene (see followSceneOffline): here if the host bounces on that thread, otherwise
+    // waiting for it, but not for ever, as a host may hold it until the bounce is done.
+    // The session then lands late, at the timer's next tick, as it did before.
+    if (juce::MessageManager::existsAndIsCurrentThread())
+    {
+        applyPendingSession();
+    }
+    else
+    {
+        auto done = std::make_shared<juce::WaitableEvent>();
+        std::weak_ptr<int> alive = lifetime;
+
+        juce::MessageManager::callAsync ([this, alive, done]
+        {
+            if (! alive.expired())
+                applyPendingSession();
+
+            done->signal();
+        });
+
+        done->wait (2000);
+    }
+
+    offlineSinceBuild = std::numeric_limits<juce::int64>::max() / 2; // build before this block plays
 }
 
 void DrenchedProcessor::applySession (const juce::ValueTree& session)
