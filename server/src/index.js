@@ -100,7 +100,8 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
             return json (401, { error: 'bad-signature' });
 
         // Signed by Paddle but not a JSON object. Paddle retries any answer but 200 (4xx too),
-        // sending the same bytes each time, so only a 200 stops it; the log keeps the body.
+        // sending the same bytes each time, so only a 200 stops it. Paddle's dashboard keeps
+        // the body; the log notes only its size, as a body can hold a buyer's email.
         let event = null;
 
         try
@@ -113,7 +114,7 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
 
         if (! event || typeof event !== 'object' || Array.isArray (event))
         {
-            console.error ('Paddle sent a signed body that is not a JSON object:', raw.slice (0, 200));
+            console.error (`Paddle sent a signed body that is not a JSON object (${raw.length} characters)`);
             return json (200, { ok: false, error: 'bad-json' });
         }
 
