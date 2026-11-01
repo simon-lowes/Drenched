@@ -6,11 +6,13 @@
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 
-const page0 = pathToFileURL (path.resolve (path.dirname (fileURLToPath (import.meta.url)), '../../source/ui/index.html')).href;
+const here = path.dirname (fileURLToPath (import.meta.url));
+const page0 = pathToFileURL (path.resolve (here, '../../source/ui/index.html')).href;
 // DRENCHED_UI_ACTIONS and DRENCHED_UI_SEED run the random test longer, or on other seeds.
 const actionsPerLook = +(process.env.DRENCHED_UI_ACTIONS || 200);
 
@@ -225,10 +227,178 @@ test ('A redraw while a field is being edited completes', async () =>
     assert.ok (field, 'a typed value field');
     await field.fill ('12');
 
-    // A message from the plugin redraws the page, which blurs the field and commits it.
+    // A message from the plugin redraws the page around the field being edited.
     await fromPlugin ('state', { ui: { locks: 'mix' } });
     await page.waitForTimeout (50);
     assert.deepEqual (errors, []);
+});
+
+test ('A value typed while the plugin sends updates is what was typed, and only it is sent', async () =>
+{
+    // Automation on any parameter redraws the page. That must neither commit half of what is
+    // being typed nor put the next key after the formatted value ("1%2" read as 2).
+    await open ('anodised');
+    const looks = await page.evaluate (() => SKINS.map (s => s.id));
+    let tried = 0;
+
+    for (const look of looks)
+    {
+        await page.goto ('about:blank');
+        await open (look);
+        const field = (await visible ('input[data-fid="ro-mix"]'))[0];
+
+        if (! field)
+            continue;
+
+        ++tried;
+        await field.click();
+        await page.evaluate (() => { window.__sent = []; document.activeElement.__typedIn = true; });
+        await page.keyboard.press ('ControlOrMeta+A');
+        await page.keyboard.type ('1');
+        await fromPlugin ('state', { params: { size: 120, decay1k: 3 } });
+        await page.waitForTimeout (50);
+        await fromPlugin ('state', { ui: { locks: 'mix' } });
+        await page.waitForTimeout (50);
+        const mid = await page.evaluate (() => ({ value: document.activeElement.value, same: document.activeElement.__typedIn === true }));
+        await page.keyboard.type ('2');
+        await fromPlugin ('state', { params: { predelay: 30 } });
+        await page.waitForTimeout (50);
+        await page.keyboard.press ('Enter');
+        await page.waitForTimeout (50);
+
+        const end = await page.evaluate (() => ({ mix: st.mix, value: document.activeElement.value,
+                                                  sent: window.__sent.filter (([n, p]) => n === 'params' && 'mix' in p).map (([, p]) => p.mix) }));
+        assert.deepEqual (mid, { value: '1', same: true }, look + ': the field was disturbed by the update');
+        assert.equal (end.mix, 12, look);
+        assert.deepEqual (end.sent, [12], look + ': values sent to the plugin');
+        assert.equal (end.value, '12%', look + ': the entered value is shown formatted');
+    }
+
+    assert.ok (tried >= 3, 'looks with a Mix value field: ' + tried);
+    assert.deepEqual (errors, []);
+});
+
+test ('The focused control is kept across a redraw, and an input method can compose in the search', async () =>
+{
+    await page.goto ('about:blank');
+    await open ('anodised');
+
+    // A knob changed from the keyboard stays the same element, so a screen reader hears its
+    // value change rather than a new control.
+    await page.focus ('[data-fid="kn-mix"]');
+    await page.evaluate (() => { document.activeElement.__mark = true; });
+    await page.keyboard.press ('ArrowUp');
+    await fromPlugin ('state', { params: { size: 120 } });
+    await page.waitForTimeout (50);
+    assert.ok (await page.evaluate (() => document.activeElement.__mark === true && document.activeElement.getAttribute ('aria-valuenow') === String (+st.mix.toFixed (2))),
+               'the knob was replaced');
+
+    // Japanese typed into the space search: "ka", "kat", then the choice is committed.
+    await page.click ('[data-act="browse"]');
+    await page.waitForTimeout (50);
+    await page.evaluate (() => { document.activeElement.__mark = true; });
+    const cdp = await page.context().newCDPSession (page);
+    await cdp.send ('Input.imeSetComposition', { text: 'ka', selectionStart: 2, selectionEnd: 2 });
+    await page.waitForTimeout (50);
+    await cdp.send ('Input.imeSetComposition', { text: 'kat', selectionStart: 3, selectionEnd: 3 });
+    await page.waitForTimeout (50);
+    await fromPlugin ('state', { params: { mix: 40 } });
+    await page.waitForTimeout (50);
+    await cdp.send ('Input.insertText', { text: 'かと' });
+    await page.waitForTimeout (50);
+    await cdp.detach();
+
+    const q = await page.evaluate (() => ({ value: document.activeElement.value, id: document.activeElement.id, same: document.activeElement.__mark === true, searched: st.brwQ }));
+    assert.deepEqual (q, { value: 'かと', id: 'brw-q', same: true, searched: 'かと' });
+
+    // Plain typing keeps the caret where it is.
+    await page.keyboard.press ('Home');
+    await page.keyboard.type ('ab');
+    await page.waitForTimeout (50);
+    assert.deepEqual (await page.evaluate (() => [document.activeElement.value, document.activeElement.selectionStart, document.activeElement.__mark === true]), ['abかと', 2, true]);
+    assert.deepEqual (errors, []);
+});
+
+test ('Every control of the Catalogue look is on the plate and can be clicked, in every space', async () =>
+{
+    // The column beside the photograph holds the name, the details, the decay figure, the
+    // values, Mix and the actions; a long name or several positions must not push any off.
+    const library = JSON.parse (fs.readFileSync (path.resolve (here, '../../library/library.json'), 'utf8'));
+
+    try
+    {
+        for (const viewport of [{ width: 1200, height: 760 }, { width: 600, height: 380 }])
+        {
+            await page.setViewportSize (viewport);
+
+            for (const which of ['preview', 'library'])
+            {
+                await page.goto ('about:blank');
+                await open ('catalogue');
+
+                const bad = await page.evaluate (async ([lib]) =>
+                {
+                    if (lib)
+                        setLibrary (lib);
+
+                    const out = [], frame = () => new Promise (r => requestAnimationFrame (() => requestAnimationFrame (r)));
+
+                    for (let i = 0; i < SPACES.length; ++i)
+                    {
+                        for (const mode of ['studio', 'stage'])
+                        {
+                            Object.assign (st, { sp: i, mode, bands: SPACES[i].bands.slice(), rbands: SPACES[i].bands.slice() });
+                            window.schedule();
+                            await frame();
+
+                            const screen = document.querySelector ('#live .screen'), box = screen.getBoundingClientRect(), where = SPACES[i].name + ', ' + mode + ': ';
+
+                            if (screen.scrollHeight > 760 || screen.scrollTop)
+                                out.push (where + 'the plate is ' + screen.scrollHeight + ' px tall');
+
+                            for (const c of screen.querySelectorAll ('[data-act],[data-knob],input,[tabindex="0"]'))
+                            {
+                                const r = c.getBoundingClientRect();
+
+                                if (! r.width)
+                                    continue;
+
+                                const hit = document.elementFromPoint (r.left + r.width / 2, r.top + r.height / 2);
+
+                                if (r.top < box.top - 0.5 || r.bottom > box.bottom + 0.5 || r.left < box.left - 0.5 || r.right > box.right + 0.5 || ! hit || ! (hit === c || c.contains (hit)))
+                                    out.push (where + (c.getAttribute ('data-act') || c.getAttribute ('data-knob') || c.getAttribute ('data-fid')));
+                            }
+                        }
+                    }
+
+                    return out;
+                }, [which === 'library' ? library : null]);
+
+                assert.deepEqual (bad, [], viewport.width + 'x' + viewport.height + ', ' + which + ' spaces');
+            }
+        }
+    }
+    finally
+    {
+        await page.setViewportSize ({ width: 1200, height: 760 });
+    }
+
+    assert.deepEqual (errors, []);
+});
+
+test ('The interface scripts are ASCII only', () =>
+{
+    // WebKitGTK may not read the scripts as UTF-8; write other characters as \u escapes.
+    const ui = path.resolve (here, '../../source/ui');
+    const scripts = fs.readdirSync (ui, { recursive: true }).filter (f => f.endsWith ('.js'));
+    assert.ok (scripts.length >= 2, 'scripts found: ' + scripts);
+
+    for (const f of scripts)
+    {
+        const bytes = fs.readFileSync (path.join (ui, f)), at = bytes.findIndex (b => b > 0x7f);
+        const line = at < 0 ? 0 : bytes.subarray (0, at).toString ('latin1').split ('\n').length;
+        assert.equal (at, -1, f + ' has a byte above 0x7F on line ' + line);
+    }
 });
 
 test ('Every control a drag takes is let go however the drag ends', async () =>
