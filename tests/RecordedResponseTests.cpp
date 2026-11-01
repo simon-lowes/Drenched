@@ -14,6 +14,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <stdexcept>
 #include <thread>
@@ -422,27 +423,62 @@ TEST_CASE ("The living tail fits a loaded room", "[recorded][livingtail]")
 
 TEST_CASE ("The builder plays a loaded response", "[recorded][builder]")
 {
+    // Recorded at 44.1 kHz, played at 48 kHz: the file's response resampled, at unit
+    // energy as every response plays (see "Loaded responses are resampled to the
+    // session rate").
     const auto recorded = prepareRecordedResponse (fileOf (synthesiseImpulseResponse (requestFor (3, 44100.0))), 44100.0, "room");
+    auto expected = resampleResponses (recorded->responses, 48000.0);
+    REQUIRE (expected.sampleRate == 48000.0);
 
-    ConvolutionReverb reverb;
-    reverb.prepare (48000.0);
-    KernelBuilder builder (reverb);
-    builder.buildNow (requestForRecorded (recorded, 48000.0));
+    const auto gain = static_cast<float> (1.0 / std::sqrt (totalEnergy (expected)));
 
-    REQUIRE (builder.lastBuilt().has_value());
-    CHECK (builder.lastBuilt()->recorded == recorded);
+    for (auto& path : expected.paths)
+        for (auto& s : path)
+            s *= gain;
 
-    // An impulse through the reverb comes back as the loaded room.
-    std::vector<float> l (48000, 0.0f), r (48000, 0.0f);
-    l[0] = r[0] = 1.0f;
+    // An impulse into each input in turn comes back as the loaded room's own paths from
+    // that input: fully wet, with nothing else in the wet path, and no pre-delay.
     ReverbControls controls;
     controls.mix = 1.0f;
+    controls.predelayMs = 0.0f;
 
-    for (std::size_t pos = 0; pos < l.size(); pos += 256)
-        reverb.process (l.data() + pos, r.data() + pos, std::min<std::size_t> (256, l.size() - pos), controls);
+    using P = ImpulseResponseSet;
+    const std::array<std::array<P::Path, 2>, 2> paths { { { P::leftToLeft, P::leftToRight }, { P::rightToLeft, P::rightToRight } } };
 
-    CHECK (energy (l) > 0.0);
-    CHECK (std::all_of (l.begin(), l.end(), [] (float s) { return std::isfinite (s); }));
+    for (std::size_t input = 0; input < 2; ++input)
+    {
+        ConvolutionReverb reverb;
+        reverb.prepare (48000.0);
+        KernelBuilder builder (reverb);
+        builder.buildNow (requestForRecorded (recorded, 48000.0));
+
+        REQUIRE (builder.lastBuilt().has_value());
+        CHECK (builder.lastBuilt()->recorded == recorded);
+
+        std::array<std::vector<float>, 2> out { std::vector<float> (expected.length() + 4800, 0.0f),
+                                                std::vector<float> (expected.length() + 4800, 0.0f) };
+        out[input][0] = 1.0f;
+
+        for (std::size_t pos = 0; pos < out[0].size(); pos += 256)
+            reverb.process (out[0].data() + pos, out[1].data() + pos, std::min<std::size_t> (256, out[0].size() - pos), controls);
+
+        for (std::size_t output = 0; output < 2; ++output)
+        {
+            const auto& wanted = expected.paths[paths[input][output]];
+            double residual = 0.0;
+
+            for (std::size_t n = 0; n < out[output].size(); ++n)
+            {
+                const auto difference = static_cast<double> (out[output][n]) - (n < wanted.size() ? wanted[n] : 0.0f);
+                residual += difference * difference;
+            }
+
+            const auto db = 10.0 * std::log10 (residual / energy (wanted) + 1.0e-30);
+            INFO ("input " << input << " to output " << output << ": residual " << db << " dB");
+            CHECK (energy (wanted) > 0.0);
+            CHECK (db < -60.0);
+        }
+    }
 }
 
 #if defined (__SSE__) || defined (_M_X64)
@@ -477,8 +513,10 @@ TEST_CASE ("Offline work leaves the calling thread's handling of tiny numbers as
         builder.buildNow (request);
         CHECK (control() == mode);
 
+        // The analysis hears the decay the room was built with.
         const auto analysis = analyseResponse (*builder.lastResponses());
-        CHECK (analysis.rt60[3] > 0.0f);
+        INFO ("500 Hz: analysed " << analysis.rt60[3] << " s, asked for " << request.decaySeconds[3] << " s");
+        CHECK (std::abs (analysis.rt60[3] / request.decaySeconds[3] - 1.0f) < 0.1f);
         CHECK (control() == mode);
     }
 
