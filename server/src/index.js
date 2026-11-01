@@ -83,6 +83,11 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
 
             if (await store.createLicence ({ key, created: today(), ...fields }))
                 return key;
+
+            // Another delivery of the same sale made this copy meanwhile.
+            if (fields.orderRef && fields.copy !== undefined
+                && (await store.listByOrder (fields.orderRef)).some ((l) => l.copy === fields.copy))
+                return null;
         }
     }
 
@@ -94,8 +99,19 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
         if (! paddle?.webhookSecret || ! await verifySignature (request.headers.get ('paddle-signature'), raw, paddle.webhookSecret, now()))
             return json (401, { error: 'bad-signature' });
 
-        const event = JSON.parse (raw);
-        const data = event.data ?? {};
+        // Signed but not JSON: answering 500 would have Paddle send it again for ever.
+        let event;
+
+        try
+        {
+            event = JSON.parse (raw);
+        }
+        catch
+        {
+            return json (400, { error: 'bad-json' });
+        }
+
+        const data = event?.data ?? {};
 
         if (event.event_type === 'transaction.completed')
         {
@@ -104,7 +120,8 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
             if (copies === 0 || ! data.id)
                 return json (200, { ok: true, licences: 0 });
 
-            // Paddle retries until it gets a 200, so each step can run again safely.
+            // Paddle retries until it gets a 200, and may deliver the same sale twice at once,
+            // so each step can run again, or alongside itself, safely.
             let licences = await store.listByOrder (data.id);
 
             if (licences.length < copies)
@@ -113,19 +130,31 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
                     ? await fetchCustomer (data.customer_id, paddle)
                     : { name: '', email: data.custom_data?.email ?? '' };
 
-                for (let i = licences.length; i < copies; ++i)
-                    await issue ({ name: cleanName (customer.name), email: customer.email, orderRef: data.id });
+                // Each copy is numbered, and the store keeps one licence per copy of an order.
+                for (let copy = 0; copy < copies; ++copy)
+                    if (! licences.some ((l) => l.copy === copy))
+                        await issue ({ name: cleanName (customer.name), email: customer.email, orderRef: data.id, copy });
 
                 licences = await store.listByOrder (data.id);
             }
 
-            const unsent = licences.filter ((l) => ! l.emailed);
+            // The first licence stands for the whole email: the delivery that marks it sends
+            // it, and gives the mark back if sending fails, so a retry sends it instead.
+            const first = licences[0];
 
-            if (mailer && unsent.length > 0 && licences[0].email)
+            if (mailer && first?.email && ! first.emailed && await store.claimEmail (first.key, today()))
             {
-                await mailer ({ to: licences[0].email, ...licenceEmail ({ name: licences[0].name, keys: licences.map ((l) => l.key) }) });
+                try
+                {
+                    await mailer ({ to: first.email, ...licenceEmail ({ name: first.name, keys: licences.map ((l) => l.key) }) });
+                }
+                catch (error)
+                {
+                    await store.markEmailed (first.key, null);
+                    throw error;
+                }
 
-                for (const l of licences)
+                for (const l of licences.slice (1))
                     await store.markEmailed (l.key, today());
             }
 

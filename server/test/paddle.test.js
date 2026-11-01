@@ -106,6 +106,28 @@ test ('a sale issues and emails a licence number once, however often Paddle retr
     assert.ok (! nonsense.includes ('<script>'));
 });
 
+test ('the same sale delivered twice at once issues and emails its numbers once', async () =>
+{
+    const { store, mail, send } = await setup();
+    const statuses = await Promise.all ([1, 2, 3].map (() => send (sale ('txn_01h04vsc0qhwtsbsxh3422ffff', [drenched (2)]))));
+
+    assert.deepEqual (statuses.map ((r) => r.status), [200, 200, 200]);
+    const licences = await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422ffff');
+    assert.deepEqual (licences.map ((l) => l.copy), [0, 1]);
+    assert.equal (mail.length, 1);
+    assert.ok (licences.every ((l) => mail[0].text.includes (l.key) && l.emailed));
+});
+
+test ('a signed body that is not JSON is refused, not retried for ever', async () =>
+{
+    const { app } = await setup();
+    const body = '{not json';
+    const response = await app (new Request ('https://licence.test/v1/paddle', {
+        method: 'POST', body, headers: { 'paddle-signature': await signBody (body, SECRET, NOW) },
+    }));
+    assert.equal (response.status, 400);
+});
+
 test ('several copies make several numbers in one email', async () =>
 {
     const { store, mail, send } = await setup();
