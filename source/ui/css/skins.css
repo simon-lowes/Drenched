@@ -37,7 +37,13 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .sys{font-family:var(--fui);color:var(--tx);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
 .sys *{box-sizing:border-box}
 .sys button{font-family:inherit;cursor:pointer;color:inherit}
-.sys button:focus-visible,.sys input:focus-visible,.sys [tabindex]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+/* The focus ring is two-tone: the look's focus colour, and inside it a band of its ground, so it
+   shows on a photograph as well as on the look's own panels. */
+.sys button:focus-visible,.sys input:focus-visible,.sys [tabindex]:focus-visible{outline:2px solid var(--focus);outline-offset:2px;box-shadow:0 0 0 2px var(--g)}
+/* a window takes the keyboard itself when no control in it has it; it is not a control */
+.sys [role="dialog"]:focus{outline:none;box-shadow:none}
+/* read by screen readers, not shown */
+.vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .screen{width:1200px;height:760px;background:var(--g);overflow:hidden;position:relative}
 .kn{cursor:ns-resize;border-radius:50%;touch-action:none;line-height:0;display:inline-block}
 .k-tr,.k-val,.k-ptr,.k-tk{fill:none;stroke-linecap:round}
@@ -196,7 +202,7 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .brw .brw-top{display:flex;gap:10px;margin-top:14px}
 .brw #brw-q{flex:1;min-width:0;height:36px;border:1px solid var(--ln);border-radius:var(--rad,6px);background:var(--g);color:var(--tx);padding:0 12px;font:14px var(--fui);-webkit-user-select:text;user-select:text}
 .brw #brw-q::placeholder{color:var(--tx2);opacity:.7}
-.brw #brw-q:focus{border-color:var(--focus);outline:none}
+.brw #brw-q:focus{border-color:var(--focus)}
 .brw .brw-simb{height:36px;max-width:320px;padding:0 14px;border:1px solid var(--ln);border-radius:var(--rad,6px);background:transparent;color:var(--tx);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .brw .brw-simb:hover{border-color:var(--tx2)}
 .brw .brw-simb[aria-pressed="true"]{background:var(--ac);color:var(--onac,#111);border-color:var(--ac)}
@@ -1050,3 +1056,13 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .stg-cp{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
 .stg-cp .cp-b{height:20px;padding:0 8px;border:1px solid var(--ln);border-radius:var(--rad);color:var(--tx2);font-size:11px;white-space:nowrap}
 .stg-cp .cp-b[aria-pressed="true"]{color:var(--ac);border-color:var(--ac)}
+
+/* ===== focus, after every look's own rules so that none of them hides it. A point on a
+   graph takes a wide ring of the focus colour with a halo of the ground; a button whose look
+   unsets everything gets the ring back. */
+.sys .dg .nd:focus-visible,.sys .dg .nd.ed:focus-visible,.sys .dg .nd.cur:focus-visible{stroke:var(--focus);stroke-width:5;filter:drop-shadow(0 0 1px var(--g)) drop-shadow(0 0 1px var(--g))}
+.sys .dg .bar:focus-visible,.sys .dg .bar.ed:focus-visible{stroke:var(--focus);stroke-width:3;filter:drop-shadow(0 0 1px var(--g)) drop-shadow(0 0 1px var(--g))}
+.sys .eqd .eqn:focus-visible circle{stroke:var(--focus);stroke-width:4;filter:drop-shadow(0 0 1px var(--g)) drop-shadow(0 0 1px var(--g))}
+.sys .si-space .nm button:focus-visible{outline:2px solid var(--focus);outline-offset:2px;box-shadow:0 0 0 2px var(--g)}
+/* inside a box that clips, the ring is drawn inside the control's edge */
+.sys .cap .seg button:focus-visible,.sys .brw .brw-pick:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;box-shadow:inset 0 0 0 4px var(--g)}

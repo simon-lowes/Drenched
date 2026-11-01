@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "ChannelLayouts.h"
 #include "Settings.h"
 #include "WebView.h"
 
@@ -35,6 +36,12 @@ namespace
         if (ext == "json")  return "application/json";
 
         return "application/octet-stream";
+    }
+
+    /** The output's usual name, for the page's Stage meters: 2.0, 5.1, 7.1.4 and so on. */
+    juce::String outputLayoutName (const juce::AudioProcessor& processor)
+    {
+        return channelLayouts::nameOf (channelLayouts::speakersOf (processor.getChannelLayoutOfBus (false, 0)));
     }
 
     /** What the window shows where Windows has no WebView2 runtime: what's missing, and a
@@ -262,6 +269,8 @@ juce::var DrenchedEditor::uiValues()
     object->setProperty ("skin", ui.getProperty (UiIDs::skin, settings::loadDefaultSkin()).toString());
     object->setProperty ("speakers", ui.getProperty (UiIDs::speakers, "").toString());
     object->setProperty ("outputs", processor.outputSpeakerNames());
+    sentLayout = outputLayoutName (processor);
+    object->setProperty ("layout", sentLayout);
     object->setProperty ("ir", processor.impulseResponseInfo());
     object->setProperty ("irError", ui.getProperty (UiIDs::irError, "").toString());
     object->setProperty ("irEvent", static_cast<int> (ui.getProperty (UiIDs::irEvent, 0)));
@@ -571,7 +580,8 @@ void DrenchedEditor::timerCallback()
     if (watch.anyChanged())
         handleAsyncUpdate();
 
-    if (processor.shortenedSeconds() != sentShortened)
+    // The host can change the output layout with the window open; the page's meters follow.
+    if (processor.shortenedSeconds() != sentShortened || outputLayoutName (processor) != sentLayout)
     {
         uiDirty.store (true);
         triggerAsyncUpdate();

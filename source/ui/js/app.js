@@ -39,7 +39,7 @@ function applyFromHost(msg){if(!msg)return;var p=msg.params||{},u=msg.ui||{};
  if('scenes' in u)setScenes(u.scenes);
  if(p.scene!=null){var sn=Math.round(+p.scene);if(sceneSeen&&sn!==st.scene&&sn>0&&sceneOf(sn)){st.hint=null;st.note='<b>'+esc(sceneOf(sn).name)+'</b> recalled: scene '+sn+', '+esc(sceneOf(sn).space)+'.';}st.scene=isFinite(sn)?sn:0;sceneSeen=true;}
  if(u.irEvent!=null){var ev=+u.irEvent;if(irEvent!==null&&ev!==irEvent){st.hint=null;
-   st.note=u.irError?'<b>That file didn\u2019t load.</b> '+esc(u.irError):'<b>'+esc(SPACES[USER]?SPACES[USER].name:'Your IR')+'</b> loaded. The graph shows its measured decay; drag a band to reshape it.';}
+   st.note=u.irError?'<b>That file didn\u2019t load.</b> '+esc(u.irError):'<b>'+esc(SPACES[USER]?SPACES[USER].name:'Your IR')+'</b> loaded. The graph shows its measured decay; drag a band to reshape it.';if(u.irError)errNote=st.note;}
   irEvent=ev;}
  // a value that isn't a number arrives as null, which + would read as 0
  for(var id in p){if(p[id]==null)continue;var v=+p[id];if(!isFinite(v))continue;lastSent[id]=v;var bi=BAND_ID.indexOf(id);if(bi>=0){st.bands[bi]=v;continue;}
@@ -51,6 +51,7 @@ function applyFromHost(msg){if(!msg)return;var p=msg.params||{},u=msg.ui||{};
  if(u.view==='plan'||u.view==='section'){st.view=u.view;lastUi.view=u.view;}
  if(u.skin&&SKINS.some(function(x){return x.id===u.skin;})){st.skin=u.skin;lastUi.skin=u.skin;}
  if(Array.isArray(u.outputs)&&u.outputs.length)st.outputs=u.outputs.map(function(o){return {name:String(o&&o.name||''),wet:!!(o&&o.wet)};});
+ if(u.layout!=null)st.layout=String(u.layout);
  if(u.speakers!=null){st.speakers=parseSpeakers(String(u.speakers));lastUi.speakers=speakersText(st);}
  schedule();}
 
@@ -59,13 +60,16 @@ function onMeters(m){if(!m)return;st.inL=+m.inL;st.inR=+m.inR;st.outL=+m.outL;st
  var i=Math.max(st.inL,st.inR),o=Math.max(st.outL,st.outR),map={'in':i,'out':o,outL:st.outL,outR:st.outR};
  var bars=live.querySelectorAll('[data-m]');for(var a=0;a<bars.length;a++){var el=bars[a],v=map[el.getAttribute('data-m')];if(v==null)continue;var pct=meterPct(v).toFixed(0)+'%';if(el.hasAttribute('style')&&el.style.height)el.style.height=pct;else el.style.width=pct;if(el.nextElementSibling&&el.nextElementSibling.tagName==='B')el.nextElementSibling.style.bottom=Math.min(98,meterPct(v)+4).toFixed(0)+'%';}
  var txt=live.querySelectorAll('[data-mt]');for(var b=0;b<txt.length;b++){var v2=map[txt[b].getAttribute('data-mt')];if(v2!=null)txt[b].textContent=dbText(v2);}
- if(Array.isArray(m.spk)){st.spkM=m.spk.map(Number);var sb=live.querySelectorAll('[data-spm]');for(var c=0;c<sb.length;c++){var sv=st.spkM[+sb[c].getAttribute('data-spm')];if(sv!=null)sb[c].style.width=meterPct(sv).toFixed(0)+'%';}}}
+ if(Array.isArray(m.spk)){st.spkM=m.spk.map(Number);var sb=live.querySelectorAll('[data-spm]');for(var c=0;c<sb.length;c++){var sv=st.spkM[+sb[c].getAttribute('data-spm')];if(sv!=null)sb[c].style.width=meterPct(sv).toFixed(0)+'%';}}
+ // Stage's meter per output channel
+ var sm=live.querySelectorAll('[data-sm]');for(var d=0;d<sm.length;d++){var p=meterPct(chLevel(st,+sm[d].getAttribute('data-sm')));sm[d].style.height=p.toFixed(0)+'%';if(sm[d].nextElementSibling)sm[d].nextElementSibling.style.bottom=Math.min(98,p+4).toFixed(0)+'%';}
+ var smt=live.querySelectorAll('[data-smt]');for(var e=0;e<smt.length;e++)smt[e].textContent=dbText(chLevel(st,+smt[e].getAttribute('data-smt')));}
 
 /* ---- Match a room: the plugin listens to a recording and reports the decay it heard ---- */
 var BAND_NAMES=['63 Hz','125 Hz','250 Hz','500 Hz','1 kHz','2 kHz','4 kHz','8 kHz'];
 function onMatched(m){if(!m)return;st.hint=null;
  if(m.listening)st.note='<b>Listening to '+esc(m.file||'the recording')+'</b> for the room\u2019s decay.';
- else if(m.error)st.note='<b>No match.</b> '+esc(m.error);
+ else if(m.error)errNote=st.note='<b>No match.</b> '+esc(m.error);
  else if(Array.isArray(m.bands)&&m.bands.length===8){var si=spaceIndex(String(m.spaceId||''));if(si>=0)changeSpace(si);
   st.bands=m.bands.map(function(b){return clamp(+b||1,0.1,20);});st.rbands=st.bands.slice();
   var missed=(m.heard||[]).map(function(n,i){return +n>0?null:BAND_NAMES[i];}).filter(Boolean);
@@ -77,7 +81,7 @@ function onMatched(m){if(!m)return;st.hint=null;
 /* ---- the skin picker ---- */
 function pickerHTML(){var ts=Object.assign({},st,{browse:false,adv:false,skins:false,hint:null,note:null,licence:{state:'licensed'}});
  var thumb=function(x){return screenHTML(x.id,ts).replace(/ data-fid="[^"]*"/g,'').replace(/tabindex="0"/g,'tabindex="-1"');};
- return '<div class="skins" role="dialog" aria-modal="true" aria-label="Choose a look"><div class="hd"><h2>Choose a look</h2><span>Twelve looks over the same controls. Every value stays where it is.</span><button data-act="skins" aria-label="Close">Close</button></div>'+
+ return '<div class="skins" role="dialog" aria-modal="true" aria-label="Choose a look" tabindex="-1" data-fid="dlg-skins"><div class="hd"><h2>Choose a look</h2><span>Twelve looks over the same controls. Every value stays where it is.</span><button data-act="skins" aria-label="Close">Close</button></div>'+
   '<div class="grid">'+SKINS.map(function(x){return '<div class="sk" role="button" tabindex="0" data-act="skin" data-v="'+x.id+'" aria-current="'+(x.id===st.skin)+'" aria-label="'+x.name+', '+x.tag.toLowerCase()+'"><div class="fr" inert>'+thumb(x)+'</div><div class="t"><b>'+x.name+'</b><span>'+x.tag+'</span></div></div>';}).join('')+'</div>'+
   '<div class="ft">Click the Drenched name in any look to come back here. The look is saved with this instance and becomes the default for new ones.</div></div>';}
 
@@ -96,12 +100,12 @@ function captureHTML(){var c=st.cap,cs=st.capStatus,busy=capBusy(),clap=c.method
  var action=cs.stage==='playing'?'<button class="cgo stop" data-act="capstop">Stop capture</button>'
   :cs.stage==='working'?'<button class="cgo" disabled>Working\u2026</button>'
   :'<button class="cgo" data-act="capstart">Start capture</button><span class="ct">Takes '+secs+' seconds. Captures are saved in Documents, Drenched, Captures.</span>';
- return '<div class="cap" role="dialog" aria-modal="true" aria-labelledby="cap-h"><div class="cbox"><div class="chd"><h2 id="cap-h">Capture a space</h2><button class="cx" data-act="capture" aria-label="Close">Close</button></div>'+
+ return '<div class="cap" role="dialog" aria-modal="true" aria-labelledby="cap-h" tabindex="-1" data-fid="dlg-cap"><div class="cbox"><div class="chd"><h2 id="cap-h">Capture a space</h2><button class="cx" data-act="capture" aria-label="Close">Close</button></div>'+
   (clap?'<p>Drenched listens through your microphone while you clap once where the sound should come from, then turns the best clap into an impulse response for this instance.</p>'+
   '<p>Put Drenched on a track whose input is the room microphone. Clap sharply, keep still and quiet while the room rings out.</p>'
   :'<p>Drenched plays a sweep through your speakers, records it with your microphone and turns the recording into an impulse response for this instance.</p>'+
   '<p>Put Drenched on a track whose input is the room microphone, turn input monitoring on, and set your speakers to a comfortable level.</p>')+
-  rows+'<div class="cst" aria-live="polite">'+status+'</div><div class="cft">'+action+'</div></div></div>';}
+  rows+'<div class="cst">'+status+'</div><div class="cft">'+action+'</div></div></div>';}
 /* capture progress arrives often; it updates in place unless the stage changes */
 function onCapture(m){if(!m)return;var was=st.capStatus.stage,msgWas=st.capStatus.message;st.capStatus={stage:String(m.stage||'idle'),progress:+m.progress||0,peakDb:m.peakDb==null?-100:+m.peakDb,message:String(m.message||'')};
  if(was==='playing'&&st.capStatus.stage==='playing'&&msgWas===st.capStatus.message){var bar=live.querySelector('[data-cap="p"]'),pk=live.querySelector('[data-cap="pk"]');if(bar)bar.style.width=(clamp(st.capStatus.progress,0,1)*100).toFixed(1)+'%';if(pk)pk.textContent=capPeak();return;}
@@ -115,7 +119,7 @@ function creditsHTML(){var seen={},rows=[];LIBRARY.forEach(function(x){var k=x.c
  LIBRARY.forEach(function(x){var k=x.credit+'|'+x.licence+'|'+x.source+'|'+x.changes;if(seen[k])seen[k].push(x.name);});
  var body=rows.length?'<ul class="crl">'+rows.map(function(r){return '<li><b>'+esc(r.credit)+'</b><span>'+esc(r.licence)+(r.source?', '+esc(r.source):'')+'</span><small>'+esc(r.spaces.join('; '))+'</small>'+(r.changes?'<small>Changes: '+esc(r.changes)+'</small>':'')+'</li>';}).join('')+'</ul>'
    :'<p>This build has no recorded spaces.</p>';
- return '<div class="cap crd" role="dialog" aria-modal="true" aria-labelledby="crd-h"><div class="cbox"><div class="chd"><h2 id="crd-h">Recording credits</h2><button class="cx" data-act="credits" aria-label="Close">Close</button></div>'+
+ return '<div class="cap crd" role="dialog" aria-modal="true" aria-labelledby="crd-h" tabindex="-1" data-fid="dlg-crd"><div class="cbox"><div class="chd"><h2 id="crd-h">Recording credits</h2><button class="cx" data-act="credits" aria-label="Close">Close</button></div>'+
   '<p>The recorded spaces are used under the licences below. Thank you to everyone who made and shared them.</p>'+body+'</div></div>';}
 
 /* ---- each speaker's reverb level and delay, with a meter per output ---- */
@@ -129,7 +133,7 @@ function speakersHTML(){var rows=st.outputs.map(function(o,i){var v=speakerOf(st
   return '<div class="spr"><b>'+nm+'</b><span class="bar" aria-hidden="true"><i data-spm="'+i+'" style="width:'+meterPct(m).toFixed(0)+'%"></i></span>'+
    (o.wet?'<input data-fid="spl-'+i+'" data-spk="'+i+'" data-f="l" aria-label="'+nm+' reverb level" value="'+spkLevelText(v[0])+'"><input data-fid="spd-'+i+'" data-spk="'+i+'" data-f="d" aria-label="'+nm+' reverb delay" value="'+(+v[1]).toFixed(1)+' ms">'
     :'<span class="spn">No reverb on the LFE</span>')+'</div>';}).join('');
- return '<div class="cap spkd" role="dialog" aria-modal="true" aria-labelledby="spk-h"><div class="cbox"><div class="chd"><h2 id="spk-h">Reverb speakers</h2><button class="cx" data-act="speakers" aria-label="Close">Close</button></div>'+
+ return '<div class="cap spkd" role="dialog" aria-modal="true" aria-labelledby="spk-h" tabindex="-1" data-fid="dlg-spk"><div class="cbox"><div class="chd"><h2 id="spk-h">Reverb speakers</h2><button class="cx" data-act="speakers" aria-label="Close">Close</button></div>'+
   '<p>Set the reverb\u2019s level and delay in each speaker: push the rears later and quieter for depth, or line the room up with speakers at different distances. The dry sound is not changed.</p>'+
   '<div class="sph"><span>Speaker</span><span>Output</span><span>Level</span><span>Delay</span></div><div class="spl">'+rows+'</div>'+
   '<div class="cft"><button class="cgo stop" data-act="spkreset">Reset all</button><span class="ct">Levels from Off to +12 dB, delays up to 100 ms. Saved with the session.</span></div></div></div>';}
@@ -140,7 +144,7 @@ function eqKey(i,c){return 'eq'+(i+1)+c;}
 function eqHTML(){var cur=st.eqCur,cols=function(f){var o='';for(var i=0;i<EQ_N;i++)o+=f(i);return o;};
  var heads=cols(function(i){return '<b'+(i===cur?' class="cur"':'')+'>'+EQ_NAME[i]+'</b>';});
  var row=function(c){return cols(function(i){return eqBell(i)||c!=='q'?roEl(st,eqKey(i,c)):'<em title="The shelves have a fixed slope">\u2013</em>';});};
- return '<div class="cap eqd" role="dialog" aria-modal="true" aria-labelledby="eq-h"><div class="cbox"><div class="chd"><h2 id="eq-h">Wet EQ</h2><button class="cx" data-act="eq" aria-label="Close">Close</button></div>'+
+ return '<div class="cap eqd" role="dialog" aria-modal="true" aria-labelledby="eq-h" tabindex="-1" data-fid="dlg-eq"><div class="cbox"><div class="chd"><h2 id="eq-h">Wet EQ</h2><button class="cx" data-act="eq" aria-label="Close">Close</button></div>'+
   '<p>Six bands shape the reverb alone: a low shelf, four bells and a high shelf, after the wet low cut and high cut. The dry sound is not changed, and each value can be automated.</p>'+
   '<div class="eqw"><canvas class="eqs" data-cv="eqspec" data-w="678" data-h="200" aria-hidden="true"></canvas>'+eqSVG(st,728,236,cur)+'</div>'+
   '<div class="eqt" role="group" aria-label="Band values"><span></span>'+heads+'<span>Frequency</span>'+row('f')+'<span>Gain</span>'+row('g')+'<span>Q</span>'+row('q')+'</div>'+
@@ -166,13 +170,13 @@ var REBUILD={lx:1,sx:1,size:1,dist:1,el:1,living:1,rev:1,gate:1,attack:1,dLvl:1,
 function rebuilds(id){var k=keyOf(id);return BAND_ID.indexOf(id)>=0||RBAND_ID.indexOf(id)>=0||id===LINK_ID||!!(k&&REBUILD[k]);}
 function wfHTML(){if(!JUCE){var sig=st.sp+'|'+curBands(st).join(',');if(!ana||ana.sig!==sig){ana=fakeAnalysis(st);ana.sig=sig;}}
  var rt=ana?ana.rt60:null,cells='';for(var i=0;i<8;i++){var v=rt?+rt[i]:0,ok=v>0;cells+='<div'+(ok?'':' class="na" title="Not measurable in this response"')+' aria-label="'+BAND_NAMES[i]+', '+(ok?v.toFixed(2)+' seconds':'not measurable')+'"><b>'+(ok?v.toFixed(2):'\u2013')+'</b><span>'+BAND_NAMES[i]+'</span></div>';}
- return '<div class="cap wfd" role="dialog" aria-modal="true" aria-labelledby="wf-h"><div class="cbox"><div class="chd"><h2 id="wf-h">Waterfall</h2><button class="cx" data-act="wf" aria-label="Close">Close</button></div>'+
+ return '<div class="cap wfd" role="dialog" aria-modal="true" aria-labelledby="wf-h" tabindex="-1" data-fid="dlg-wf"><div class="cbox"><div class="chd"><h2 id="wf-h">Waterfall</h2><button class="cx" data-act="wf" aria-label="Close">Close</button></div>'+
   '<p>The response you are hearing: each third-octave band falling away over time, the broadband decay with the RT60 measured in each octave, and the live spectrum of the reverb.</p>'+
   '<div class="wfg"><div class="wfp wfw"><div class="wfh"><b>Energy over time</b><span>A ridge per moment, the start at the back, 0 to \u221272 dB</span></div><canvas data-cv="wf" data-w="538" data-h="262" style="width:538px;height:262px" role="img" aria-label="Waterfall of the response: level in each third-octave band from 20 Hz to 20 kHz, one ridge per slice of time"></canvas></div>'+
   '<div class="wfp"><div class="wfh"><b>Decay</b><span>Broadband, dB</span></div>'+decayCurveSVG(ana,292,136)+'</div>'+
   '<div class="wfp"><div class="wfh"><b>RT60 by octave</b><span>Seconds to \u221260 dB</span></div><div class="wfn" role="group" aria-label="Measured RT60 per octave band">'+cells+'</div></div>'+
   '<div class="wfp wfs"><div class="wfh"><b>Live spectrum</b><span>The reverb alone, dB</span></div><canvas data-cv="spec" data-w="848" data-h="100" style="width:848px;height:100px" role="img" aria-label="Live spectrum of the reverb in third-octave bands"></canvas></div></div>'+
-  '<div class="cft"><span class="ct" data-wf="note" aria-live="polite"></span></div></div></div>';}
+  '<div class="cft"><span class="ct" data-wf="note"></span></div></div></div>';}
 function onAnalysis(m){if(!m||!Array.isArray(m.waterfall)||!Array.isArray(m.decay)||!Array.isArray(m.rt60))return;ana=m;anaStale=false;if(st.wf)schedule();}
 function onSpectrum(m){if(!m||!Array.isArray(m.levels))return;for(var i=0;i<31;i++){var v=+m.levels[i];if(!isFinite(v))v=-100;specCur[i]=Math.max(v,specCur[i]-SPEC_FALL);}drawSpectra();}
 /* the plugin only analyses and taps the reverb while a display is open */
@@ -186,7 +190,8 @@ function tok(el,name){return getComputedStyle(el).getPropertyValue(name).trim()|
 function drawDisplays(){var wc=live.querySelector('canvas[data-cv="wf"]');if(wc)drawWaterfall(wc);drawSpectra();wfNote();}
 function drawSpectra(){var cs=live.querySelectorAll('canvas[data-cv="spec"],canvas[data-cv="eqspec"]');for(var i=0;i<cs.length;i++)drawSpectrum(cs[i],cs[i].getAttribute('data-cv')==='eqspec');}
 function wfNote(){var el=live.querySelector('[data-wf="note"]');if(!el)return;var cv=live.querySelector('canvas[data-cv="wf"]');if(cv)cv.style.opacity=anaStale?'.5':'';
- el.textContent=!ana?'Waiting for the response to play.':anaStale?'Measuring the new response.':'Measured from the response now playing: '+f1(ana.seconds)+' s to \u221260 dB. The spectrum shows the reverb alone, whatever the mix.';}
+ el.textContent=!ana?'Waiting for the response to play.':anaStale?'Measuring the new response.':'Measured from the response now playing: '+f1(ana.seconds)+' s to \u221260 dB. The spectrum shows the reverb alone, whatever the mix.';
+ if(el.textContent!==saidWf){saidWf=el.textContent;say(saidWf);}}
 /* the waterfall: one ridge per slice of time, the start at the back and the tail coming
    forward, so every quieter ridge is in front of the louder one behind it; a nearer ridge
    hides what is behind it, and the accent is strongest where the energy is */
@@ -254,7 +259,7 @@ function scenesHTML(){var rows=st.scenes.map(function(x){var cur=x.number===st.s
   return '<div class="scr" aria-current="'+cur+'"><b>'+x.number+'</b><input data-fid="scn-'+x.number+'" data-scn="'+x.number+'" aria-label="Scene '+x.number+' name" maxlength="64" value="'+nm+'"><span class="scs" title="'+esc(x.space)+'">'+esc(x.space)+'</span>'+
    '<button class="lsm" data-act="screcall" data-v="'+x.number+'" aria-label="Recall '+nm+'">Recall</button><button class="lsm" data-act="scupdate" data-v="'+x.number+'" aria-label="Update '+nm+' to the current settings">Update</button><button class="lsm scx" data-act="scdelete" data-v="'+x.number+'" aria-label="Delete '+nm+'">Delete</button></div>';}).join('');
  var next=freeScene();
- return '<div class="cap scn" role="dialog" aria-modal="true" aria-labelledby="scn-h"><div class="cbox"><div class="chd"><h2 id="scn-h">Scenes</h2><button class="cx" data-act="scenes" aria-label="Close">Close</button></div>'+
+ return '<div class="cap scn" role="dialog" aria-modal="true" aria-labelledby="scn-h" tabindex="-1" data-fid="dlg-scn"><div class="cbox"><div class="chd"><h2 id="scn-h">Scenes</h2><button class="cx" data-act="scenes" aria-label="Close">Close</button></div>'+
   '<p>A scene keeps every setting and the space. Store one for each shot or location, then recall it here, or automate the Scene parameter in your DAW to change rooms on the cut. Freeze and Low CPU stay as they are.</p>'+
   (rows?'<div class="scl">'+rows+'</div>':'<p class="sce">No scenes yet. Set up the room for a shot, then store it.</p>')+
   '<div class="cft"><button class="cgo" data-act="scstore"'+(next?'':' disabled')+'>'+(next?'Store as scene '+next:'All 32 scenes are used')+'</button><span class="ct">Saved with the session. Scene Off leaves the settings alone.</span></div></div></div>';}
@@ -267,7 +272,7 @@ function onLicence(m){if(!m)return;var was=st.licence.state;st.licence=Object.as
 function onPasted(m){if(!m||(m.target!=='licKey'&&m.target!=='licCode'))return;st[m.target]=String(m.text||'').trim();renderLive();
  var f=live.querySelector(m.target==='licKey'?'#lic-key':'#lic-code');if(f){f.value=st[m.target];f.focus({preventScroll:true});f.selectionStart=f.selectionEnd=f.value.length;}}
 function licenceHTML(){var L=st.licence,busy=!!L.busy,dis=busy?' disabled':'',body;
- var msg='<p class="lmsg'+(L.error?' err':'')+'" role="'+(L.error?'alert':'status')+'">'+esc(L.message||'')+'</p>';
+ var msg='<p class="lmsg'+(L.error?' err':'')+'">'+esc(L.message||'')+'</p>';
  if(L.state==='licensed'){
   body='<p>'+(L.name?'Licensed to '+esc(L.name)+' on this computer.':'Licensed on this computer.')+' It works offline from now on.</p>'+
    '<dl class="lkv"><dt>Licence number</dt><dd>'+esc(L.licence)+'</dd><dt>This computer</dt><dd>'+esc(L.machine)+'</dd></dl>'+msg+
@@ -283,7 +288,7 @@ function licenceHTML(){var L=st.licence,busy=!!L.busy,dis=busy?' disabled':'',bo
     '<li>Paste the activation code it gives you:<div class="lrow top"><textarea id="lic-code" data-fid="lic-code" data-in="licCode" spellcheck="false" aria-label="Activation code" placeholder="DRN1.\u2026"'+dis+'>'+esc(st.licCode)+'</textarea>'+
     '<button class="lsm" data-act="licpaste" data-v="licCode"'+dis+'>Paste</button><button class="cgo" data-act="liccode"'+dis+'>Use code</button></div></li></ol>':'');}
  var dev=L.testKey?'<p class="ldev">Development build: its activation codes use the published test key, so this copy is not for sale.</p>':'';
- return '<div class="cap lic" role="dialog" aria-modal="true" aria-labelledby="lic-h"><div class="cbox"><div class="chd"><h2 id="lic-h">'+(L.state==='licensed'?'Licence':'Activate Drenched')+'</h2><button class="cx" data-act="licence" aria-label="Close">Close</button></div>'+body+dev+'</div></div>';}
+ return '<div class="cap lic" role="dialog" aria-modal="true" aria-labelledby="lic-h" tabindex="-1" data-fid="dlg-lic"><div class="cbox"><div class="chd"><h2 id="lic-h">'+(L.state==='licensed'?'Licence':'Activate Drenched')+'</h2><button class="cx" data-act="licence" aria-label="Close">Close</button></div>'+body+dev+'</div></div>';}
 function licActivate(){if(JUCE)JUCE.emitEvent('licenceActivate',{licence:st.licKey});else st.licence=Object.assign({},st.licence,{message:'Activation works inside the plugin.',error:true});}
 
 /* ---- rendering ---- */
@@ -321,10 +326,37 @@ function drawLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAt
  var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.wf)html=html.slice(0,-6)+wfHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';
  var kept=!!fid&&keepFocused(a,fid,html);if(!kept)live.innerHTML=html;fit();syncDisplays();
  if(blt){var bl2=live.querySelector('.brw-list');if(bl2)bl2.scrollTop=blt;}
- if(fid&&!kept){var n=live.querySelector('[data-fid="'+fid+'"]');if(n){n.focus({preventScroll:true});if(n.matches('input,textarea'))n.selectionStart=n.selectionEnd=n.value.length;}}
+ var dl=topDialog();modal(dl);
+ if(fid&&!kept){var n=live.querySelector('[data-fid="'+fid+'"]');if(n&&!n.closest('[inert]')){n.focus({preventScroll:true});if(n.matches('input,textarea'))n.selectionStart=n.selectionEnd=n.value.length;}}
  // A dialog keeps the keyboard even when the control that had it is redrawn away.
- if(st.browse&&!live.contains(document.activeElement))brwFocus();
- if((st.lic||st.capture||st.credits||st.spk||st.scn||st.eq||st.wf)&&!live.contains(document.activeElement)){var d=live.querySelector('.cap .cgo:not([disabled])')||live.querySelector('.cap .cx');if(d)d.focus({preventScroll:true});}}
+ if(dl&&!dl.contains(document.activeElement)){var d=st.browse?live.querySelector('#brw-q'):st.skins?dl.querySelector('.sk[aria-current="true"]'):dl.querySelector('.cgo:not([disabled])')||dl.querySelector('.cx');(d||dl).focus({preventScroll:true});}
+ // Closed, it gives the keyboard back to the control that opened it.
+ else if(!dl&&opener){var o=live.querySelectorAll(opener.sel),oe=o[opener.i]||o[0];opener=null;if(oe&&!live.contains(document.activeElement))oe.focus({preventScroll:true});}
+ if(!dl)opener=null;
+ announce();}
+/* ---- windows: an open one is modal. What is behind it is inert, so neither the keyboard nor
+   a screen reader reaches it, Tab and Shift+Tab go round the window's own controls, and
+   closing it, however it closes, gives the keyboard back to the control that opened it (kept
+   as a selector and its place among the matches, as the page is redrawn in between). ---- */
+var opener=null;
+function dialogOpen(){return !!(st.skins||st.browse||st.capture||st.lic||st.credits||st.spk||st.scn||st.eq||st.wf);}
+function topDialog(){var sc=live.firstElementChild,d=null;if(sc)for(var c=sc.firstElementChild;c;c=c.nextElementSibling)if(c.getAttribute('role')==='dialog')d=c;return d;}
+function modal(d){var sc=live.firstElementChild;if(sc)for(var c=sc.firstElementChild;c;c=c.nextElementSibling){var bg=!!d&&c!==d;if(bg!==c.hasAttribute('inert')){if(bg)c.setAttribute('inert','');else c.removeAttribute('inert');}}}
+function tabStops(d){return Array.prototype.filter.call(d.querySelectorAll('button,input,textarea,[tabindex]'),function(x){return !x.disabled&&x.getAttribute('tabindex')!=='-1'&&!x.closest('[inert]')&&x.getClientRects().length>0;});}
+function refOf(el){if(!el||!el.getAttribute||!live.contains(el))return null;var q=function(n){var v=el.getAttribute(n);return v==null?'':'['+n+'="'+v.replace(/["\\]/g,'\\$&')+'"]';},f=q('data-fid'),sel=f||(q('data-act')+q('data-v')+q('data-k'));
+ return sel?{sel:sel,i:Array.prototype.indexOf.call(live.querySelectorAll(sel),el)}:null;}
+/* ---- status messages: the notes, a capture's progress, the licence's answers and the
+   waterfall's state go to a region outside the redrawn page, so a screen reader hears each
+   once; errors go to an assertive one. The meters and the hint are not announced. ---- */
+var sayPolite=document.getElementById('say'),sayAlert=document.getElementById('say-err'),saidNote=null,errNote=null,saidCap='',saidLic='',saidWf='';
+function plain(html){var t=document.createElement('template');t.innerHTML=html;return t.content.textContent.replace(/\s+/g,' ').trim();}
+function say(text,err){var el=err?sayAlert:sayPolite,other=err?sayPolite:sayAlert;if(!el||!text)return;if(other)other.textContent='';
+ // the same words again are a new message: a no-break space makes them differ
+ el.textContent=el.textContent===text?text+'\u00a0':text;}
+function announce(){if(st.note!==saidNote){saidNote=st.note;if(st.note)say(plain(st.note),st.note===errNote);}
+ var cs=st.capStatus,c=st.capture?(cs.stage==='working'?'Working out the impulse response.':cs.message):'';if(c!==saidCap){saidCap=c;if(c)say(c,cs.stage==='failed');}
+ var L=st.licence,l=st.lic&&L.message||'';if(l!==saidLic){saidLic=l;if(l)say(l,!!L.error);}
+ if(!st.wf)saidWf='';}
 var raf=0;function schedule(){if(!raf)raf=requestAnimationFrame(function(){raf=0;renderLive();sync();syncUi();});}
 window.schedule=schedule;
 window.addEventListener('resize',fit);
@@ -345,16 +377,15 @@ live.addEventListener('pointerdown',function(e){var t=e.target;endDrag();if(t.cl
   // the page is redrawn between the two clicks, so a double click is counted here: it returns the band to 0 dB
   if(eqTap&&eqTap.i===ei&&now-eqTap.t<400){eqTap=null;eqSet(ei,'g',0);st.note=null;schedule();e.preventDefault();return;}eqTap={i:ei,t:now};
   drag={type:'eq',i:ei,alt:alt,rect:es.getBoundingClientRect(),w:+es.getAttribute('data-w'),pw:+es.getAttribute('data-pw'),ph:+es.getAttribute('data-ph'),x0:e.clientX,y0:e.clientY,f0:st[eqKey(ei,'f')],g0:st[eqKey(ei,'g')],q0:st[eqKey(ei,'q')],ids:eqIds(ei,alt)};
-  st.eqCur=ei;en.focus({preventScroll:true});schedule();}
- else if(kn){var k=kn.getAttribute('data-knob'),h=kn.getAttribute('data-h')==='1';drag={type:'knob',k:k,h:h,x0:e.clientX,y0:e.clientY,n0:to01(k,getV(st,k)),w:kn.getBoundingClientRect().width*(W/live.firstElementChild.getBoundingClientRect().width),ids:k==='decay'?(st.link?BAND_ID.slice():BAND_ID.concat(RBAND_ID)):[PID[k]]};kn.focus({preventScroll:true});}
- else if(lis){var sv=lis.closest('svg');drag={type:'lis',rect:sv.getBoundingClientRect(),w:+sv.getAttribute('data-w'),mode:sv.getAttribute('data-mode'),ox:+sv.getAttribute('data-ox'),oy:+sv.getAttribute('data-oy'),sc:+sv.getAttribute('data-sc'),rw:+sv.getAttribute('data-rw'),ids:lis.getAttribute('data-drag')==='src'?[PID.sx]:[PID.dist,PID.lx],src:lis.getAttribute('data-drag')==='src'};lis.focus({preventScroll:true});}
+  st.eqCur=ei;schedule();}
+ else if(kn){var k=kn.getAttribute('data-knob'),h=kn.getAttribute('data-h')==='1';drag={type:'knob',k:k,h:h,x0:e.clientX,y0:e.clientY,n0:to01(k,getV(st,k)),w:kn.getBoundingClientRect().width*(W/live.firstElementChild.getBoundingClientRect().width),ids:k==='decay'?(st.link?BAND_ID.slice():BAND_ID.concat(RBAND_ID)):[PID[k]]};}
+ else if(lis){var sv=lis.closest('svg');drag={type:'lis',rect:sv.getBoundingClientRect(),w:+sv.getAttribute('data-w'),mode:sv.getAttribute('data-mode'),ox:+sv.getAttribute('data-ox'),oy:+sv.getAttribute('data-oy'),sc:+sv.getAttribute('data-sc'),rw:+sv.getAttribute('data-rw'),ids:lis.getAttribute('data-drag')==='src'?[PID.sx]:[PID.dist,PID.lx],src:lis.getAttribute('data-drag')==='src'};}
  else if(dg){var r=dg.getBoundingClientRect(),d={rect:r,l:+dg.getAttribute('data-l'),t:+dg.getAttribute('data-t'),pw:+dg.getAttribute('data-pw'),ph:+dg.getAttribute('data-ph'),ymax:+dg.getAttribute('data-ymax'),w:+dg.getAttribute('data-w'),bars:dg.getAttribute('data-bars')==='1'};
   var sx=(e.clientX-r.left)*d.w/r.width,sy=(e.clientY-r.top)*d.w/r.width;d.polar=dg.getAttribute('data-polar')==='1';d.horiz=dg.getAttribute('data-horiz')==='1';
   if(d.polar){d.cx=+dg.getAttribute('data-cx');d.cy=+dg.getAttribute('data-cy');d.r0=+dg.getAttribute('data-r0');d.r1=+dg.getAttribute('data-r1');var dd=Math.hypot(sx-d.cx,sy-d.cy);if(dd<d.r0-24||dd>d.r1+40)return;var ang=Math.atan2(sy-d.cy,sx-d.cx)*180/Math.PI;d.i=((Math.round((ang+90)/45)%8)+8)%8;}
   else if(d.horiz){d.rh=+dg.getAttribute('data-rh');if(sy<d.t||sy>d.t+d.ph+d.rh)return;d.i=clamp(Math.round((sy-d.t)/d.rh)-1,0,7);}
   else{if(sx<d.l||sx>d.l+d.pw)return;d.i=d.bars?clamp(Math.floor((sx-d.l)/(d.pw/8)),0,7):clamp(Math.round((sx-d.l)/(d.pw/7)),0,7);}
-  d.type='decay';d.ids=[bandId(st,d.i)];drag=d;st.lastBand=d.i;applyDecay(e);
-  var nd=live.querySelector('[data-fid="nd-'+d.i+'"]');if(nd)nd.focus({preventScroll:true});}
+  d.type='decay';d.ids=[bandId(st,d.i)];drag=d;st.lastBand=d.i;applyDecay(e);}
  else return;
  gesture(drag.ids,true);
  try{live.setPointerCapture(e.pointerId);}catch(_){}e.preventDefault();});
@@ -372,12 +403,31 @@ function endDrag(){if(drag){var ids=drag.ids;drag=null;schedule();gesture(ids,fa
    cancelled, the pointer taken (a host dialog, a second touch) or the window left. */
 live.addEventListener('pointerup',endDrag);live.addEventListener('pointercancel',endDrag);live.addEventListener('lostpointercapture',endDrag);
 window.addEventListener('blur',endDrag);document.addEventListener('visibilitychange',function(){if(document.hidden)endDrag();});
+/* A control clicked or dragged does not keep the keyboard. In a host, Space, Home, Delete and
+   the arrows are the host's own (play, return to zero, delete), and a control holding the
+   keyboard would take them and change the sound instead. Once the click has done its work,
+   the keyboard goes back to the page, or to an open window itself, which takes no keys but
+   Tab and Escape; a text field keeps it. Tab still reaches every control from the keyboard. */
+var pointing=false;
+function pointed(){if(!pointing)return;pointing=false;var a=document.activeElement;if(!a||a===document.body||!live.contains(a)||a.matches('input,textarea'))return;
+ var dl=topDialog();if(dl){if(a!==dl)dl.focus({preventScroll:true});}else a.blur();}
+document.addEventListener('pointerdown',function(){pointing=true;},true);
+document.addEventListener('pointerup',function(){setTimeout(pointed,0);},true);
+document.addEventListener('pointercancel',function(){setTimeout(pointed,0);},true);
 /* on a bell, the wheel sets Q */
 live.addEventListener('wheel',function(e){var en=e.target.closest&&e.target.closest('[data-eqn]');if(!en||drag)return;var i=+en.getAttribute('data-eqn');e.preventDefault();if(!eqBell(i)||!e.deltaY)return;
  eqSet(i,'q',st[eqKey(i,'q')]*Math.pow(e.shiftKey?1.015:1.06,e.deltaY<0?1:-1));st.note=null;schedule();},{passive:false});
 
-live.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1,PageUp:10,PageDown:-10};
- if(e.key==='Escape'&&(st.skins||st.browse||st.capture||st.lic||st.credits||st.spk||st.scn||st.eq||st.wf)){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.wf)st.wf=false;else if(st.eq)st.eq=false;else if(st.scn)st.scn=false;else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
+/* Keys are heard on the whole document, so an open window still hears Tab and Escape when the
+   keyboard is on the window itself. A key the page has no use for (and any with Ctrl, Alt or
+   Cmd held) is left alone, not prevented, so the web view can pass it on to the host. */
+document.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1,PageUp:10,PageDown:-10};
+ if(e.key==='Tab'&&!e.ctrlKey&&!e.altKey&&!e.metaKey){var dw=topDialog();if(!dw)return;var ts=tabStops(dw),ti=ts.indexOf(document.activeElement);
+  if(!ts.length){e.preventDefault();dw.focus({preventScroll:true});return;}
+  // from the window itself, or past either end, round to the other end
+  if(ti<0||(e.shiftKey?ti===0:ti===ts.length-1)){e.preventDefault();ts[e.shiftKey?ts.length-1:0].focus({preventScroll:true});}return;}
+ if(e.key==='Escape'&&dialogOpen()){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.wf)st.wf=false;else if(st.eq)st.eq=false;else if(st.scn)st.scn=false;else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
+ if(e.ctrlKey||e.metaKey||e.altKey||!t.matches)return;
  var bw=st.browse&&t.closest&&t.closest('.brw');
  if(bw){var R=browseResults(st),n=R.rows.length,bc=clamp(st.brwCur||0,0,Math.max(0,n-1)),mv={ArrowDown:1,ArrowUp:-1,PageDown:8,PageUp:-8}[e.key];
   if(mv){if(n){st.brwCur=clamp(bc+mv,0,n-1);renderLive();brwReveal();}e.preventDefault();return;}
@@ -389,7 +439,9 @@ live.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,Arrow
  if(t.matches('.sk')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.click();return;}
  // a captured position marked on a drawing is an SVG button: Enter and Space press it
  if(t.matches('svg [data-act="pos"]')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));return;}
- if(t.matches('[data-knob]')){var k=t.getAttribute('data-knob'),p=P[k];if(e.key==='Home')setParam(st,k,p.min);else if(e.key==='End')setParam(st,k,p.max);else if(keys[e.key])setParam(st,k,from01(k,to01(k,getV(st,k))+keys[e.key]*(e.shiftKey?0.002:0.02)));else return;e.preventDefault();schedule();}
+ if(t.matches('[data-knob]')){var k=t.getAttribute('data-knob'),p=P[k];if(e.key==='Home')setParam(st,k,p.min);else if(e.key==='End')setParam(st,k,p.max);else if(keys[e.key]){
+   // a step only ever moves the way it was pressed, even from a value rounding takes back
+   var v0=getV(st,k),nv=from01(k,to01(k,v0)+keys[e.key]*(e.shiftKey?0.002:0.02));if(keys[e.key]>0?nv>v0:nv<v0)setParam(st,k,nv);}else return;e.preventDefault();schedule();}
  else if(t.matches('[data-eqn]')){var qi=+t.getAttribute('data-eqn'),fine=e.shiftKey,ek=e.key;st.eqCur=qi;
   if(ek==='ArrowLeft'||ek==='ArrowRight')eqSet(qi,'f',st[eqKey(qi,'f')]*Math.pow(2,(ek==='ArrowRight'?1:-1)/(fine?48:12)));
   else if(ek==='ArrowUp'||ek==='ArrowDown')eqSet(qi,'g',st[eqKey(qi,'g')]+(ek==='ArrowUp'?1:-1)*(fine?0.1:0.5));
@@ -432,7 +484,7 @@ live.addEventListener('input',function(e){var k=e.target.getAttribute&&e.target.
 live.addEventListener('focusin',function(e){if(e.target.matches('input.ro'))e.target.select();});
 live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
  if(!b){if(st.browse&&!e.target.closest('.brw .cbox')){st.browse=false;renderLive();}return;}
- var a=b.getAttribute('data-act'),v=b.getAttribute('data-v');if(a!=='browse'&&a!=='pick'&&a.indexOf('brw')!==0)st.browse=false;
+ var a=b.getAttribute('data-act'),v=b.getAttribute('data-v'),wasOpen=dialogOpen(),from=refOf(b);if(a!=='browse'&&a!=='pick'&&a.indexOf('brw')!==0)st.browse=false;
  switch(a){
   case 'mode':st.mode=v;st.note=v==='stage'?'<b>Stage view</b> for post: large numerals, channel meters and locks, on the same tokens.':'<b>Studio view</b>: the space and its decay lead.';st.hint=null;break;
   case 'slot':if(v!==st.slot){st.slots[st.slot]=snap(st);var nx=st.slots[v]||snap(st);Object.keys(nx).forEach(function(k){st[k]=Array.isArray(nx[k])?nx[k].slice():nx[k];});st.slot=v;st.hint=null;st.note='<b>Snapshot '+v+'.</b> Changes now go to '+v+'. Switch back to compare.';}break;
@@ -486,7 +538,10 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'skins':st.skins=!st.skins;break;
   case 'skin':if(SKINS.some(function(x){return x.id===v;})){st.skin=v;st.note='<b>'+esc(skinOf(v).name)+'.</b> Click the Drenched name to change the look again.';st.hint=null;}st.skins=false;break;
  }
+ // the control that opened a window gets the keyboard back when it closes (see drawLive)
+ var closed=wasOpen&&!dialogOpen();if(!wasOpen&&dialogOpen())opener=from;
  renderLive();sync();syncUi();
+ if(closed)return;
  if(a==='browse'&&st.browse){brwFocus();brwReveal();}
  else if(a==='brwsim'||a==='brwclear'){brwFocus();brwReveal();}
  else if(a==='skins'&&st.skins){var sk=live.querySelector('.skins .sk[aria-current="true"]');if(sk)sk.focus({preventScroll:true});}
@@ -530,14 +585,14 @@ document.addEventListener('dragleave',function(e){if(!hasFiles(e))return;if(--dr
 document.addEventListener('drop',function(e){e.preventDefault();dropDepth=0;showDrop(false);var fs=e.dataTransfer&&e.dataTransfer.files;if(fs&&fs.length)dropFiles(fs);});
 function dropFiles(fs){var f=null;for(var i=0;i<fs.length&&!f;i++)if(DROP_TYPES.test(fs[i].name))f=fs[i];
  st.hint=null;st.browse=false;
- if(!f)st.note='<b>'+esc(fs[0].name)+'</b> isn\u2019t an impulse response Drenched can load. Drop a WAV, AIFF, FLAC or SOFA file.';
- else if(dropping)st.note='Still reading <b>'+esc(dropping)+'</b>. Drop the next file once it has loaded.';
- else if(f.size>DROP_MAX)st.note='<b>'+esc(f.name)+'</b> is too large to drop. Use <b>Load your own IR</b> instead.';
+ if(!f)errNote=st.note='<b>'+esc(fs[0].name)+'</b> isn\u2019t an impulse response Drenched can load. Drop a WAV, AIFF, FLAC or SOFA file.';
+ else if(dropping)errNote=st.note='Still reading <b>'+esc(dropping)+'</b>. Drop the next file once it has loaded.';
+ else if(f.size>DROP_MAX)errNote=st.note='<b>'+esc(f.name)+'</b> is too large to drop. Use <b>Load your own IR</b> instead.';
  else if(!JUCE)st.note='Dropping a file loads it in the plugin.';
  else sendDropped(f,!!(spOf(st)&&spOf(st).missing));
  schedule();}
 function onDropFailed(m){dropping=null;st.hint=null;var n='<b>'+esc(m&&m.name||'The file')+'</b>';
- st.note=m&&m.large?n+' is too large to drop here. Use <b>Load your own IR</b> instead.':n+' didn\u2019t reach the plugin whole. Drop it again.';schedule();}
+ errNote=st.note=m&&m.large?n+' is too large to drop here. Use <b>Load your own IR</b> instead.':n+' didn\u2019t reach the plugin whole. Drop it again.';schedule();}
 function base64(bytes){var s='';for(var i=0;i<bytes.length;i+=0x8000)s+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));return btoa(s);}
 /* A session whose file is missing keeps its settings when a file is dropped, as Find does. */
 function sendDropped(f,keep){var id=Date.now()%1e9,at=0;dropping=f.name;
@@ -545,7 +600,7 @@ function sendDropped(f,keep){var id=Date.now()%1e9,at=0;dropping=f.name;
  (function next(){if(at>=f.size){JUCE.emitEvent('dropIr',{stage:'end',id:id});dropping=null;return;}
   var end=Math.min(f.size,at+DROP_PIECE);
   f.slice(at,end).arrayBuffer().then(function(b){JUCE.emitEvent('dropIr',{stage:'piece',id:id,data:base64(new Uint8Array(b))});at=end;next();},
-   function(){JUCE.emitEvent('dropIr',{stage:'cancel',id:id});dropping=null;st.note='<b>'+esc(f.name)+'</b> couldn\u2019t be read.';schedule();});})();}
+   function(){JUCE.emitEvent('dropIr',{stage:'cancel',id:id});dropping=null;errNote=st.note='<b>'+esc(f.name)+'</b> couldn\u2019t be read.';schedule();});})();}
 var init=null;
 try{var d=window.__JUCE__&&window.__JUCE__.initialisationData&&window.__JUCE__.initialisationData.drenched;if(d&&d.length)init=d[0];}catch(_){}
 if(init){setLibrary(init.library);Object.assign(st,{sp:0,bands:SPACES[0].bands.slice(),rbands:SPACES[0].bands.slice(),pre:SPACES[0].pre});applyFromHost(init);if(init.licence)Object.assign(st.licence,init.licence);st.bits=+init.bits||64;}
