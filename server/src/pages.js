@@ -53,9 +53,16 @@ ${error ? `<p class="err" role="alert">${escape (error)}</p>` : ''}
 </form>`);
 }
 
-/** After checkout: the buyer's licence numbers, or a short wait while the sale is recorded. */
-export function thanksPage ({ keys = [], transaction = '' } = {})
+/** After checkout: the buyer's licence numbers, a short wait while the sale is recorded,
+    or, once the order is refunded, that its numbers were withdrawn. */
+export function thanksPage ({ keys = [], transaction = '', withdrawn = false } = {})
 {
+    if (withdrawn)
+    {
+        return page ('Drenched licence withdrawn', `<h1>This order's licence numbers have been withdrawn</h1>
+<p role="status">The payment was refunded or disputed, so its numbers no longer activate Drenched. Contact support if you think that is a mistake.</p>`);
+    }
+
     if (keys.length === 0)
     {
         return page ('Thank you for buying Drenched', `<meta http-equiv="refresh" content="4">

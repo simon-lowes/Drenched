@@ -23,7 +23,19 @@ and it has no dependencies.
    its code, which is why moves are limited.)
 5. **Refund or chargeback.** Paddle's approved `adjustment` withdraws the
    numbers, so they can't activate new computers. Computers already activated
-   keep working, because activation is offline by design.
+   keep working, because activation is offline by design. A partial refund
+   withdraws every number of the order too: Paddle gives only an amount, not
+   which copies, and the amount may be a goodwill discount. Support gives back
+   the copies the buyer kept with `POST /v1/admin/licences/{key}`
+   `{"revoked": false}`. The `/thanks` page then says the numbers were withdrawn.
+
+Paddle retries any answer but 200, 4xx included, up to 60 times over about two
+days. So `/v1/paddle` answers 200 to anything it can never act on (a signed
+body that is not a JSON object, a sale with no Drenched items, a refund for a
+transaction it never saw), and an error only when a retry can succeed: a
+failed customer lookup or email, or `PADDLE_PRODUCT_ID` not yet set. A failed
+lookup issues nothing, so the retry issues the numbers with the buyer's name
+and email.
 
 ## API
 

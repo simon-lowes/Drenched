@@ -99,8 +99,9 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
         if (! paddle?.webhookSecret || ! await verifySignature (request.headers.get ('paddle-signature'), raw, paddle.webhookSecret, now()))
             return json (401, { error: 'bad-signature' });
 
-        // Signed but not JSON: answering 500 would have Paddle send it again for ever.
-        let event;
+        // Signed by Paddle but not a JSON object. Paddle retries any answer but 200 (4xx too),
+        // sending the same bytes each time, so only a 200 stops it; the log keeps the body.
+        let event = null;
 
         try
         {
@@ -108,10 +109,15 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
         }
         catch
         {
-            return json (400, { error: 'bad-json' });
         }
 
-        const data = event?.data ?? {};
+        if (! event || typeof event !== 'object' || Array.isArray (event))
+        {
+            console.error ('Paddle sent a signed body that is not a JSON object:', raw.slice (0, 200));
+            return json (200, { ok: false, error: 'bad-json' });
+        }
+
+        const data = event.data ?? {};
 
         if (event.event_type === 'transaction.completed')
         {
@@ -334,7 +340,8 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
             {
                 const transaction = url.searchParams.get ('transaction') ?? '';
                 const licences = /^txn_[a-z0-9]{10,40}$/.test (transaction) ? await store.listByOrder (transaction) : [];
-                return html (200, thanksPage ({ keys: licences.filter ((l) => ! l.revoked).map ((l) => l.key), transaction }));
+                const keys = licences.filter ((l) => ! l.revoked).map ((l) => l.key);
+                return html (200, thanksPage ({ keys, transaction, withdrawn: licences.length > 0 && keys.length === 0 }));
             }
 
             if ((path === '/' || path === '/activate') && request.method === 'GET')

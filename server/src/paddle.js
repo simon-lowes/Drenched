@@ -68,7 +68,8 @@ export function copiesIn (transaction, productId)
     if (! productId)
         return 0;
 
-    const copies = (transaction.items ?? [])
+    const items = Array.isArray (transaction.items) ? transaction.items : [];
+    const copies = items
         .filter ((item) => item.price?.product_id === productId)
         .reduce ((sum, item) => sum + Math.max (0, Math.floor (Number (item.quantity) || 0)), 0);
 
