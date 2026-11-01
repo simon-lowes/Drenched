@@ -587,3 +587,102 @@ TEST_CASE ("A bounce on a thread of its own waits only once for a session the ho
     ((juce::Timer&) *p).timerCallback();
     CHECK (p->getState().getRawParameterValue (ParamIDs::mix)->load() == 0.0f);
 }
+
+TEST_CASE ("Changes outside the parameters mark the host's project as changed", "[plugin][host][session]")
+{
+    // Hosts learn of parameter changes by themselves, but not of scenes, speaker trims, the
+    // space, locks, view or skin: unless told, they don't ask to save before closing. They
+    // mustn't be told of what isn't the person's change: the window's size, a save, a
+    // session loading, a scene the scene parameter's automation recalls.
+    struct Host final : juce::AudioProcessorListener
+    {
+        int marks = 0;
+
+        void audioProcessorParameterChanged (juce::AudioProcessor*, int, float) override {}
+
+        void audioProcessorChanged (juce::AudioProcessor*, const ChangeDetails& details) override
+        {
+            if (details.nonParameterStateChanged)
+                ++marks;
+        }
+    };
+
+    testing::Plugin p;
+    prepare (*p, 48000.0, 512);
+    Host host;
+    p->addListener (&host);
+
+    // How many times the host was told at the next timer tick.
+    const auto marks = [&]
+    {
+        ((juce::Timer&) *p).timerCallback();
+        return std::exchange (host.marks, 0);
+    };
+
+    auto ui = p->getUiState();
+    marks();
+    CHECK (marks() == 0);
+
+    auto* size = dynamic_cast<juce::RangedAudioParameter*> (p->getState().getParameter (ParamIDs::size));
+    size->setValueNotifyingHost (0.25f);
+    CHECK (marks() == 0);
+
+    CHECK (p->storeScene (1, "Verse") == 1);
+    CHECK (marks() == 1);
+    size->setValueNotifyingHost (0.75f);
+    p->storeScene (1, {}); // over the same scene: a property or more, one mark
+    CHECK (marks() == 1);
+    p->renameScene (1, "Chorus");
+    CHECK (marks() == 1);
+    p->deleteScene (1);
+    CHECK (marks() == 1);
+
+    ui.setProperty (UiIDs::speakers, "-6 0;0 2.5", nullptr);
+    CHECK (marks() == 1);
+    ui.setProperty (UiIDs::spaceId, bundledSpaces.back().id, nullptr);
+    CHECK (marks() == 1);
+    ui.setProperty (UiIDs::locks, "decay", nullptr);
+    ui.setProperty (UiIDs::view, "graph", nullptr);
+    CHECK (marks() == 1);
+
+    ui.setProperty (UiIDs::width, 900, nullptr);
+    CHECK (marks() == 0);
+    ui.setProperty (UiIDs::irEvent, 7, nullptr);
+    CHECK (marks() == 0);
+
+    juce::MemoryBlock saved;
+    p->getStateInformation (saved);
+    CHECK (marks() == 0);
+
+    std::thread saver ([&] { juce::MemoryBlock copy; p->getStateInformation (copy); });
+    saver.join();
+    CHECK (marks() == 0);
+
+    // A change the session loaded replaces isn't one either.
+    ui.setProperty (UiIDs::skin, "night", nullptr);
+    p->setStateInformation (saved.getData(), static_cast<int> (saved.getSize()));
+    CHECK (marks() == 0);
+
+    std::thread loader ([&] { p->setStateInformation (saved.getData(), static_cast<int> (saved.getSize())); });
+    loader.join();
+    CHECK (marks() == 0);
+
+    // A scene recalled by automation plays back; one recalled by the person is a change.
+    ui = p->getUiState();
+    ui.setProperty (UiIDs::spaceId, bundledSpaces.front().id, nullptr);
+    p->storeScene (2, "Bridge");
+    ui.setProperty (UiIDs::spaceId, bundledSpaces.back().id, nullptr);
+    CHECK (marks() == 1);
+
+    auto* scene = dynamic_cast<juce::RangedAudioParameter*> (p->getState().getParameter (ParamIDs::scene));
+    scene->setValueNotifyingHost (scene->convertTo0to1 (2.0f));
+    CHECK (marks() == 0);
+    CHECK (p->chosenSpaceId() == bundledSpaces.front().id);
+
+    ui.setProperty (UiIDs::spaceId, bundledSpaces.back().id, nullptr);
+    marks();
+    p->recallScene (2);
+    CHECK (marks() == 1);
+
+    p->removeListener (&host);
+}

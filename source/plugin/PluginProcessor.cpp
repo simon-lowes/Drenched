@@ -261,6 +261,10 @@ void DrenchedProcessor::timerCallback()
     if (const auto rate = preparedRate.load(); rate > 0.0 && ! isNonRealtime())
         if (auto request = currentRequest (rate))
             builder->request (*request);
+
+    // Once a tick, however many changes there were.
+    if (std::exchange (hostShouldMarkChanged, false))
+        updateHostDisplay (ChangeDetails{}.withNonParameterStateChanged (true));
 }
 
 float DrenchedProcessor::predelayMs (float requested)
@@ -549,6 +553,9 @@ void DrenchedProcessor::loadSceneImpulseResponseAsync (const juce::File& file)
 void DrenchedProcessor::sceneImpulseResponseRead (const juce::File& file, std::shared_ptr<const RecordedResponse> loaded,
                                                   const juce::String& error)
 {
+    // The recall that asked for the file was the change, if it was the person's.
+    const juce::ScopedValueSetter<bool> quiet (quietChanges, true);
+
     {
         const std::lock_guard lock (recordedLock);
 
@@ -1368,6 +1375,7 @@ void DrenchedProcessor::followSceneOffline()
     // lands late, as it did before, rather than never.
     if (juce::MessageManager::existsAndIsCurrentThread())
     {
+        const juce::ScopedValueSetter<bool> quiet (quietChanges, true);
         recallScene (number, true);
     }
     else
@@ -1378,7 +1386,10 @@ void DrenchedProcessor::followSceneOffline()
         juce::MessageManager::callAsync ([this, alive, number, done]
         {
             if (! alive.expired() && juce::roundToInt (params.scene.load()) == number)
+            {
+                const juce::ScopedValueSetter<bool> quiet (quietChanges, true);
                 recallScene (number, true);
+            }
 
             done->signal();
         });
@@ -1395,6 +1406,8 @@ void DrenchedProcessor::followSceneParameter()
 {
     if (const auto number = juce::roundToInt (params.scene.load()); number != followedScene)
     {
+        // Automation plays the scenes back; the host doesn't count that as a change.
+        const juce::ScopedValueSetter<bool> quiet (quietChanges, true);
         followedScene = number;
         recallScene (number);
     }
@@ -1670,6 +1683,41 @@ void DrenchedProcessor::keepSessionForSaving()
     savedSession = std::move (copy);
 }
 
+void DrenchedProcessor::noteChangeForHost() noexcept
+{
+    if (! quietChanges)
+        hostShouldMarkChanged = true;
+}
+
+void DrenchedProcessor::valueTreePropertyChanged (juce::ValueTree& tree, const juce::Identifier& property)
+{
+    sessionChanged.store (true);
+
+    // Parameters reach the host by themselves (copyState writes them into the tree too, on
+    // every save). The window's width, and how the last file load went, aren't choices.
+    if (tree.hasType ("PARAM"))
+        return;
+
+    if (tree.hasType (UiIDs::tree) && (property == UiIDs::width || property == UiIDs::irEvent || property == UiIDs::irError))
+        return;
+
+    noteChangeForHost();
+}
+
+void DrenchedProcessor::valueTreeChildAdded (juce::ValueTree&, juce::ValueTree& child)
+{
+    sessionChanged.store (true);
+
+    // An empty child is only room made for state (getUiState makes one), not a change.
+    if (! child.hasType ("PARAM") && (child.getNumProperties() > 0 || child.getNumChildren() > 0))
+        noteChangeForHost();
+}
+
+void DrenchedProcessor::valueTreeChildRemoved (juce::ValueTree& parent, juce::ValueTree& child, int)
+{
+    valueTreeChildAdded (parent, child);
+}
+
 void DrenchedProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     // Hosts may save from a thread of their own (autosave, undo history). Only the message
@@ -1844,6 +1892,11 @@ void DrenchedProcessor::applySessionOffline()
 
 void DrenchedProcessor::applySession (const juce::ValueTree& session)
 {
+    // The host loaded this session, so it knows what it holds; a change made before it
+    // was replaced along with everything else.
+    const juce::ScopedValueSetter<bool> quiet (quietChanges, true);
+    hostShouldMarkChanged = false;
+
     if (session.isValid())
         state.replaceState (session);
 
