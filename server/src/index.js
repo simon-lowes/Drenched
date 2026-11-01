@@ -99,6 +99,11 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
 
         if (event.event_type === 'transaction.completed')
         {
+            // Without Drenched's product id every item of any sale would count, so refuse
+            // (Paddle keeps retrying) until it is set.
+            if (! paddle.productId)
+                return json (500, { error: 'no-product-id' });
+
             const copies = copiesIn (data, paddle.productId);
 
             if (copies === 0 || ! data.id)

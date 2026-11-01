@@ -98,6 +98,26 @@ target_compile_definitions(Drenched PRIVATE DRENCHED_LICENCE_SERVER="${DRENCHED_
 option(DRENCHED_BETA "Beta build: no trial or licence check" ON)
 target_compile_definitions(Drenched PRIVATE DRENCHED_BETA=$<BOOL:${DRENCHED_BETA}>)
 
+# A release build checks licences, so it must not ship the development setup: the test
+# signing key (its private seed is public in tests/ and server/test) would let anyone make
+# licence codes, and the local server address would make activation fail everywhere.
+# DRENCHED_ALLOW_TEST_LICENCE lets a developer try a release build against npx wrangler dev.
+option(DRENCHED_ALLOW_TEST_LICENCE "Allow a release build with the test key and a local server" OFF)
+if(NOT DRENCHED_BETA AND NOT DRENCHED_ALLOW_TEST_LICENCE)
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../licence/src/Licence.cpp" licenceSource)
+    string(REGEX MATCH "// BEGIN SERVER KEY[^\n]*\n[ \t]*return testKey\\(\\);" usesTestKey "${licenceSource}")
+    if(usesTestKey)
+        message(FATAL_ERROR "Release build (DRENCHED_BETA=OFF) still uses the test licence key: "
+                            "run server/scripts/make-keys.mjs to write the production key into Licence.cpp.")
+    endif()
+    if(NOT DRENCHED_LICENCE_SERVER MATCHES "^https://")
+        message(FATAL_ERROR "Release build (DRENCHED_BETA=OFF) needs DRENCHED_LICENCE_SERVER set to the "
+                            "deployed https:// address, not ${DRENCHED_LICENCE_SERVER}.")
+    endif()
+elseif(NOT DRENCHED_BETA)
+    message(WARNING "Release build allowed with the test licence key or a local server: never ship it.")
+endif()
+
 target_link_libraries(Drenched
     PRIVATE
         drenched_engine

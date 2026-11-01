@@ -80,7 +80,10 @@ server is in `server/` (see its README).
 Builds are beta builds for now (`DRENCHED_BETA`, on by default): no trial
 and no licence check, and a Beta label in the footer. They never touch the
 licence file, so a tester's trial starts with the first release. Release
-builds configure with `-DDRENCHED_BETA=OFF`.
+builds configure with `-DDRENCHED_BETA=OFF`, and CMake refuses one that still
+has the test licence key or a server address other than `https://`
+(`-DDRENCHED_ALLOW_TEST_LICENCE=ON` allows it for trying a release build
+against `npx wrangler dev`; never ship that).
 
 ## Building
 

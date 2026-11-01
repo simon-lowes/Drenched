@@ -19,5 +19,5 @@ database_id = "set-when-created" # from: npx wrangler d1 create drenched-licence
 
 [vars]
 PADDLE_API_BASE = "https://api.paddle.com"   # https://sandbox-api.paddle.com while testing
-PADDLE_PRODUCT_ID = ""                       # Drenched's product (pro_...); empty counts every item
+PADDLE_PRODUCT_ID = ""                       # Drenched's product (pro_...); required: sales are refused until set
 MAIL_FROM = ""                               # for example "Drenched <licences@your-domain>"
