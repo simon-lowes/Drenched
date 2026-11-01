@@ -347,11 +347,27 @@ private:
     std::mutex savedLock;
     juce::ValueTree savedSession, pendingSession;
     std::atomic<bool> sessionChanged { true };
+    std::atomic<bool> sessionWaiting { false }; // pendingSession holds one
     void keepSessionForSaving();
 
-    void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override { sessionChanged.store (true); }
-    void valueTreeChildAdded (juce::ValueTree&, juce::ValueTree&) override { sessionChanged.store (true); }
-    void valueTreeChildRemoved (juce::ValueTree&, juce::ValueTree&, int) override { sessionChanged.store (true); }
+    /** Bouncing: applies a session the host loaded on another thread before the block
+        plays, as followSceneOffline does a scene, so the bounce plays the session loaded
+        rather than the one before it until the timer runs. Audio thread, offline only. */
+    void applySessionOffline();
+
+    // Changes to the session that aren't parameters (scenes, speaker trims, the space,
+    // locks, view and skin), which the timer tells the host of so it knows the project has
+    // changed. Parameters reach the host by themselves. quietChanges marks the changes
+    // that aren't the person's: a session loading and what follows from it, and scenes
+    // recalled by the scene parameter, which plays back like any automation. Both belong
+    // to the message thread, as the state's value tree does.
+    bool hostShouldMarkChanged = false;
+    bool quietChanges = false;
+    void noteChangeForHost() noexcept;
+
+    void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override;
+    void valueTreeChildAdded (juce::ValueTree&, juce::ValueTree&) override;
+    void valueTreeChildRemoved (juce::ValueTree&, juce::ValueTree&, int) override;
     void valueTreeChildOrderChanged (juce::ValueTree&, int, int) override { sessionChanged.store (true); }
     void valueTreeRedirected (juce::ValueTree&) override { sessionChanged.store (true); }
 

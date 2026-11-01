@@ -23,12 +23,12 @@ function paddleFetch (customers)
     return { fetch, calls };
 }
 
-async function setup ({ failMail = 0 } = {})
+async function setup ({ failMail = 0, productId = 'pro_drenched' } = {})
 {
     const store = memoryStore();
     const mail = [];
     let failures = failMail;
-    const paddle = { webhookSecret: SECRET, apiKey: 'pdl_key', apiBase: 'https://sandbox-api.paddle.com', productId: 'pro_drenched',
+    const paddle = { webhookSecret: SECRET, apiKey: 'pdl_key', apiBase: 'https://sandbox-api.paddle.com', productId,
                      ...paddleFetch ({ ctm_ada: { name: 'Ada Lovelace', email: 'ada@example.com' } }) };
     const app = createApp ({
         store, signingKey: (await testKeys()).privateKey, adminToken: 'secret-token', paddle, now: () => NOW,
@@ -67,10 +67,21 @@ test ('Paddle signatures are checked, including age and rotation', async () =>
     assert.ok (await verifySignature (rotated, body, SECRET, NOW));
 });
 
+test ('sales are refused until the product id is set, so other products never issue licences', async () =>
+{
+    const { send, store, mail } = await setup ({ productId: null });
+    const result = await send (sale ('txn_1', [drenched (2), { price: { product_id: 'pro_other' }, quantity: 5 }]));
+
+    assert.equal (result.status, 500);
+    assert.equal (result.body.error, 'no-product-id');
+    assert.equal ((await store.listByOrder ('txn_1')).length, 0);
+    assert.equal (mail.length, 0);
+});
+
 test ('copies count only Drenched items, capped', () =>
 {
     assert.equal (copiesIn ({ items: [drenched (2), { price: { product_id: 'pro_other' }, quantity: 5 }] }, 'pro_drenched'), 2);
-    assert.equal (copiesIn ({ items: [drenched (2), { price: { product_id: 'pro_other' }, quantity: 5 }] }, null), 7);
+    assert.equal (copiesIn ({ items: [drenched (2), { price: { product_id: 'pro_other' }, quantity: 5 }] }, null), 0);
     assert.equal (copiesIn ({ items: [drenched (500)] }, 'pro_drenched'), 20);
     assert.equal (copiesIn ({}, 'pro_drenched'), 0);
 });

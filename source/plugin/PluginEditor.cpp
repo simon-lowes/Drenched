@@ -96,12 +96,6 @@ DrenchedEditor::DrenchedEditor (DrenchedProcessor& p)
       state (p.getState()),
       web (makeOptions())
 {
-    for (auto& flag : dirty)
-        flag.store (true);
-
-    for (const auto& id : ParamIDs::all())
-        state.addParameterListener (id, this);
-
     state.state.addListener (this);
     processor.getLicence().addChangeListener (this);
 
@@ -143,9 +137,6 @@ DrenchedEditor::~DrenchedEditor()
     cancelPendingUpdate();
     processor.getLicence().removeChangeListener (this);
     state.state.removeListener (this);
-
-    for (const auto& id : ParamIDs::all())
-        state.removeParameterListener (id, this);
 }
 
 //==============================================================================
@@ -246,28 +237,19 @@ std::optional<juce::WebBrowserComponent::Resource> DrenchedEditor::getResource (
 }
 
 //==============================================================================
-juce::var DrenchedEditor::parameterValues (bool onlyDirty)
+juce::var DrenchedEditor::parameterValues (bool onlyChanged)
 {
     auto object = std::make_unique<juce::DynamicObject>();
-    const auto& ids = ParamIDs::all();
 
-    for (int i = 0; i < ids.size(); ++i)
+    watch.takeChanges (onlyChanged, [this, &object] (const juce::String& id, float value)
     {
-        if (onlyDirty && ! dirty[static_cast<size_t> (i)].exchange (false))
-            continue;
+        // Automation that isn't a number plays the default (DrenchedProcessor::Setting), so show that.
+        if (! std::isfinite (value))
+            if (auto* parameter = state.getParameter (id))
+                value = parameter->convertFrom0to1 (parameter->getDefaultValue());
 
-        if (auto* raw = state.getRawParameterValue (ids[i]))
-        {
-            auto value = raw->load();
-
-            // Automation that isn't a number plays the default (DrenchedProcessor::Setting), so show that.
-            if (! std::isfinite (value))
-                if (auto* parameter = state.getParameter (ids[i]))
-                    value = parameter->convertFrom0to1 (parameter->getDefaultValue());
-
-            object->setProperty (ids[i], static_cast<double> (value));
-        }
-    }
+        object->setProperty (id, static_cast<double> (value));
+    });
 
     return juce::var (object.release());
 }
@@ -298,9 +280,6 @@ juce::var DrenchedEditor::uiValues()
 
 void DrenchedEditor::sendFullState()
 {
-    for (auto& flag : dirty)
-        flag.store (false);
-
     uiDirty.store (false);
 
     auto object = std::make_unique<juce::DynamicObject>();
@@ -325,8 +304,6 @@ void DrenchedEditor::onReady (const juce::var&)
 
 void DrenchedEditor::onParams (const juce::var& payload)
 {
-    settingFromUi.store (true);
-
     forEachProperty (payload, [this] (const juce::String& id, const juce::var& value)
     {
         auto* parameter = state.getParameter (id);
@@ -343,9 +320,10 @@ void DrenchedEditor::onParams (const juce::var& payload)
 
         if (! inGesture)
             parameter->endChangeGesture();
-    });
 
-    settingFromUi.store (false);
+        // The page already shows it, so only host and preset changes travel back.
+        watch.noteShown (id);
+    });
 }
 
 void DrenchedEditor::onGesture (const juce::var& payload)
@@ -368,7 +346,7 @@ void DrenchedEditor::onGesture (const juce::var& payload)
 void DrenchedEditor::onUi (const juce::var& payload)
 {
     auto ui = processor.getUiState();
-    settingFromUi.store (true);
+    settingFromUi = true;
 
     forEachProperty (payload, [&ui] (const juce::String& key, const juce::var& value)
     {
@@ -384,7 +362,7 @@ void DrenchedEditor::onUi (const juce::var& payload)
         }
     });
 
-    settingFromUi.store (false);
+    settingFromUi = false;
 }
 
 void DrenchedEditor::onLoadIr (const juce::var& payload)
@@ -511,27 +489,11 @@ void DrenchedEditor::onScene (const juce::String& action, const juce::var& paylo
 }
 
 //==============================================================================
-void DrenchedEditor::parameterChanged (const juce::String& id, float)
-{
-    // Changes the page itself made come straight back through this listener on the message
-    // thread; the page already shows them, so only host and preset changes travel back.
-    if (settingFromUi.load() && juce::MessageManager::getInstance()->isThisTheMessageThread())
-        return;
-
-    const auto index = ParamIDs::all().indexOf (id);
-
-    if (index >= 0)
-    {
-        dirty[static_cast<size_t> (index)].store (true);
-        triggerAsyncUpdate();
-    }
-}
-
 void DrenchedEditor::valueTreePropertyChanged (juce::ValueTree& tree, const juce::Identifier& property)
 {
     const auto isUi = tree.getType() == UiIDs::tree && property != UiIDs::width;
 
-    if ((! isUi && tree.getType() != SceneIDs::scene) || settingFromUi.load())
+    if ((! isUi && tree.getType() != SceneIDs::scene) || settingFromUi)
         return;
 
     uiDirty.store (true);
@@ -555,8 +517,7 @@ void DrenchedEditor::valueTreeChildRemoved (juce::ValueTree& parent, juce::Value
 void DrenchedEditor::valueTreeRedirected (juce::ValueTree&)
 {
     // A session or preset replaced the whole state: the page needs every value again.
-    for (auto& flag : dirty)
-        flag.store (true);
+    watch.resendAll();
 
     uiDirty.store (true);
     triggerAsyncUpdate();
@@ -610,6 +571,10 @@ void DrenchedEditor::timerCallback()
 
     sendCaptureStatus();
     sendDisplays();
+
+    // Host automation, presets and the processor's own changes (a scene, a file's decay).
+    if (watch.anyChanged())
+        handleAsyncUpdate();
 
     // The host can change the output layout with the window open; the page's meters follow.
     if (processor.shortenedSeconds() != sentShortened || outputLayoutName (processor) != sentLayout)
