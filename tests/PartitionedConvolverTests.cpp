@@ -357,6 +357,52 @@ TEST_CASE ("With a latency the output is the same response, exactly that many sa
     REQUIRE (actual[1] == actual[0]);
 }
 
+TEST_CASE ("No stage is larger than largestBlock, with any latency", "[partitioned][latency]")
+{
+    // Low CPU mode's latencies (1024 at 44.1/48 kHz, 2048 at 88.2/96 kHz) once grew stages
+    // to 65536 and 131072: one transform larger than a small block's whole callback.
+    const auto latency = GENERATE (std::size_t (0), std::size_t (64), std::size_t (256), std::size_t (1024),
+                                   std::size_t (2048), std::size_t (4096), std::size_t (8192));
+    INFO ("latency " << latency);
+    const std::vector<float> ir (2000000, 0.0f); // a long hall at 96 kHz; the plan depends only on length
+
+    PartitionedConvolver conv ({ std::span<const float> (ir) }, latency);
+    const auto blocks = conv.stageBlocks();
+    REQUIRE (! blocks.empty());
+    CHECK (blocks.back() == PartitionedConvolver::largestBlock);
+
+    for (const auto block : blocks)
+        CHECK (block <= PartitionedConvolver::largestBlock);
+}
+
+TEST_CASE ("A long response with a latency nulls across the capped stages", "[partitioned][latency]")
+{
+    const auto latency = GENERATE (std::size_t (1024), std::size_t (2048));
+    INFO ("latency " << latency);
+    std::vector<float> ir (400000, 0.0f);
+    std::mt19937 rng (9);
+    std::uniform_int_distribution<std::size_t> where (0, ir.size() - 1);
+    std::uniform_real_distribution<float> value (-1.0f, 1.0f);
+
+    for (int i = 0; i < 60; ++i)
+        ir[where (rng)] = value (rng);
+
+    ir[0] = 1.0f;
+    ir.back() = 0.5f;
+
+    const auto input = testing::noise (ir.size() + latency + 70000, 41);
+    std::vector<float> expected (input.size(), 0.0f);
+
+    for (std::size_t k = 0; k < ir.size(); ++k)
+        if (ir[k] != 0.0f)
+            for (std::size_t n = k + latency; n < input.size(); ++n)
+                expected[n] += ir[k] * input[n - k - latency];
+
+    PartitionedConvolver conv ({ std::span<const float> (ir) }, latency);
+    const auto actual = runInRandomBlocks (conv, input, 12)[0];
+    REQUIRE (maxDifference (actual, expected) <= 1.0e-4f * peak (expected));
+}
+
 TEST_CASE ("A latency that is not a power of two from 64 is refused", "[partitioned][latency]")
 {
     const std::vector<float> ir (100, 0.5f);
