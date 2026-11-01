@@ -96,7 +96,21 @@ private:
     std::size_t irLength = 0, outputs = 0, delay = 0;
     std::size_t quiet = 0, restingAfter = 0; // samples of silence in a row, and how many rest every stage
     bool headRests = true;                   // false for a response that isn't all numbers
-    std::vector<DirectConvolver> heads; // none with a latency
+    // The head: taps [0, headLength) of every response, in the time domain. One line of
+    // input history serves every output; the sums run tap by tap in the same order
+    // DirectConvolver adds them, so the result is the same to the bit, but eight
+    // outputs at a time (SIMD across samples, not across taps).
+    struct Head
+    {
+        std::size_t taps = 0, outputs = 0;
+        std::vector<float> ir;   // outputs * taps
+        std::vector<float> line; // (taps - 1) of history, then up to chunk new samples
+        static constexpr std::size_t chunk = 256;
+        void reset() noexcept { std::fill (line.begin(), line.end(), 0.0f); }
+        void process (const float* input, float* const* out, std::size_t numSamples) noexcept;
+    };
+    Head head;
+    bool hasHead = false;
     std::vector<std::unique_ptr<Stage>> stages;
 };
 

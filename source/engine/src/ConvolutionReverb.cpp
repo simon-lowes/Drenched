@@ -14,7 +14,7 @@ namespace
 
 // The two inputs' convolvers spread their large transforms over different parts of
 // each block, so that no callback does a transform for both.
-constexpr PartitionedConvolver::WorkWindow leftWork { 0.0f, 0.75f }, rightWork { 0.25f, 1.0f };
+constexpr PartitionedConvolver::WorkWindow leftWork { 0.0f, 0.45f }, rightWork { 0.5f, 0.95f };
 
 std::vector<std::span<const float>> pathsFrom (const ImpulseResponseSet& set, ImpulseResponseSet::Path a, ImpulseResponseSet::Path b)
 {
