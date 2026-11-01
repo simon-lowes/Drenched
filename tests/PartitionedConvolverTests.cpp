@@ -411,30 +411,52 @@ TEST_CASE ("A latency that is not a power of two from 64 is refused", "[partitio
     CHECK_NOTHROW (PartitionedConvolver ({ std::span<const float> (ir) }, 0));
 }
 
-TEST_CASE ("A latency runs the same response on less CPU and never allocates", "[partitioned][latency][realtime]")
+namespace
 {
-    // Five seconds of stereo room at 48 kHz, as one input feeding two outputs.
-    const auto left = testing::noise (240000, 41), right = testing::noise (240000, 42);
-    const auto input = testing::noise (48000 * 4, 43);
-    std::vector<float> a (input.size()), b (input.size());
-
-    const auto timeIt = [&] (std::size_t latency)
+    /** Five seconds of stereo room at 48 kHz, as one input feeding two outputs, played
+        4 s of noise in 256-sample blocks with every allocation counted. Returns the
+        seconds it took. */
+    struct StereoRoom
     {
-        PartitionedConvolver conv ({ std::span<const float> (left), std::span<const float> (right) }, latency);
-        float* outputs[] { a.data(), b.data() };
-        const auto start = std::chrono::steady_clock::now();
-        testing::AllocationCounter counter;
+        const std::vector<float> left = testing::noise (240000, 41), right = testing::noise (240000, 42);
+        const std::vector<float> input = testing::noise (48000 * 4, 43);
+        std::vector<float> a = std::vector<float> (input.size()), b = std::vector<float> (input.size());
 
-        for (std::size_t pos = 0; pos + 256 <= input.size(); pos += 256)
+        double play (std::size_t latency)
         {
-            outputs[0] = a.data() + pos;
-            outputs[1] = b.data() + pos;
-            conv.process (input.data() + pos, outputs, 256);
-        }
+            PartitionedConvolver conv ({ std::span<const float> (left), std::span<const float> (right) }, latency);
+            float* outputs[] { a.data(), b.data() };
+            const auto start = std::chrono::steady_clock::now();
+            testing::AllocationCounter counter;
 
-        REQUIRE (counter.count() == 0);
-        return std::chrono::duration<double> (std::chrono::steady_clock::now() - start).count();
+            for (std::size_t pos = 0; pos + 256 <= input.size(); pos += 256)
+            {
+                outputs[0] = a.data() + pos;
+                outputs[1] = b.data() + pos;
+                conv.process (input.data() + pos, outputs, 256);
+            }
+
+            REQUIRE (counter.count() == 0);
+            return std::chrono::duration<double> (std::chrono::steady_clock::now() - start).count();
+        }
     };
+}
+
+TEST_CASE ("A long stereo room never allocates, with or without a latency", "[partitioned][latency][realtime]")
+{
+    StereoRoom room;
+    room.play (0);
+    room.play (1024);
+}
+
+// Measured in seconds, so a machine busy with something else can fail it. Hidden from the
+// normal run ([.]); CI runs the [timing] tests in a step of their own that tries again
+// before failing (see .github/workflows/build.yml). Run it by hand with
+// drenched_tests "[timing]".
+TEST_CASE ("A latency runs the same response on less CPU", "[.timing][partitioned][latency]")
+{
+    StereoRoom room;
+    const auto timeIt = [&room] (std::size_t latency) { return room.play (latency); };
 
     // Best of five, so a busy test machine doesn't decide it.
     auto zero = 1.0e9, low = 1.0e9;

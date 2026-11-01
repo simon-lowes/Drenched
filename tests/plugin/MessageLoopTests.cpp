@@ -50,27 +50,20 @@ namespace
 
     /** Lets the plugin's timer see the interface state as it is now, without dispatching
         anything else: like a person clicking faster than recordings load, whose loads
-        are still waiting for the message thread when the next click comes. A tick missed
-        only means that choice wasn't seen, as with a click between two ticks. */
-    void letTimerTick()
+        are still waiting for the message thread when the next click comes. Timer is a
+        private base, which only a C-style cast may reach. */
+    void letTimerTick (DrenchedProcessor& p)
     {
-        juce::Thread::sleep (60); // the timer runs at 20 Hz
-        juce::Timer::callPendingTimersSynchronously();
+        ((juce::Timer&) p).timerCallback();
     }
 
-    /** Runs the message loop until the plugin has finished what it was doing when this was
-        called: no new room built for 300 ms. */
+    /** Runs the message loop until the plugin has finished what it was doing: nothing left
+        to do in the background, and nothing that work handed back still waiting for the
+        message thread. */
     void settle (DrenchedProcessor& p)
     {
-        for (auto seen = p.responseVersion();;)
-        {
-            testing::pumpFor (300);
-
-            if (const auto now = p.responseVersion(); now != seen)
-                seen = now;
-            else
-                return;
-        }
+        REQUIRE (testing::pumpUntil ([&p] { return ! p.hasBackgroundWork() && ! testing::dispatchWaiting(); },
+                                     static_cast<int> (testing::buildTimeout.count())));
     }
 
     juce::File scratch (const char* name)
@@ -235,7 +228,7 @@ TEST_CASE ("A new plugin prepared at once reads its first space once and builds 
         const auto recording = p.playingRecording();
         REQUIRE (recording != nullptr);
 
-        testing::pumpFor (1000);
+        settle (p); // the background read has landed
         CHECK (p.responseVersion() == version);
         CHECK (p.playingRecording() == recording);
         p.releaseResources();
@@ -261,12 +254,12 @@ TEST_CASE ("Clicking through library spaces faster than they load plays only the
     for (size_t i = 1; i <= 20; ++i)
     {
         chooseSpace (p, spaces[i].id);
-        letTimerTick();
+        letTimerTick (p);
     }
 
-    // The last click must have been seen before anything lands; seeing it again does nothing.
+    // Seeing the last click again does nothing.
     for (int i = 0; i < 3; ++i)
-        letTimerTick();
+        letTimerTick (p);
 
     const auto& last = spaces[20];
     std::set<juce::String> played;
@@ -329,8 +322,9 @@ TEST_CASE ("A plugin closed while a library space loads is left alone by the loa
         REQUIRE (RecordingCache::shared().find (key) != nullptr);
     }
 
+    // Closing waits for the read, so the hand-over is waiting for the message thread now.
     plugin.reset();
-    testing::pumpFor (1000); // the hand-over runs, finds the plugin gone and does nothing
+    testing::dispatchWaiting(); // it runs, finds the plugin gone and does nothing
 
     // A plugin opened afterwards plays as usual.
     testing::Plugin next;
@@ -366,7 +360,7 @@ TEST_CASE ("Match a room answers on the message thread with what the recording s
         CHECK (answers == 0); // listened to in the background
 
         REQUIRE (testing::pumpUntil ([&] { return answers > 0; }, 60000));
-        testing::pumpFor (100);
+        settle (**plugin); // and nothing else comes
         CHECK (answers == 1);
         CHECK (onMessageThread);
 
@@ -397,7 +391,7 @@ TEST_CASE ("Match a room answers on the message thread with what the recording s
         match (file);
         juce::Thread::sleep (100);
         plugin.reset(); // waits for the listening to finish
-        testing::pumpFor (500);
+        testing::dispatchWaiting(); // what the finished work handed back runs, and does nothing
         CHECK (answers == 0);
     }
 
@@ -463,7 +457,7 @@ TEST_CASE ("The decay displays get the playing room's analysis on the message th
         analyse();
         juce::Thread::sleep (100); // started, so the plugin waits for it as it closes
         plugin.reset();
-        testing::pumpFor (500);
+        testing::dispatchWaiting(); // what the finished work handed back runs, and does nothing
         CHECK (answers.empty());
     }
 }
@@ -499,8 +493,11 @@ TEST_CASE ("A dropped impulse response is kept, read in the background, then pla
         }
 
         REQUIRE (dropped.complete (1));
+        // Read before take(), which empties it: arguments are evaluated in no set order
+        // (Clang read it after take(), GCC before). As the editor does.
         const auto name = dropped.fileName();
-        p.importImpulseResponseAsync (name, dropped.take(), dropped.keepsSettings(), folder);
+        const auto keep = dropped.keepsSettings();
+        p.importImpulseResponseAsync (name, dropped.take(), keep, folder);
         CHECK_FALSE (answered()); // kept and read in the background
     };
 

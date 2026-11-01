@@ -2,6 +2,7 @@
 
 #include <TestHelpers.h>
 
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <functional>
@@ -62,8 +63,12 @@ namespace
 
             // The interface's timer, about every 50 ms.
             if (++blocks % 9 == 0)
-                ((juce::Timer&) p).timerCallback();
+                tick();
         }
+
+        /** What the processor's timer does. Timer is a private base, which only a C-style
+            cast may reach. */
+        void tick() { ((juce::Timer&) p).timerCallback(); }
 
         /** Plays in real time's order: the builder gets time to work between blocks. */
         void play (double seconds, int size = blockSize)
@@ -77,23 +82,44 @@ namespace
             }
         }
 
-        /** Makes a change, then plays until it has been built (or `wait` has passed
-            with nothing to build) and the old room has faded out. Returns whether a new
-            room was built. A build that lands later still lands in a counted block. */
-        bool playThrough (const std::function<void()>& change, int waitMs = 3000)
+        /** Makes a change and lets the timer hand it to the builder, then plays, with the
+            builder working on its own thread meanwhile, until the builder has built
+            everything asked of it, and on until the old room has faded out. So a new room
+            always lands in a counted block, however slow the machine. Returns whether a
+            new room was built. */
+        bool playThrough (const std::function<void()>& change)
         {
             const auto before = p.responseVersion();
             testing::onMessageThread (change);
-            const auto until = juce::Time::getMillisecondCounter() + static_cast<juce::uint32> (waitMs);
+            tick();
 
-            while (p.responseVersion() == before && juce::Time::getMillisecondCounter() < until)
+            const auto giveUp = juce::Time::getMillisecondCounterHiRes() + static_cast<double> (testing::buildTimeout.count());
+
+            while (! p.waitForBuilder (5))
             {
+                REQUIRE (juce::Time::getMillisecondCounterHiRes() < giveUp); // a hang, not a slow machine
                 play (0.01);
-                juce::Thread::sleep (5);
             }
 
             play (0.2);
             return p.responseVersion() != before;
+        }
+
+        /** playThrough, and the room built must be the one the change asks for: a change
+            that needs a new room gets one, and one that doesn't, doesn't. */
+        void changeRoom (const std::function<void()>& change)
+        {
+            REQUIRE (p.roomIsCurrent());
+            auto needsRoom = false;
+
+            const auto built = playThrough ([&]
+            {
+                change();
+                needsRoom = ! p.roomIsCurrent();
+            });
+
+            CHECK (built == needsRoom);
+            CHECK (p.roomIsCurrent());
         }
 
         void check (const char* what)
@@ -155,16 +181,45 @@ TEST_CASE ("The counter sees every way memory is taken and given back", "[plugin
     CHECK (given == taken);
 }
 
-TEST_CASE ("Every control moves without memory taken or given back on the audio thread", "[plugin][realtime]")
+// One test case per control (TestType::value is its place in ParamIDs::ordered), so each
+// is its own CTest entry: they run in parallel, and each stays well inside the timeout
+// under sanitizers, where all of them in one would not.
+TEMPLATE_LIST_TEST_CASE ("A control moves end to end without memory taken or given back on the audio thread", "[plugin][realtime]",
+                         testing::EachParameter)
+{
+    const auto* id = ParamIDs::ordered[TestType::value];
+    INFO (id);
+
+    Playing playing;
+    auto& host = playing.host;
+    auto& p = playing.p;
+
+    host.play (0.25);
+    host.check ("playing");
+
+    auto* control = find (*p, id);
+    REQUIRE (control != nullptr);
+    const auto was = control->getValue();
+
+    // To the far end of its range and back: a new room each way for the controls that
+    // change the room, each landing in a counted block.
+    host.changeRoom ([&] { control->setValueNotifyingHost (was < 0.5f ? 1.0f : 0.0f); });
+    host.check ("to the far end");
+
+    host.changeRoom ([&] { control->setValueNotifyingHost (was); });
+    host.check ("and back");
+}
+
+TEST_CASE ("Every control moves at once without memory taken or given back on the audio thread", "[plugin][realtime]")
 {
     Playing playing;
     auto& host = playing.host;
     auto& p = playing.p;
 
-    host.play (1.0);
+    host.play (0.25);
     host.check ("playing");
 
-    // Each control to the far end of its range, then all back at once.
+    // Every control to the far end of its range at once, then all back at once.
     std::vector<std::pair<juce::RangedAudioParameter*, float>> was;
 
     for (const auto* id : ParamIDs::ordered)
@@ -172,11 +227,17 @@ TEST_CASE ("Every control moves without memory taken or given back on the audio 
         auto* control = find (*p, id);
         REQUIRE (control != nullptr);
         was.emplace_back (control, control->getValue());
-        host.playThrough ([&] { control->setValueNotifyingHost (was.back().second < 0.5f ? 1.0f : 0.0f); }, 250);
-        host.check (id);
     }
 
-    host.playThrough ([&]
+    host.changeRoom ([&]
+    {
+        for (const auto& [control, value] : was)
+            control->setValueNotifyingHost (value < 0.5f ? 1.0f : 0.0f);
+    });
+
+    host.check ("every control at the far end");
+
+    host.changeRoom ([&]
     {
         for (const auto& [control, value] : was)
             control->setValueNotifyingHost (value);
@@ -221,7 +282,7 @@ TEST_CASE ("Rooms, scenes, bypass, tempo and captures play without memory taken 
     } head;
 
     p->setPlayHead (&head);
-    host.playThrough ([&] { find (*p, ParamIDs::predelaySync)->setValueNotifyingHost (1.0f); }, 250);
+    host.playThrough ([&] { find (*p, ParamIDs::predelaySync)->setValueNotifyingHost (1.0f); });
     host.play (0.5);
     p->setPlayHead (nullptr);
     host.check ("tempo");

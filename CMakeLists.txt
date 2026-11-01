@@ -32,12 +32,25 @@ option(DRENCHED_BUILD_AAX "Build the AAX format (needs the signed Avid AAX SDK l
 set(DRENCHED_AAX_SDK "" CACHE PATH "A downloaded AAX SDK folder to use instead of the copy bundled with JUCE")
 
 # Sanitizer builds for finding bugs, e.g. -DDRENCHED_SANITIZE=thread or address,undefined
-# (GCC and Clang; use a Debug or RelWithDebInfo build).
+# (GCC and Clang; use a Debug or RelWithDebInfo build), or realtime (Clang 20 and later),
+# which checks the functions marked DRENCHED_NONBLOCKING as they run (see Realtime.h).
 set(DRENCHED_SANITIZE "" CACHE STRING "Sanitizers to build with, as -fsanitize takes them")
 if(DRENCHED_SANITIZE)
     add_compile_options(-fsanitize=${DRENCHED_SANITIZE} -fno-omit-frame-pointer)
     add_link_options(-fsanitize=${DRENCHED_SANITIZE})
+
+    # The same marks also ask Clang to check at compile time that everything they call is
+    # marked too, which JUCE and the standard library are not: the sanitizer checks what
+    # actually runs instead.
+    if(DRENCHED_SANITIZE MATCHES "realtime")
+        add_compile_options(-Wno-function-effects)
+    endif()
 endif()
+
+# Debug builds report JUCE's assertions (jassert, and the leak detector's) through
+# juce::Logger rather than only printing them, so the tests can count them: one a test
+# didn't expect fails the run (tests/plugin/Main.cpp). Release builds have no assertions.
+add_compile_definitions($<$<CONFIG:Debug>:JUCE_LOG_ASSERTIONS=1>)
 
 include(cmake/Dependencies.cmake)
 

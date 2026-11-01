@@ -265,11 +265,49 @@ TEST_CASE ("Damaged sessions load what they can and play finite audio", "[plugin
     }
 }
 
+TEST_CASE ("A session's setting outside its range loads at the nearest end of the range", "[plugin][damaged][sessions]")
+{
+    testing::Plugin source;
+    const auto saved = stateOf (*source);
+    auto xml = juce::AudioProcessor::getXmlFromBinary (saved.getData(), static_cast<int> (saved.getSize()));
+    REQUIRE (xml != nullptr);
+
+    for (const auto below : { true, false })
+    {
+        INFO ((below ? "below" : "above"));
+        auto damaged = std::make_unique<juce::XmlElement> (*xml);
+
+        for (auto* param : damaged->getChildWithTagNameIterator ("PARAM"))
+        {
+            const auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (source->getState().getParameter (param->getStringAttribute ("id")));
+            REQUIRE (ranged != nullptr);
+            const auto range = ranged->getNormalisableRange().getRange();
+            param->setAttribute ("value", below ? range.getStart() - range.getLength() : range.getEnd() + range.getLength());
+        }
+
+        juce::MemoryBlock block;
+        juce::AudioProcessor::copyXmlToBinary (*damaged, block);
+
+        testing::Plugin p;
+        setState (*p, block);
+
+        for (auto* param : p->getParameters())
+        {
+            INFO (param->getName (100));
+            CHECK (param->getValue() == (below ? 0.0f : 1.0f));
+        }
+
+        playsFinite (*p);
+    }
+}
+
 TEST_CASE ("Automation that isn't a number can't silence the reverb", "[plugin][damaged]")
 {
     testing::Plugin p;
     testing::onMessageThread ([&]
     {
+        const testing::ExpectJuceAssertions hostMisbehaves; // JUCE asserts on each, then clamps
+
         for (auto* param : p->getParameters())
             param->setValueNotifyingHost (std::numeric_limits<float>::quiet_NaN());
     });

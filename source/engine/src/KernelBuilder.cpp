@@ -95,6 +95,7 @@ void KernelBuilder::request (const ImpulseResponseRequest& wanted, bool settle)
                 return;
 
             pendingSince = now - debounceTime; // already settled
+            pendingAsked = ++asked;
         }
         else
         {
@@ -103,6 +104,7 @@ void KernelBuilder::request (const ImpulseResponseRequest& wanted, bool settle)
 
             pending = wanted;
             pendingSince = settle ? now : now - debounceTime;
+            pendingAsked = ++asked;
         }
     }
 
@@ -111,12 +113,45 @@ void KernelBuilder::request (const ImpulseResponseRequest& wanted, bool settle)
 
 void KernelBuilder::buildNow (const ImpulseResponseRequest& wanted)
 {
-    build (wanted);
+    std::uint64_t serial = 0;
 
-    const std::lock_guard lock (mutex);
+    {
+        const std::lock_guard lock (mutex);
+        ++building;
+        serial = ++asked;
+    }
 
-    if (pending == wanted)
-        pending.reset();
+    try
+    {
+        build (wanted, serial);
+    }
+    catch (...)
+    {
+        finishBuilding (nullptr, serial);
+        throw;
+    }
+
+    finishBuilding (&wanted, serial);
+}
+
+void KernelBuilder::finishBuilding (const ImpulseResponseRequest* builtNow, std::uint64_t serial)
+{
+    {
+        const std::lock_guard lock (mutex);
+        --building;
+
+        // What was just built is newer than any request still waiting from before it.
+        if (builtNow != nullptr && pending.has_value() && (pending == *builtNow || pendingAsked < serial))
+            pending.reset();
+    }
+
+    idle.notify_all();
+}
+
+bool KernelBuilder::waitUntilIdle (std::chrono::milliseconds timeout) const
+{
+    std::unique_lock lock (mutex);
+    return idle.wait_for (lock, timeout, [this] { return ! pending.has_value() && building == 0; });
 }
 
 std::optional<ImpulseResponseRequest> KernelBuilder::lastBuilt() const
@@ -131,11 +166,18 @@ std::shared_ptr<const ImpulseResponseSet> KernelBuilder::lastResponses() const
     return builtResponses;
 }
 
-void KernelBuilder::build (const ImpulseResponseRequest& wanted)
+void KernelBuilder::build (const ImpulseResponseRequest& wanted, std::uint64_t serial)
 {
     const ScopedFlushDenormals flush;
 
     const std::lock_guard buildLock (buildMutex);
+
+    // A request the worker took up while buildNow() built a newer one waits for it here,
+    // and then has nothing to add.
+    if (serial < newestBuild)
+        return;
+
+    newestBuild = serial;
 
     ImpulseResponseSet responses;
 
@@ -276,6 +318,7 @@ void KernelBuilder::run()
         if (pending == built)
         {
             pending.reset();
+            idle.notify_all();
             continue;
         }
 
@@ -286,13 +329,15 @@ void KernelBuilder::run()
             continue;
 
         const auto wanted = *pending;
+        const auto serial = pendingAsked;
         pending.reset();
+        ++building; // with pending, under the lock, so waitUntilIdle() never sees neither
 
         lock.unlock();
 
         try
         {
-            build (wanted);
+            build (wanted, serial);
         }
         catch (const std::exception&)
         {
@@ -300,6 +345,8 @@ void KernelBuilder::run()
         }
 
         lock.lock();
+        --building;
+        idle.notify_all();
     }
 }
 

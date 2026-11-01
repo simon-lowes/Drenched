@@ -2,6 +2,7 @@
 
 #include <drenched/Biquad.h>
 
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <numeric>
@@ -10,6 +11,11 @@
 
 namespace testing
 {
+    /** How long a test waits for the kernel builder to finish what it was asked
+        (KernelBuilder::waitUntilIdle). Only a guard against a hang, never a timing a test
+        depends on: a room builds in well under a second, or a few under sanitizers. */
+    inline constexpr std::chrono::milliseconds buildTimeout { 60000 };
+
     inline std::vector<float> noise (std::size_t length, unsigned seed)
     {
         std::mt19937 rng (seed);

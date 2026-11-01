@@ -23,7 +23,10 @@ git config --global --add safe.directory '*'
 
 cmake -S . -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build "$BUILD_DIR" --parallel
-ctest --test-dir "$BUILD_DIR" --output-on-failure
+ctest --test-dir "$BUILD_DIR" --label-exclude "^timing$" --output-on-failure
+# Tests that time the code fail when the machine is busy, so they run on their own and
+# get two more tries before failing (see tests/CMakeLists.txt).
+ctest --test-dir "$BUILD_DIR" --label-regex "^timing$" --repeat until-pass:3 --output-on-failure
 
 # Hosts find the binary in Contents/<uname -m>-linux. JUCE names the folder
 # i386-linux, but a 32-bit system reports i686, so the bundle carries both.

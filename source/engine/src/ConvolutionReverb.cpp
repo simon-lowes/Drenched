@@ -304,7 +304,7 @@ void ConvolutionReverb::prepare (double newSampleRate, const SpeakerLayout& inpu
     reset();
 }
 
-void ConvolutionReverb::reset() noexcept
+void ConvolutionReverb::reset() noexcept DRENCHED_NONBLOCKING
 {
     std::fill (delayL.begin(), delayL.end(), 0.0f);
     std::fill (delayR.begin(), delayR.end(), 0.0f);
@@ -312,6 +312,7 @@ void ConvolutionReverb::reset() noexcept
     delayFade = 0;
     tailFade = 0;
     duckEnvelope = 0.0f;
+    duckGain = 1.0f; // nothing heard yet, so nothing ducked
     firstBlock = true;
 
     std::fill (dryLines.begin(), dryLines.end(), 0.0f);
@@ -464,18 +465,30 @@ void ConvolutionReverb::installIncoming() noexcept
         return;
     }
 
-    // The kernel that was ringing out gives way with a short fade.
-    if (ringing != nullptr)
+    if (firstBlock)
     {
-        retire (fading);
-        fading = ringing;
-        fadeRemaining = fadeLength;
+        // Straight after prepare() or reset() nothing rings in the old kernel, so the new
+        // one plays alone at once. A handover would pass the first 40 ms of input through
+        // the old room, to ring for its whole length, so what a bounce starts with would
+        // depend on the room played before it.
+        retire (current);
+    }
+    else
+    {
+        // The kernel that was ringing out gives way with a short fade.
+        if (ringing != nullptr)
+        {
+            retire (fading);
+            fading = ringing;
+            fadeRemaining = fadeLength;
+        }
+
+        // The new kernel takes the input over gradually (see runKernels()).
+        ringing = current;
+        handRemaining = ringing != nullptr ? fadeLength : 0;
+        ringRemaining = ringing != nullptr ? ringing->length() + handRemaining : 0;
     }
 
-    // The new kernel takes the input over gradually (see runKernels()).
-    ringing = current;
-    handRemaining = ringing != nullptr ? fadeLength : 0;
-    ringRemaining = ringing != nullptr ? ringing->length() + handRemaining : 0;
     current = fresh;
 
     // The living tail follows the new room at once, gliding to its new line
@@ -742,7 +755,7 @@ void ConvolutionReverb::delayDry (std::size_t wanted, std::size_t n) noexcept
     dryFade = dryFade > n ? dryFade - n : 0;
 }
 
-void ConvolutionReverb::process (float* left, float* right, std::size_t numSamples, const ReverbControls& c) noexcept
+void ConvolutionReverb::process (float* left, float* right, std::size_t numSamples, const ReverbControls& c) noexcept DRENCHED_NONBLOCKING
 {
     if (right != left)
     {
@@ -804,7 +817,7 @@ const ReverbControls& ConvolutionReverb::finiteControls (const ReverbControls& a
 }
 
 void ConvolutionReverb::process (float* const* channels, std::size_t numChannels, std::size_t numSamples,
-                                 const ReverbControls& controls) noexcept
+                                 const ReverbControls& controls) noexcept DRENCHED_NONBLOCKING
 {
     if (numChannels < std::max (numIn, numOut))
         return;

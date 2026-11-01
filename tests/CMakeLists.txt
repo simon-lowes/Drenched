@@ -28,7 +28,15 @@ target_link_libraries(drenched_tests PRIVATE drenched_engine drenched_licence dr
 include(CTest)
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
 include(Catch)
-catch_discover_tests(drenched_tests)
+catch_discover_tests(drenched_tests ADD_TAGS_AS_LABELS)
+
+# Tests that measure seconds ([.timing], so left out above) fail when the machine is busy
+# rather than when the code is slow. They get an entry of their own, labelled timing, so
+# CI runs them apart from the rest (ctest -LE timing) and tries them again before failing
+# (ctest -L timing --repeat until-pass:3).
+add_test(NAME "Timing: CPU comparisons" COMMAND drenched_tests "[timing]")
+set_tests_properties("Timing: CPU comparisons" PROPERTIES LABELS timing)
+
 add_subdirectory(plugin)
 
 # SOFA files from libmysofa's own test set, read where FetchContent put them.

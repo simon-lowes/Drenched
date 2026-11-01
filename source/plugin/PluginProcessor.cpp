@@ -761,6 +761,24 @@ std::shared_ptr<const RecordedResponse> DrenchedProcessor::playingRecording() co
     return built ? built->recorded : nullptr;
 }
 
+bool DrenchedProcessor::roomIsCurrent() const
+{
+    const auto rate = preparedRate.load();
+
+    if (rate <= 0.0)
+        return false;
+
+    const auto wanted = currentRequest (rate);
+    return wanted.has_value() && wanted == builder->lastBuilt();
+}
+
+bool DrenchedProcessor::hasBackgroundWork() const
+{
+    // Each job posts what it hands back before it finishes, so once the pools are empty
+    // it is already in the message queue.
+    return loader.getNumJobs() > 0 || analyser.getNumJobs() > 0 || ! builder->waitUntilIdle (std::chrono::milliseconds (0));
+}
+
 void DrenchedProcessor::analyseResponseAsync (std::function<void (const juce::var&)> done)
 {
     std::weak_ptr<int> alive = lifetime;
@@ -1587,12 +1605,12 @@ void DrenchedProcessor::prepareToPlay (double hostRate, int)
         peak.store (0.0f);
 }
 
-void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) DRENCHED_NONBLOCKING
 {
     render (buffer, false);
 }
 
-void DrenchedProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void DrenchedProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) DRENCHED_NONBLOCKING
 {
     render (buffer, true);
 }
@@ -1638,9 +1656,14 @@ void DrenchedProcessor::render (juce::AudioBuffer<float>& buffer, bool bypassed)
 
     notePeak (0, numInputs);
 
-    // Before the controls are read, so the block plays the session's settings.
+    // Before the controls are read, so the block plays the session's settings. Bouncing,
+    // the host waits for each block, so this may wait for the message thread and build a
+    // room; it is the only part of the audio path that may (see Realtime.h).
     if (isNonRealtime())
+    {
+        const ScopedRealtimeCheckOff offline;
         applySessionOffline();
+    }
 
     ReverbControls controls;
     controls.mix = params.mix.load() / 100.0f;
@@ -1687,6 +1710,7 @@ void DrenchedProcessor::render (juce::AudioBuffer<float>& buffer, bool bypassed)
 
     if (isNonRealtime())
     {
+        const ScopedRealtimeCheckOff offline;
         followSceneOffline();
         buildChangedRoom (numSamples);
     }
@@ -1865,13 +1889,32 @@ void DrenchedProcessor::migrateState (juce::ValueTree& session) const
     }
 
     // A damaged session can hold settings that aren't numbers. They take their
-    // defaults; left in, they would make the reverb play nothing but NaN.
+    // defaults; left in, they would make the reverb play nothing but NaN. Numbers outside
+    // a setting's range are brought to its nearest end here, rather than left to each
+    // parameter's conversion to make of them; one in range, as every
+    // session Drenched saves holds, is left exactly as it is.
     for (int i = session.getNumChildren(); --i >= 0;)
     {
-        const auto child = session.getChild (i);
+        auto child = session.getChild (i);
 
-        if (child.hasType ("PARAM") && ! std::isfinite (static_cast<double> (child.getProperty ("value"))))
+        if (! child.hasType ("PARAM"))
+            continue;
+
+        const auto value = static_cast<double> (child.getProperty ("value"));
+
+        if (! std::isfinite (value))
+        {
             session.removeChild (i, nullptr);
+            continue;
+        }
+
+        if (const auto* parameter = state.getParameter (child.getProperty ("id").toString()))
+        {
+            const auto range = parameter->getNormalisableRange().getRange();
+
+            if (value < range.getStart() || value > range.getEnd())
+                child.setProperty ("value", juce::jlimit (static_cast<double> (range.getStart()), static_cast<double> (range.getEnd()), value), nullptr);
+        }
     }
 
     session.setProperty (stateVersionID, stateVersion, nullptr);
