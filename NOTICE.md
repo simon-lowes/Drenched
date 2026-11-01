@@ -11,6 +11,7 @@ added to this repository.
 | [JUCE](https://juce.com) 9 | Plugin wrappers, GUI, platform layer | JUCE Starter or paid JUCE licence (not the AGPL option) |
 | [clap-juce-extensions](https://github.com/free-audio/clap-juce-extensions) | CLAP format | MIT |
 | [CLAP](https://github.com/free-audio/clap) | CLAP format | MIT |
+| [clap-helpers](https://github.com/free-audio/clap-helpers) (inside clap-juce-extensions) | CLAP format | MIT |
 | [Catch2](https://github.com/catchorg/Catch2) | Unit tests (not shipped) | BSL-1.0 |
 | [Playwright](https://playwright.dev) | Interface tests in a browser (not shipped) | Apache-2.0 |
 | [pffft](https://github.com/marton78/pffft) | FFT for convolution | BSD-style FFTPACK licence (Julien Pommier, Hayati Ayguen, Dario Mambro, UCAR) |
@@ -20,6 +21,21 @@ added to this repository.
 | [libmysofa](https://github.com/hoene/libmysofa) 1.3.5 | Reading SOFA impulse response files | BSD-3-Clause (Symonics GmbH, Christian Hoene) |
 | [miniz](https://github.com/richgel999/miniz) 3.0.2 (its inflater only) | Decompressing SOFA files | MIT (Rich Geldreich, RAD Game Tools, Valve Software) |
 | [Microsoft WebView2 SDK](https://developer.microsoft.com/microsoft-edge/webview2/) | Interface web view on Windows (loader linked statically) | Microsoft WebView2 SDK licence (redistributable) |
+
+JUCE compiles these into the plug-in from its own source tree:
+
+| Component | Use | Licence |
+| --- | --- | --- |
+| [VST3 SDK](https://github.com/steinbergmedia/vst3sdk) | VST3 format | MIT (Steinberg Media Technologies) |
+| [Audio Unit SDK](https://github.com/apple/AudioUnitSDK) | Audio Unit format (macOS) | Apache-2.0 (Apple) |
+| [FLAC](https://xiph.org/flac/), [Ogg, Vorbis](https://xiph.org), [Opus, opusfile, libopusenc](https://opus-codec.org) | Reading compressed impulse responses | BSD-3-Clause (Xiph.Org Foundation and contributors) |
+| [zlib](https://zlib.net) | Compression | zlib (Jean-loup Gailly, Mark Adler) |
+| [libpng](http://www.libpng.org/pub/png/libpng.html) | Images | libpng licence |
+| [libjpeg](https://ijg.org) | Images | IJG licence (this software is based in part on the work of the Independent JPEG Group) |
+| [libwebp](https://chromium.googlesource.com/webm/libwebp) | Images | BSD-3-Clause (Google) |
+| [HarfBuzz](https://harfbuzz.github.io) | Text shaping | MIT ("Old MIT") |
+| [SheenBidi](https://github.com/Tehreer/SheenBidi) | Bidirectional text | Apache-2.0 (Muhammad Tayyab Akram) |
+| [LunaSVG](https://github.com/sammycage/lunasvg), [PlutoVG](https://github.com/sammycage/plutovg) | SVG drawing | MIT (Samuel Ugochukwu) |
 
 The r8brain-free-src (MIT) licence requires its copyright and permission
 notice in copies of the software; the installer's licence page must include

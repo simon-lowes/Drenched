@@ -114,6 +114,14 @@ jobs:
           fi
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_args }} $EXTRA
 
+      # The licence texts the installers ship must match NOTICE.md and the fetched sources.
+      - name: Check third-party licences are up to date
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          python3 tools/third_party_licences.py build
+          git diff --exit-code packaging/third-party-licences.txt || { echo "Run tools/third_party_licences.py and commit the result"; exit 1; }
+
       - name: Build
         shell: bash
         run: cmake --build build --config Release --parallel
