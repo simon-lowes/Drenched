@@ -2,6 +2,7 @@
 
 #include <drenched/ConvolutionReverb.h>
 #include <drenched/Glide.h>
+#include <drenched/KernelBuilder.h>
 #include <drenched/Spaces.h>
 #include <drenched/Svf.h>
 
@@ -213,4 +214,59 @@ TEST_CASE ("The pre-delay, wet tone, EQ and width move without a click", "[rever
             REQUIRE (clickUnderLevel (reverb, backwards ? moved : plain, backwards ? plain : moved) < -45.0);
         }
     }
+}
+
+TEST_CASE ("Low CPU moving the living tail's wait keeps its pitch", "[reverb][living]")
+{
+    // Turning Low CPU on delays the convolution by 1024 samples (21 ms at 48 kHz), and the
+    // living tail's input waits as long again to stay in time with it. Gliding the wait that
+    // far would slow the tail's input by about ten semitones for a moment, a whoop in the
+    // late reverb; it crossfades instead. A steady 1 kHz tone then comes out as 1 kHz.
+    const auto power = [] (const std::vector<float>& x, std::size_t from, std::size_t to, double hz)
+    {
+        double re = 0.0, im = 0.0;
+
+        for (auto n = from; n < to; ++n)
+        {
+            const auto w = 2.0 * std::numbers::pi * hz * static_cast<double> (n) / rate;
+            re += x[n] * std::cos (w);
+            im += x[n] * std::sin (w);
+        }
+
+        return re * re + im * im;
+    };
+
+    auto plain = room();
+    plain.livingPercent = 100.0f;
+    auto lowCpu = plain;
+    lowCpu.latencySamples = static_cast<int> (ConvolutionReverb::lowCpuLatency (rate));
+
+    ConvolutionReverb reverb;
+    reverb.prepare (rate);
+    KernelBuilder builder (reverb);
+    builder.buildNow (plain);
+
+    ReverbControls c;
+    c.mix = 1.0f;
+    constexpr std::size_t changeAt = 48000, length = 72000, block = 480;
+    auto l = tone (length, 1000.0), r = l;
+
+    for (std::size_t pos = 0; pos < length; pos += block)
+    {
+        if (pos == changeAt)
+            builder.buildNow (lowCpu);
+
+        reverb.process (l.data() + pos, r.data() + pos, block, c);
+    }
+
+    // The 250 ms after the change: the bent pitches against the tone's own.
+    const auto tonePower = power (l, changeAt, changeAt + 12000, 1000.0);
+    auto bent = 0.0;
+
+    for (const auto hz : { 450.0, 570.0, 700.0, 850.0, 1150.0 })
+        bent = std::max (bent, power (l, changeAt, changeAt + 12000, hz));
+
+    const auto under = decibels (std::sqrt (bent / tonePower));
+    INFO ("bent pitches " << under << " dB under the tone");
+    CHECK (under < -35.0); // gliding: about -15 dB
 }
