@@ -377,12 +377,8 @@ std::unique_ptr<ReverbKernel> ConvolutionReverb::takeRetired() noexcept
     return std::unique_ptr<ReverbKernel> (k);
 }
 
-void ConvolutionReverb::retire (ReverbKernel* kernel) noexcept
+void ConvolutionReverb::flushDeferred() noexcept
 {
-    if (kernel == nullptr)
-        return;
-
-    // Flush anything deferred first so the order is kept.
     for (auto*& waiting : deferred)
     {
         if (waiting == nullptr)
@@ -397,6 +393,15 @@ void ConvolutionReverb::retire (ReverbKernel* kernel) noexcept
         retiredWrite.store (write + 1, std::memory_order_release);
         waiting = nullptr;
     }
+}
+
+void ConvolutionReverb::retire (ReverbKernel* kernel) noexcept
+{
+    if (kernel == nullptr)
+        return;
+
+    // Flush anything deferred first so the order is kept.
+    flushDeferred();
 
     const auto write = retiredWrite.load (std::memory_order_relaxed);
 
@@ -417,12 +422,37 @@ void ConvolutionReverb::retire (ReverbKernel* kernel) noexcept
         }
     }
 
-    // Nowhere to put it. Leaking is better than freeing on the audio thread;
-    // this needs 36 swaps without the builder running, which does not happen.
+    // Nowhere to put it. installIncoming() holds new kernels back before this
+    // can happen; should it ever, leaking is better than freeing on the audio thread.
 }
 
 void ConvolutionReverb::installIncoming() noexcept
 {
+    // Kernels parked while the queue was full go back as soon as there is room,
+    // not only when the next one retires.
+    flushDeferred();
+
+    if (incoming.load (std::memory_order_relaxed) == nullptr)
+        return;
+
+    // A kernel arriving during a handover waits for it to end, 40 ms at most:
+    // taking over then would cut off the input the outgoing kernel still hears
+    // and drop the kernel fading out part way through its fade, both clicks.
+    if (handRemaining > 0 || fading != nullptr)
+        return;
+
+    // It waits too while the retired queue and its overflow couldn't take every
+    // kernel still to come back (the builder isn't freeing them), so none is lost.
+    std::size_t owed = retiredWrite.load (std::memory_order_relaxed) - retiredRead.load (std::memory_order_acquire);
+
+    for (const auto* waiting : deferred)
+        owed += waiting != nullptr ? 1 : 0;
+
+    owed += (ringing != nullptr ? 1 : 0) + 1; // the ringing kernel, and the current one or this
+
+    if (owed > retiredCapacity + deferred.size())
+        return;
+
     auto* fresh = incoming.exchange (nullptr, std::memory_order_acq_rel);
 
     if (fresh == nullptr)
