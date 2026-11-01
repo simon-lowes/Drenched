@@ -1,15 +1,19 @@
 cmake_minimum_required(VERSION 3.25)
 
+# Both must be set before project(): it creates the deployment target's cache entry
+# (empty unless MACOSX_DEPLOYMENT_TARGET is set), and a later set(... CACHE) leaves
+# that entry alone, so the build would target the SDK's own macOS version.
+set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
+# The Visual C++ runtime linked in, so the plug-ins load on PCs without the
+# redistributable (testers' machines; CI runners all have it).
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "MSVC runtime")
+
 project(Drenched VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-if(APPLE)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
-endif()
 
 # 32-bit x86 builds (Windows Win32, Linux i686) are for older hosts and bridges.
 # MSVC targets SSE2 there already; GCC and Clang default to x87 maths, which is

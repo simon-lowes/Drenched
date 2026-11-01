@@ -247,6 +247,10 @@ jobs:
             ARCHS=$(lipo -archs "$BIN")
             echo "$b: $ARCHS"
             [[ "$ARCHS" == *x86_64* && "$ARCHS" == *arm64* ]] || { echo "$b is not universal"; exit 1; }
+            # Every slice must run on the oldest macOS the guide promises.
+            MINOS=$(vtool -show-build "$BIN" | awk '$1 == "minos" { print $2 }' | sort -u)
+            echo "$b: minos $MINOS"
+            [ "$MINOS" = "11.0" ] || { echo "$b needs macOS $MINOS, not 11.0"; exit 1; }
             codesign --verify --verbose "$b"
           done
           for f in "User guide.html" "Third-party licences.txt"; do
@@ -434,6 +438,14 @@ jobs:
             if ($m -ne $e[1]) { Write-Error ("{0} is machine 0x{1:x}, not 0x{2:x}" -f $e[0], $m, $e[1]); exit 1 }
             Write-Host ("{0}: 0x{1:x}" -f $e[0], $m)
           }
+          # No Visual C++ runtime DLLs needed: testers may not have the redistributable.
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $dumpbin = (Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1).FullName
+          foreach ($e in $expected) {
+            $runtime = @(& $dumpbin /nologo /dependents $e[0] | Where-Object { $_ -match '(vcruntime|msvcp|ucrtbase|api-ms-win-crt)' })
+            if ($runtime.Count -ne 0) { Write-Error ("{0} needs {1}" -f $e[0], ($runtime.Trim() -join ', ')); exit 1 }
+          }
+
           foreach ($f in @('User guide.html', 'Third-party licences.txt')) {
             if (-not (Test-Path "${env:ProgramFiles}\Drenched\$f")) { Write-Error "not installed: $f"; exit 1 }
           }
