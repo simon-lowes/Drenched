@@ -98,7 +98,10 @@ DrenchedEditor::DrenchedEditor (DrenchedProcessor& p)
         {
             // As the page does with a file it takes: a session whose file is missing keeps its settings.
             if (safe != nullptr && file.hasFileExtension ("wav;wave;amb;aif;aiff;flac;sofa"))
+            {
+                settings::trustShareOf (file); // dropped by the person, so chosen by them
                 safe->processor.loadImpulseResponseAsync (file, static_cast<bool> (safe->processor.impulseResponseInfo()["missing"]));
+            }
         });
     };
 
@@ -381,6 +384,7 @@ void DrenchedEditor::onLoadIr (const juce::var& payload)
                                   return; // cancelled
 
                               settings::saveIrFolder (file.getParentDirectory());
+                              settings::trustShareOf (file);
                               processor.loadImpulseResponseAsync (file, keep);
                           });
 }

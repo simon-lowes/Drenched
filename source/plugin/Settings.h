@@ -1,5 +1,7 @@
 #pragma once
 
+#include "MovedFiles.h"
+
 #include <juce_data_structures/juce_data_structures.h>
 
 namespace drenched
@@ -48,6 +50,37 @@ namespace settings
     {
         juce::PropertiesFile file (options());
         file.setValue ("irFolder", folder.getFullPathName());
+        file.saveIfNeeded();
+    }
+
+    /** The network shares (\\host\share, lower case) this person has chosen impulse
+        responses from on this computer. Only these are opened when a session or scene names
+        a file on a share; see movedFiles::mayOpen. */
+    inline juce::StringArray loadTrustedShares()
+    {
+        juce::PropertiesFile file (options());
+        auto shares = juce::StringArray::fromLines (file.getValue ("trustedShares"));
+        shares.removeEmptyStrings();
+        return shares;
+    }
+
+    /** Remembers the share a file the person chose is on, if it is on one. */
+    inline void trustShareOf (const juce::File& chosen)
+    {
+        const auto share = movedFiles::shareOf (chosen.getFullPathName());
+
+        if (share.isEmpty())
+            return;
+
+        auto shares = loadTrustedShares();
+
+        if (shares.contains (share))
+            return;
+
+        shares.insert (0, share);
+        shares.removeRange (32, shares.size()); // the most recent few are plenty
+        juce::PropertiesFile file (options());
+        file.setValue ("trustedShares", shares.joinIntoString ("\n"));
         file.saveIfNeeded();
     }
 
