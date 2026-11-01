@@ -98,12 +98,16 @@ TEST_CASE ("A file that moved is found where it most likely is now", "[moved]")
         CHECK (share == "\\\\drenched-test-nas\\irs");
         CHECK (movedFiles::find (asShare, home, { folder }) == juce::File());
        #else
-        // On Linux and macOS //tmp/... is a local path, so the file is really there; it is
-        // still taken for a share (\\tmp\<dir>) and left alone until that share is trusted.
+        // On Linux and macOS //tmp/... (or //var/folders/...) is a local path, so the file is
+        // really there; it is still taken for a share (\\tmp\<dir>) and left alone until that
+        // share is trusted.
         const auto file = touch (dir.getChildFile ("share").getChildFile ("hall.wav"));
         const auto asShare = "/" + file.getFullPathName();
         const auto share = movedFiles::shareOf (asShare);
-        CHECK (share == ("\\\\tmp\\" + dir.getFileName()).toLowerCase());
+        auto parts = juce::StringArray::fromTokens (file.getFullPathName(), "/", "");
+        parts.removeEmptyStrings();
+        REQUIRE (parts.size() > 2);
+        CHECK (share == ("\\\\" + parts[0] + "\\" + parts[1]).toLowerCase());
         CHECK (movedFiles::find (asShare, home, { folder }) == juce::File());
         CHECK (movedFiles::find (asShare, home, { folder }, { share }) == juce::File (asShare));
        #endif
