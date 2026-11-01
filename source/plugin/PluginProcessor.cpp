@@ -30,7 +30,8 @@ namespace
     juce::File findImpulseResponse (const juce::String& savedPath)
     {
         return movedFiles::find (savedPath, juce::File::getSpecialLocation (juce::File::userHomeDirectory),
-                                 { settings::loadIrFolder(), settings::capturesFolder(), settings::importedFolder() });
+                                 { settings::loadIrFolder(), settings::capturesFolder(), settings::importedFolder() },
+                                 settings::loadTrustedShares());
     }
 }
 
@@ -324,6 +325,14 @@ std::shared_ptr<const RecordedResponse> DrenchedProcessor::readSofaFile (const j
 
 std::shared_ptr<const RecordedResponse> DrenchedProcessor::readImpulseResponse (const juce::File& file, juce::String& error)
 {
+    // A session or scene from someone else may name a file on their computer; looking at it
+    // would sign in to that computer as this person. Shares chosen from here are fine.
+    if (! movedFiles::mayOpen (file.getFullPathName(), settings::loadTrustedShares()))
+    {
+        error = file.getFileName() + " is on a network share Drenched hasn't been used with on this computer. Load it once yourself to use it.";
+        return nullptr;
+    }
+
     if (! file.existsAsFile())
     {
         error = "Drenched can't find " + file.getFileName() + ".";
@@ -1318,7 +1327,8 @@ void DrenchedProcessor::recallScene (int number, bool loadNow)
             ui.setProperty (UiIDs::irName, scene.getProperty (SceneIDs::irName, "").toString(), nullptr);
 
             // A file played recently is still prepared, so the scene changes at once.
-            if (loadNow || RecordingCache::shared().find (RecordingCache::keyOf (file)) != nullptr)
+            if (loadNow || (movedFiles::mayOpen (now, settings::loadTrustedShares())
+                            && RecordingCache::shared().find (RecordingCache::keyOf (file)) != nullptr))
             {
                 juce::String error;
                 auto response = readImpulseResponse (file, error);

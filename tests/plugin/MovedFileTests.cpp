@@ -89,6 +89,21 @@ TEST_CASE ("A file that moved is found where it most likely is now", "[moved]")
         CHECK (movedFiles::find ("E:\\IRs\\plate.wav", home, { folder }) == file);
     }
 
+    SECTION ("on a network share only if this person has used it")
+    {
+        // On Linux and macOS //tmp/... is a local path, so the file is really there; it is
+        // still taken for a share (\\tmp\<dir>) and left alone until that share is trusted.
+        const auto file = touch (dir.getChildFile ("share").getChildFile ("hall.wav"));
+        const auto asShare = "/" + file.getFullPathName();
+        const auto share = movedFiles::shareOf (asShare);
+        CHECK (share == ("\\\\tmp\\" + dir.getFileName()).toLowerCase());
+        CHECK (movedFiles::find (asShare, home, { folder }) == juce::File());
+
+       #if ! JUCE_WINDOWS // there, //tmp/... really is another computer
+        CHECK (movedFiles::find (asShare, home, { folder }, { share }) == juce::File (asShare));
+       #endif
+    }
+
     SECTION ("nowhere")
     {
         for (const auto* saved : { "", "/", "\\", "/Users/alice/Music/IRs/gone.wav", "relative.wav", "/a/../plate.wav" })
@@ -138,4 +153,42 @@ TEST_CASE ("A session whose impulse response moved plays it with the session's s
     CHECK (p->getState().getRawParameterValue (ParamIDs::decay[0])->load() == Catch::Approx (7.5f).epsilon (1.0e-4));
 
     folder.deleteRecursively();
+}
+
+TEST_CASE ("Paths that name another computer are told apart from local ones", "[moved]")
+{
+    for (const auto* path : { "\\\\nas\\IRs\\hall.wav", "//nas/IRs/hall.wav", "\\\\?\\UNC\\nas\\IRs\\hall.wav",
+                              "\\\\nas@SSL\\DavWWWRoot\\hall.wav", "\\\\.\\pipe\\x", "/\\nas\\IRs\\hall.wav" })
+    {
+        INFO (path);
+        CHECK (movedFiles::isNetworkPath (path));
+        CHECK_FALSE (movedFiles::mayOpen (path, {}));
+    }
+
+    for (const auto* path : { "C:\\IRs\\hall.wav", "\\\\?\\C:\\IRs\\hall.wav", "/Volumes/NAS/hall.wav", "/home/a/hall.wav", "hall.wav", "" })
+    {
+        INFO (path);
+        CHECK_FALSE (movedFiles::isNetworkPath (path));
+        CHECK (movedFiles::mayOpen (path, {}));
+    }
+
+    CHECK (movedFiles::shareOf ("\\\\NAS\\IRs\\Halls\\hall.wav") == "\\\\nas\\irs");
+    CHECK (movedFiles::shareOf ("\\\\?\\UNC\\NAS\\IRs\\hall.wav") == "\\\\nas\\irs");
+    CHECK (movedFiles::shareOf ("\\\\.\\pipe\\x").isEmpty());
+    CHECK (movedFiles::shareOf ("\\\\nas").isEmpty());
+    CHECK (movedFiles::mayOpen ("//NAS/irs/hall.wav", { "\\\\nas\\irs" }));
+    CHECK_FALSE (movedFiles::mayOpen ("//NAS/other/hall.wav", { "\\\\nas\\irs" }));
+    CHECK_FALSE (movedFiles::mayOpen ("\\\\.\\pipe\\x", { "\\\\.\\pipe" }));
+}
+
+TEST_CASE ("A session can't make the plugin open a file on a share this person hasn't used", "[moved][plugin]")
+{
+    // The plugin reads a session's file while the session loads, with no one asked: on
+    // Windows that would sign in to whatever computer the session names.
+    const auto dir = scratch ("drenched-untrusted-share");
+    const auto file = touch (dir.getChildFile ("hall.wav"));
+    juce::String error;
+    CHECK (DrenchedProcessor::readImpulseResponse (juce::File ("/" + file.getFullPathName()), error) == nullptr);
+    CHECK (error.contains ("network share"));
+    dir.deleteRecursively();
 }
