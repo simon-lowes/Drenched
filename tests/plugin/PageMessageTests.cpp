@@ -548,7 +548,15 @@ TEST_CASE ("The record the interface tests follow is up to date", "[bridge]")
     testing::Plugin plugin;
     auto& state = plugin->getState();
 
-    const auto number = [] (float v) { return juce::var (juce::String::formatted ("%.6g", static_cast<double> (v)).getDoubleValue()); };
+    // Six significant digits, and zero for a value within float rounding of zero: a default of
+    // 0 read back through the 0 to 1 range comes out as about 3e-7 on some platforms (macOS).
+    const auto number = [] (float v, float span)
+    {
+        if (std::abs (v) < span * 1.0e-5f)
+            v = 0.0f;
+
+        return juce::var (juce::String::formatted ("%.6g", static_cast<double> (v)).getDoubleValue());
+    };
     const auto list = [] (const juce::StringArray& items)
     {
         juce::Array<juce::var> array;
@@ -589,10 +597,11 @@ TEST_CASE ("The record the interface tests follow is up to date", "[bridge]")
                                          : dynamic_cast<juce::AudioParameterInt*> (p) != nullptr ? "int" : "float");
         }
 
-        object->setProperty ("min", number (range.start));
-        object->setProperty ("max", number (range.end));
-        object->setProperty ("step", number (range.interval));
-        object->setProperty ("default", number (p->convertFrom0to1 (p->getDefaultValue())));
+        const auto span = range.end - range.start;
+        object->setProperty ("min", number (range.start, span));
+        object->setProperty ("max", number (range.end, span));
+        object->setProperty ("step", number (range.interval, span));
+        object->setProperty ("default", number (p->convertFrom0to1 (p->getDefaultValue()), span));
         lines.add ("    " + juce::JSON::toString (juce::var (object), true) + (id == ParamIDs::all()[ParamIDs::all().size() - 1] ? "" : ","));
     }
 
