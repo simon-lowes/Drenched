@@ -57,3 +57,21 @@ test ('the Worker reads its key, token and database from the environment', async
     assert.equal (activated.status, 200);
     assert.match ((await activated.json()).code, /^DRN1\./);
 });
+
+test ('in D1, one order keeps one licence per copy, and one delivery claims its email', async () =>
+{
+    const store = d1Store (fakeD1());
+    const make = (key, copy) => store.createLicence ({ key, name: 'Ada', email: 'a@b.c', created: '2026-10-20', orderRef: 'txn_1', copy });
+
+    assert.ok (await make ('K1', 0));
+    assert.ok (! await make ('K2', 0));
+    assert.ok (await make ('K3', 1));
+    assert.ok (await store.createLicence ({ key: 'K4', name: 'B', email: 'b@c.d', created: '2026-10-20' }));
+    assert.ok (await store.createLicence ({ key: 'K5', name: 'B', email: 'b@c.d', created: '2026-10-20' }));
+    assert.deepEqual ((await store.listByOrder ('txn_1')).map ((l) => [l.key, l.copy]), [['K1', 0], ['K3', 1]]);
+
+    assert.ok (await store.claimEmail ('K1', '2026-10-20'));
+    assert.ok (! await store.claimEmail ('K1', '2026-10-20'));
+    await store.markEmailed ('K1', null);
+    assert.ok (await store.claimEmail ('K1', '2026-10-21'));
+});

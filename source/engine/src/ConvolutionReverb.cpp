@@ -14,7 +14,7 @@ namespace
 
 // The two inputs' convolvers spread their large transforms over different parts of
 // each block, so that no callback does a transform for both.
-constexpr PartitionedConvolver::WorkWindow leftWork { 0.0f, 0.75f }, rightWork { 0.25f, 1.0f };
+constexpr PartitionedConvolver::WorkWindow leftWork { 0.0f, 0.45f }, rightWork { 0.5f, 0.95f };
 
 std::vector<std::span<const float>> pathsFrom (const ImpulseResponseSet& set, ImpulseResponseSet::Path a, ImpulseResponseSet::Path b)
 {
@@ -310,6 +310,7 @@ void ConvolutionReverb::reset() noexcept
     std::fill (delayR.begin(), delayR.end(), 0.0f);
     delayWrite = 0;
     delayFade = 0;
+    tailFade = 0;
     duckEnvelope = 0.0f;
     firstBlock = true;
 
@@ -797,6 +798,7 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
         delaySamples = targetDelay;
         dryTap = current != nullptr ? current->latency() : 0;
         tailDelaySamples = static_cast<float> (livingTail.inputDelaySeconds() * sampleRate + static_cast<double> (dryTap));
+        tailFade = 0;
         firstBlock = false;
     }
 
@@ -844,6 +846,15 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
             delayFade = delayFadeLength;
         }
 
+        // A new room (or Low CPU) can move the tail's wait by a hundred milliseconds; gliding
+        // that far would play its input backwards, so it crossfades too.
+        if (tailFade == 0 && std::abs (targetTailDelay - tailDelaySamples) > delayJump)
+        {
+            tailFrom = delaySamples + tailDelaySamples;
+            tailDelaySamples = targetTailDelay;
+            tailFade = delayFadeLength;
+        }
+
         const auto read = [this] (const std::vector<float>& line, float delay) noexcept
         {
             const auto whole = static_cast<std::size_t> (delay);
@@ -886,6 +897,16 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
                 tailInL[s] = read (delayL, delayFrom + tailDelaySamples) * from + tailInL[s] * to;
                 tailInR[s] = read (delayR, delayFrom + tailDelaySamples) * from + tailInR[s] * to;
                 --delayFade;
+            }
+
+            if (tailFade > 0)
+            {
+                constexpr auto quarter = static_cast<float> (std::numbers::pi / 2.0);
+                const auto g = static_cast<float> (delayFadeLength - tailFade) / static_cast<float> (delayFadeLength) * quarter;
+                const auto from = std::cos (g), to = std::sin (g);
+                tailInL[s] = read (delayL, tailFrom) * from + tailInL[s] * to;
+                tailInR[s] = read (delayR, tailFrom) * from + tailInR[s] * to;
+                --tailFade;
             }
 
             delayWrite = (delayWrite + 1) & delayMask;
@@ -1115,9 +1136,13 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
     if (std::abs (duckEnvelope) < 1.0e-20f)
         duckEnvelope = 0.0f;
 
+    // After the input stops the output goes on for the pre-delay heard (the old one, while
+    // fading from it), the response, the kernel's latency and the longest speaker delay.
+    const auto heardDelay = std::max ({ delaySamples, targetDelay, delayFade > 0 ? delayFrom : 0.0f });
+    const auto speakerDelay = std::clamp (*std::max_element (c.speakerDelayMs.begin(), c.speakerDelayMs.end()), 0.0f, SpeakerTrim::maxDelayMs);
     tail.store (frozen ? std::numeric_limits<double>::infinity()
-                       : (current != nullptr ? static_cast<double> (current->length()) / sampleRate : 0.0) + maxPredelaySeconds * 0.25
-                             + static_cast<double> (*std::max_element (c.speakerDelayMs.begin(), c.speakerDelayMs.end())) / 1000.0,
+                       : (current != nullptr ? static_cast<double> (current->length() + current->latency()) / sampleRate : 0.0)
+                             + static_cast<double> (heardDelay) / sampleRate + static_cast<double> (speakerDelay) / 1000.0,
                 std::memory_order_relaxed);
 }
 

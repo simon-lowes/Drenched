@@ -527,16 +527,24 @@ void LivingTail::process (const float* inL, const float* inR, float* const* outp
 
         for (std::size_t s = 0; s < S; ++s)
         {
-            auto& s1 = z1[s];
-            auto& s2 = z2[s];
+            // Distinct arrays, so the compiler runs the sixteen lines in SIMD without
+            // checking at run time whether they overlap.
+            float* __restrict s1 = z1[s].data();
+            float* __restrict s2 = z2[s].data();
+            float* __restrict x0 = v.data();
+            const float* __restrict b0 = now.b0[s].data();
+            const float* __restrict b1 = now.b1[s].data();
+            const float* __restrict b2 = now.b2[s].data();
+            const float* __restrict a1 = now.a1[s].data();
+            const float* __restrict a2 = now.a2[s].data();
 
             for (std::size_t i = 0; i < N; ++i)
             {
-                const auto x = v[i];
-                const auto y = now.b0[s][i] * x + s1[i];
-                s1[i] = now.b1[s][i] * x - now.a1[s][i] * y + s2[i];
-                s2[i] = now.b2[s][i] * x - now.a2[s][i] * y;
-                v[i] = y;
+                const auto x = x0[i];
+                const auto y = b0[i] * x + s1[i];
+                s1[i] = b1[i] * x - a1[i] * y + s2[i];
+                s2[i] = b2[i] * x - a2[i] * y;
+                x0[i] = y;
             }
         }
 

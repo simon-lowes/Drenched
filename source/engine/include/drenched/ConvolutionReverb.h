@@ -236,6 +236,8 @@ private:
     float delayFrom = 0.0f, delayJump = 240.0f; // a bigger move crossfades from the old time
     std::size_t delayFade = 0, delayFadeLength = 1920;
     float tailDelaySamples = 0.0f; // the living tail's extra wait, read from the same lines
+    float tailFrom = 0.0f;         // a big move of it crossfades from the old total wait, like the pre-delay
+    std::size_t tailFade = 0;
 
     // Smoothed gains.
     float dryGain = 1.0f, wetGain = 0.0f, outGain = 1.0f, duckGain = 1.0f, gainCoef = 0.0f;

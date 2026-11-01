@@ -18,11 +18,32 @@ BUILD = Path (sys.argv[1]) if len (sys.argv) > 1 else ROOT / "build"
 DEPS = BUILD / "_deps"
 OUT = ROOT / "packaging" / "third-party-licences.txt"
 
+JUCE = DEPS / "juce-src" / "modules"
+
 # What ships in the plug-in, and where its licence text lives. Catch2 (tests only) and
-# JUCE (used under a commercial licence) are left out.
+# JUCE itself (used under a commercial licence) are left out, but the third-party code
+# JUCE compiles into the plug-in is not: format SDKs, codecs, image and text libraries.
+# Some are only in one platform's build (the Audio Unit SDK on macOS); one file covers all.
 SHIPPED = [
     ("CLAP", DEPS / "clap_juce_extensions-src" / "clap-libs" / "clap" / "LICENSE"),
+    ("clap-helpers", DEPS / "clap_juce_extensions-src" / "clap-libs" / "clap-helpers" / "LICENSE"),
     ("clap-juce-extensions", DEPS / "clap_juce_extensions-src" / "LICENSE.md"),
+    ("VST3 SDK (in JUCE)", JUCE / "juce_audio_processors_headless" / "format_types" / "VST3_SDK" / "LICENSE.txt"),
+    ("Audio Unit SDK (in JUCE, macOS)", JUCE / "juce_audio_plugin_client" / "AU" / "AudioUnitSDK" / "LICENSE.txt"),
+    ("FLAC (in JUCE)", JUCE / "juce_audio_formats" / "codecs" / "flac" / "Flac Licence.txt"),
+    ("Ogg (in JUCE)", JUCE / "juce_audio_formats" / "codecs" / "ogg" / "COPYING"),
+    ("Vorbis (in JUCE)", JUCE / "juce_audio_formats" / "codecs" / "vorbis" / "COPYING"),
+    ("Opus (in JUCE)", JUCE / "juce_audio_formats" / "codecs" / "opus" / "opus" / "COPYING"),
+    ("opusfile (in JUCE)", JUCE / "juce_audio_formats" / "codecs" / "opus" / "opusfile" / "COPYING"),
+    ("libopusenc (in JUCE)", JUCE / "juce_audio_formats" / "codecs" / "opus" / "libopusenc" / "COPYING"),
+    ("zlib (in JUCE)", JUCE / "juce_core" / "zip" / "zlib" / "LICENSE"),
+    ("libpng (in JUCE)", JUCE / "juce_graphics" / "image_formats" / "pnglib" / "LICENSE"),
+    ("libjpeg, Independent JPEG Group (in JUCE)", JUCE / "juce_graphics" / "image_formats" / "jpglib" / "README"),
+    ("libwebp (in JUCE)", JUCE / "juce_graphics" / "image_formats" / "libwebp" / "COPYING"),
+    ("HarfBuzz (in JUCE)", JUCE / "juce_graphics" / "fonts" / "harfbuzz" / "COPYING"),
+    ("SheenBidi (in JUCE)", JUCE / "juce_graphics" / "unicode" / "sheenbidi" / "LICENSE"),
+    ("LunaSVG (in JUCE)", JUCE / "juce_graphics" / "drawables" / "lunasvg" / "LICENSE"),
+    ("PlutoVG (in JUCE)", JUCE / "juce_graphics" / "drawables" / "lunasvg" / "plutovg" / "LICENSE"),
     ("pffft", DEPS / "pffft-src" / "LICENSE.txt"),
     ("r8brain-free-src", DEPS / "r8brain-src" / "LICENSE"),
     ("Monocypher", DEPS / "monocypher-src" / "LICENCE.md"),

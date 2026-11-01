@@ -15,8 +15,8 @@ jobs:
     name: Activation server
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Tests
@@ -27,8 +27,8 @@ jobs:
     name: Interface
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Install Playwright and Chromium
@@ -77,9 +77,11 @@ jobs:
             cmake_args: -G Ninja
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Install Linux dependencies
+      # Shared with the licence job below (YAML aliases), so the two stay the same.
+      - &linux-dependencies
+        name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
@@ -100,7 +102,7 @@ jobs:
         run: nuget install Microsoft.Web.WebView2 -Version 1.0.2903.40 -OutputDirectory packages
 
       - name: Cache dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build/_deps
           key: deps-${{ matrix.artifact }}-${{ hashFiles('cmake/Dependencies.cmake') }}
@@ -114,6 +116,14 @@ jobs:
           fi
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_args }} $EXTRA
 
+      # The licence texts the installers ship must match NOTICE.md and the fetched sources.
+      - name: Check third-party licences are up to date
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          python3 tools/third_party_licences.py build
+          git diff --exit-code packaging/third-party-licences.txt || { echo "Run tools/third_party_licences.py and commit the result"; exit 1; }
+
       - name: Build
         shell: bash
         run: cmake --build build --config Release --parallel
@@ -124,7 +134,7 @@ jobs:
 
       - name: Cache pluginval
         if: matrix.pluginval == 'source'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: pluginval-build/pluginval_artefacts
           key: pluginval-v1.0.4-${{ matrix.artifact }}-${{ hashFiles('.github/scripts/patch-pluginval.py') }}
@@ -207,7 +217,7 @@ jobs:
           ls -la dist
 
       - name: Upload plugins
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: dist
@@ -237,6 +247,10 @@ jobs:
             ARCHS=$(lipo -archs "$BIN")
             echo "$b: $ARCHS"
             [[ "$ARCHS" == *x86_64* && "$ARCHS" == *arm64* ]] || { echo "$b is not universal"; exit 1; }
+            # Every slice must run on the oldest macOS the guide promises.
+            MINOS=$(vtool -show-build "$BIN" | awk '$1 == "minos" { print $2 }' | sort -u)
+            echo "$b: minos $MINOS"
+            [ "$MINOS" = "11.0" ] || { echo "$b needs macOS $MINOS, not 11.0"; exit 1; }
             codesign --verify --verbose "$b"
           done
           for f in "User guide.html" "Third-party licences.txt"; do
@@ -271,16 +285,46 @@ jobs:
           archive: false
           if-no-files-found: error
 
-  linux-i686:
-    name: Linux (i686, 32-bit)
+  licence:
+    # The trial and the licence. Every other build here is a beta (DRENCHED_BETA=ON),
+    # which leaves them out, so this one is configured as a release is and builds just
+    # the licence tests (tests/plugin/CMakeLists.txt) and the plugin code they load. The
+    # tests sign codes with the published test key, which a release build only accepts
+    # with DRENCHED_ALLOW_TEST_LICENCE.
+    name: Licence and trial (Linux, release build)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
+      - *linux-dependencies
+
+      # The Linux (x64) build's fetched dependencies, only read: they don't depend on
+      # DRENCHED_BETA, and that job keeps the cache up to date.
+      - name: Restore dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: build/_deps
+          key: deps-Drenched-Linux-x64-${{ hashFiles('cmake/Dependencies.cmake') }}
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DDRENCHED_BETA=OFF -DDRENCHED_ALLOW_TEST_LICENCE=ON
+
+      - name: Build
+        run: cmake --build build --target drenched_licence_tests --parallel
+
+      - name: Licence tests
+        run: ctest --test-dir build --label-regex "^licence$" --no-tests=error --output-on-failure
+
+  linux-i686:
+    name: Linux (i686, 32-bit)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
       # Ubuntu no longer has 32-bit GTK and WebKit, so this builds inside an i386
       # Debian container, which has every library JUCE needs.
       - name: Cache dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             build-i686/_deps
@@ -301,7 +345,7 @@ jobs:
           ls -la dist
 
       - name: Upload plugins
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Drenched-Linux-i686
           path: dist
@@ -313,12 +357,12 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: Drenched-Windows-x64
           path: x64
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: Drenched-Windows-x86
           path: x86
@@ -334,7 +378,7 @@ jobs:
           cp x86/Drenched.exe "dist/Drenched (32-bit).exe"
           find dist -maxdepth 4 | sort
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Drenched-Windows
           path: dist
@@ -346,9 +390,9 @@ jobs:
     needs: windows-bundle
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: Drenched-Windows
           path: dist
@@ -394,6 +438,14 @@ jobs:
             if ($m -ne $e[1]) { Write-Error ("{0} is machine 0x{1:x}, not 0x{2:x}" -f $e[0], $m, $e[1]); exit 1 }
             Write-Host ("{0}: 0x{1:x}" -f $e[0], $m)
           }
+          # No Visual C++ runtime DLLs needed: testers may not have the redistributable.
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $dumpbin = (Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1).FullName
+          foreach ($e in $expected) {
+            $runtime = @(& $dumpbin /nologo /dependents $e[0] | Where-Object { $_ -match '(vcruntime|msvcp|ucrtbase|api-ms-win-crt)' })
+            if ($runtime.Count -ne 0) { Write-Error ("{0} needs {1}" -f $e[0], ($runtime.Trim() -join ', ')); exit 1 }
+          }
+
           foreach ($f in @('User guide.html', 'Third-party licences.txt')) {
             if (-not (Test-Path "${env:ProgramFiles}\Drenched\$f")) { Write-Error "not installed: $f"; exit 1 }
           }

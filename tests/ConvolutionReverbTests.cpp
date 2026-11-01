@@ -929,3 +929,38 @@ TEST_CASE ("A control that isn't a number keeps the last one that was", "[reverb
         REQUIRE (r[n] == wantedR[n]);
     }
 }
+
+TEST_CASE ("The tail reported to hosts covers the pre-delay, the response and the latency", "[reverb][tail]")
+{
+    // A host may stop calling a plugin once the reported tail has passed after its input
+    // went quiet, so the tail must not be shorter than the sound really goes on for.
+    const auto reported = [] (bool lowCpu, float predelayMs, float speakerDelayMs)
+    {
+        ImpulseResponseRequest request;
+        request.sampleRate = 48000.0;
+        request.space = 3;
+        request.decaySeconds = bundledSpaces[3].decaySeconds;
+        request.latencySamples = lowCpu ? static_cast<int> (ConvolutionReverb::lowCpuLatency (48000.0)) : 0;
+
+        ConvolutionReverb reverb;
+        reverb.prepare (48000.0);
+        KernelBuilder builder (reverb);
+        builder.buildNow (request);
+
+        ReverbControls c;
+        c.predelayMs = predelayMs;
+        c.speakerDelayMs[0] = speakerDelayMs;
+        std::vector<float> l (512, 0.0f), r (512, 0.0f);
+
+        for (int b = 0; b < 20; ++b)
+            reverb.process (l.data(), r.data(), l.size(), c);
+
+        return reverb.tailSeconds();
+    };
+
+    const auto plain = reported (false, 0.0f, 0.0f);
+    CHECK (plain > 0.0);
+    CHECK (reported (false, 1000.0f, 40.0f) >= plain + 1.04 - 1.0e-6);
+    CHECK (reported (true, 0.0f, 0.0f) >= plain + ConvolutionReverb::lowCpuLatency (48000.0) / 48000.0 - 1.0e-6);
+    CHECK (reported (false, 0.0f, 1.0e6f) <= plain + SpeakerTrim::maxDelayMs / 1000.0 + 1.0e-6);
+}

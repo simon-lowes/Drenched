@@ -23,11 +23,6 @@ namespace
         return o;
     }
 
-    std::int64_t today()
-    {
-        return juce::Time::currentTimeMillis() / (24LL * 60 * 60 * 1000);
-    }
-
     std::string deviceIdentifier()
     {
         auto id = juce::SystemStats::getUniqueDeviceID();
@@ -59,8 +54,18 @@ namespace
 }
 
 //==============================================================================
-LicenceManager::LicenceManager()
-    : machineCode (licence::machineCode (deviceIdentifier()))
+LicenceManager::Environment LicenceManager::Environment::system()
+{
+    Environment e;
+    e.today = [] { return juce::Time::currentTimeMillis() / (24LL * 60 * 60 * 1000); };
+    e.file = fileOptions().getDefaultFile();
+    e.post = &LicenceManager::post;
+    return e;
+}
+
+LicenceManager::LicenceManager (Environment e)
+    : environment (std::move (e)),
+      machineCode (licence::machineCode (deviceIdentifier()))
 {
     // A beta never touches the licence file, so a tester's trial starts with the first release.
     if (isBeta())
@@ -101,14 +106,14 @@ void LicenceManager::refresh()
     if (isBeta())
         return;
 
-    juce::PropertiesFile file (fileOptions());
+    juce::PropertiesFile file (environment.file, fileOptions());
 
     activation = readCode (file.getValue ("code"));
     trialFirstDay = file.getValue ("trialStart").getLargeIntValue();
 
     if (trialFirstDay <= 0)
     {
-        trialFirstDay = today();
+        trialFirstDay = environment.today();
         file.setValue ("trialStart", juce::String (trialFirstDay));
         file.saveIfNeeded();
     }
@@ -128,7 +133,7 @@ void LicenceManager::open()
 
 void LicenceManager::update()
 {
-    audioAllowed.store (activation.has_value() || licence::trialDaysLeft (trialFirstDay, today()) > 0);
+    audioAllowed.store (activation.has_value() || licence::trialDaysLeft (trialFirstDay, environment.today()) > 0);
     sendChangeMessage();
 }
 
@@ -140,7 +145,7 @@ void LicenceManager::timerCallback()
 
 void LicenceManager::save (const juce::String& code)
 {
-    juce::PropertiesFile file (fileOptions());
+    juce::PropertiesFile file (environment.file, fileOptions());
 
     if (code.isEmpty())
         file.removeValue ("code");
@@ -200,7 +205,7 @@ void LicenceManager::activate (const juce::String& typedLicence)
     object->setProperty ("machine", juce::String (machineCode));
     const juce::var body (object);
 
-    network.addJob ([weak = juce::WeakReference<LicenceManager> (this), body]
+    network.addJob ([weak = juce::WeakReference<LicenceManager> (this), post = environment.post, body]
     {
         const auto reply = post ("/v1/activate", body);
 
@@ -263,7 +268,7 @@ void LicenceManager::deactivate()
     object->setProperty ("machine", juce::String (machineCode));
     const juce::var body (object);
 
-    network.addJob ([weak = juce::WeakReference<LicenceManager> (this), body]
+    network.addJob ([weak = juce::WeakReference<LicenceManager> (this), post = environment.post, body]
     {
         const auto reply = post ("/v1/deactivate", body);
 
@@ -290,7 +295,7 @@ void LicenceManager::deactivate()
 
 juce::var LicenceManager::status() const
 {
-    const auto daysLeft = licence::trialDaysLeft (trialFirstDay, today());
+    const auto daysLeft = licence::trialDaysLeft (trialFirstDay, environment.today());
     auto* object = new juce::DynamicObject();
 
     object->setProperty ("state", isBeta() ? "beta" : activation.has_value() ? "licensed" : daysLeft > 0 ? "trial" : "ended");

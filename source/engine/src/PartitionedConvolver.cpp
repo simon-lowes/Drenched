@@ -123,13 +123,19 @@ struct PartitionedConvolver::Stage
         while ((std::size_t { 1 } << bits) < N)
             ++bits;
 
+        // An output whose filters are all zero here (an LFE speaker's) only ever adds
+        // zeros: its multiplies and inverse transforms are left out.
+        for (std::size_t k = 0; k < numOut; ++k)
+            if (std::any_of (filter (k, 0), filter (k, 0) + P * N, [] (float x) { return x != 0.0f; }))
+                live.push_back (k);
+
         // Resting is only the same as working it out while every filter is a number:
         // a response that isn't (0 times it isn't either) never rests.
         rests = std::all_of (filters.data(), filters.data() + filters.size(), [] (float x) { return std::isfinite (x); });
 
         transformCost = std::max<std::size_t> (1, bits * 3 / 5);
-        numTasks = 1 + numOut * (P + 1);
-        totalCost = transformCost + numOut * (P + transformCost);
+        numTasks = 1 + live.size() * (P + 1);
+        totalCost = transformCost + live.size() * (P + transformCost);
     }
 
     float* filter (std::size_t output, std::size_t partition) noexcept
@@ -168,7 +174,7 @@ struct PartitionedConvolver::Stage
             const auto slot = (newest + P - (p - 1)) % P;
             const auto* x = spectrum (slot);
 
-            for (std::size_t k = 0; k < numOut; ++k)
+            for (const auto k : live)
                 pffft_zconvolve_accumulate (setup.get(), x, filter (k, p), acc.data() + k * N, scale);
 
             ++macDone;
@@ -186,7 +192,7 @@ struct PartitionedConvolver::Stage
         auto* x = spectrum (newest);
         pffft_transform (setup.get(), history.data(), x, work.data(), PFFFT_FORWARD);
 
-        for (std::size_t k = 0; k < numOut; ++k)
+        for (const auto k : live)
         {
             auto* a = acc.data() + k * N;
             pffft_zconvolve_accumulate (setup.get(), x, filter (k, 0), a, scale);
@@ -226,10 +232,14 @@ struct PartitionedConvolver::Stage
             }
             else
             {
-                const auto k = (t - 1) / (P + 1), p = (t - 1) % (P + 1);
+                const auto k = live[(t - 1) / (P + 1)], p = (t - 1) % (P + 1);
                 auto* a = acc.data() + k * N;
 
-                if (p < P)
+                if (p == 0)
+                {
+                    pffft_zconvolve_scale (setup.get(), spectrum (newest), filter (k, 0), a, scale);
+                }
+                else if (p < P)
                 {
                     pffft_zconvolve_accumulate (setup.get(), spectrum ((newest + P - p) % P), filter (k, p), a, scale);
                 }
@@ -237,7 +247,6 @@ struct PartitionedConvolver::Stage
                 {
                     pffft_transform (setup.get(), a, timeDomain.data(), work.data(), PFFFT_BACKWARD);
                     std::copy_n (timeDomain.data() + B, B, nextBlock.data() + k * B);
-                    std::fill_n (a, N, 0.0f);
                 }
             }
 
@@ -254,8 +263,11 @@ struct PartitionedConvolver::Stage
         std::swap (outBlock, nextBlock);
 
         newest = (newest + 1) % P;
-        std::copy_n (history.data(), N, pendingInput.data());
-        std::copy_n (history.data() + B, B, history.data());
+
+        // The window just completed becomes the pending input as it is; the new
+        // window's first half is its second half, copied in as the next block arrives
+        // (see process()), so no boundary copies a whole window.
+        std::swap (history, pendingInput);
         fill = 0;
         tasksDone = 0;
         costDone = 0;
@@ -270,9 +282,13 @@ struct PartitionedConvolver::Stage
     {
         newest = (newest + (fill + numSamples) / B) % P;
         fill = (fill + numSamples) % B;
-        macDone = 0;
-        tasksDone = 0;
-        costDone = 0;
+
+        // This block's work would multiply, transform and accumulate zeros into buffers
+        // that are already zero: count it as done, so the first callback with sound
+        // doesn't do all of it at once.
+        macDone = P - 1;
+        tasksDone = numTasks;
+        costDone = totalCost;
     }
 
     /** Adds this stage's contribution for numSamples into the outputs. */
@@ -286,10 +302,13 @@ struct PartitionedConvolver::Stage
 
             std::copy_n (input + done, count, history.data() + B + fill);
 
+            if (slack)
+                std::copy_n (pendingInput.data() + B + fill, count, history.data() + fill);
+
             // The block computed at the last boundary covers exactly the
             // samples arriving now, because this stage starts at tap B (or
             // 2B with slack, where it was worked out during the block before).
-            for (std::size_t k = 0; k < numOut; ++k)
+            for (const auto k : live)
             {
                 const auto* src = outBlock.data() + k * B + fill;
                 auto* dst = outputs[k] + done;
@@ -325,6 +344,7 @@ struct PartitionedConvolver::Stage
     const std::size_t workFrom, workTo;
     std::unique_ptr<PFFFT_Setup, SetupDeleter> setup;
     AlignedFloats history, work, timeDomain, filters, fdl, acc, outBlock, nextBlock, pendingInput;
+    std::vector<std::size_t> live; // outputs with a non-zero filter
     std::size_t fill = 0, macDone = 0, newest = 0;
     std::size_t transformCost = 1, numTasks = 0, totalCost = 0, tasksDone = 0, costDone = 0;
 
@@ -334,6 +354,56 @@ struct PartitionedConvolver::Stage
     const std::size_t memory;
     bool rests = true;
 };
+
+void PartitionedConvolver::Head::process (const float* input, float* const* out, std::size_t numSamples) noexcept
+{
+    const auto past = taps - 1;
+
+    for (std::size_t done = 0; done < numSamples;)
+    {
+        const auto n = std::min (chunk, numSamples - done);
+        std::copy_n (input + done, n, line.data() + past);
+
+        for (std::size_t k = 0; k < outputs; ++k)
+        {
+            const auto* h = ir.data() + k * taps;
+            auto* y = out[k] + done;
+            std::size_t i = 0;
+
+            for (; i + 8 <= n; i += 8)
+            {
+                float acc[8] = {};
+                const auto* x = line.data() + past + i;
+
+                for (std::size_t j = 0; j < taps; ++j)
+                {
+                    const auto c = h[j];
+                    const auto* xj = x - j;
+
+                    for (std::size_t m = 0; m < 8; ++m)
+                        acc[m] += c * xj[m];
+                }
+
+                std::copy_n (acc, 8, y + i);
+            }
+
+            for (; i < n; ++i)
+            {
+                float sum = 0.0f;
+                const auto* x = line.data() + past + i;
+
+                for (std::size_t j = 0; j < taps; ++j)
+                    sum += h[j] * x[-static_cast<std::ptrdiff_t> (j)];
+
+                y[i] = sum;
+            }
+        }
+
+        // Keep the last taps - 1 samples as the history for the next chunk.
+        std::copy (line.data() + n, line.data() + n + past, line.data());
+        done += n;
+    }
+}
 
 PartitionedConvolver::PartitionedConvolver (const std::vector<std::span<const float>>& impulseResponses,
                                             std::size_t latency, WorkWindow window)
@@ -356,12 +426,17 @@ PartitionedConvolver::PartitionedConvolver (const std::vector<std::span<const fl
     // response latency taps earlier.
     if (latency == 0)
     {
-        heads.resize (impulseResponses.size());
+        // Shorter responses are zero padded to the head's length: zero taps add exact zeros.
+        head.outputs = impulseResponses.size();
+        head.taps = std::max<std::size_t> (1, std::min (headLength, irLength));
+        head.ir.assign (head.outputs * head.taps, 0.0f);
+        head.line.assign (head.taps - 1 + Head::chunk, 0.0f);
+        hasHead = true;
 
-        for (std::size_t k = 0; k < heads.size(); ++k)
+        for (std::size_t k = 0; k < head.outputs; ++k)
         {
             const auto ir = impulseResponses[k];
-            heads[k].setImpulseResponse (ir.first (std::min (headLength, ir.size())));
+            std::copy_n (ir.data(), std::min (head.taps, ir.size()), head.ir.data() + k * head.taps);
         }
     }
 
@@ -369,7 +444,7 @@ PartitionedConvolver::PartitionedConvolver (const std::vector<std::span<const fl
     const auto startOf = [] (std::size_t block) { return block >= slackFrom ? 2 * block : block; };
     auto begin = latency == 0 ? headLength : latency; // where the next stage starts
 
-    for (std::size_t block = begin; begin < total; block *= growthFactor)
+    for (std::size_t block = begin; begin < total; block = std::min (block * growthFactor, largestBlock))
     {
         // A larger stage only pays for itself when the rest fills at least one
         // of its blocks; otherwise this stage takes the rest. Rounding a short
@@ -378,8 +453,9 @@ PartitionedConvolver::PartitionedConvolver (const std::vector<std::span<const fl
         //
         // No stage grows past largestBlock: a transform can't be spread, so one of a
         // larger block (8 ms for 262144 samples) would take longer than a small
-        // block's whole callback. The largest stage takes all the rest instead.
-        const auto next = block * growthFactor;
+        // block's whole callback. The largest stage takes all the rest instead. With a
+        // latency the blocks start from it (1024, 8192, ...), so growth is capped too.
+        const auto next = std::min (block * growthFactor, largestBlock);
         const auto nextBegin = startOf (next);
         const auto last = block >= largestBlock || total < nextBegin + next;
         const auto end = last ? total : nextBegin;
@@ -396,7 +472,7 @@ PartitionedConvolver::PartitionedConvolver (const std::vector<std::span<const fl
         begin = nextBegin;
     }
 
-    restingAfter = heads.empty() ? 0 : headLength;
+    restingAfter = hasHead ? headLength : 0;
 
     for (const auto& ir : impulseResponses)
         headRests = headRests && std::all_of (ir.begin(), ir.begin() + static_cast<std::ptrdiff_t> (std::min (headLength, ir.size())),
@@ -412,8 +488,7 @@ PartitionedConvolver::~PartitionedConvolver() = default;
 
 void PartitionedConvolver::reset() noexcept
 {
-    for (auto& head : heads)
-        head.reset();
+    head.reset();
 
     for (auto& stage : stages)
         stage->reset();
@@ -421,9 +496,19 @@ void PartitionedConvolver::reset() noexcept
     quiet = restingAfter;
 }
 
+std::vector<std::size_t> PartitionedConvolver::stageBlocks() const
+{
+    std::vector<std::size_t> blocks;
+
+    for (const auto& stage : stages)
+        blocks.push_back (stage->B);
+
+    return blocks;
+}
+
 bool PartitionedConvolver::atRest() const noexcept
 {
-    return quiet >= restingAfter && (headRests || heads.empty())
+    return quiet >= restingAfter && (headRests || ! hasHead)
         && std::all_of (stages.begin(), stages.end(), [] (const auto& stage) { return stage->rests; });
 }
 
@@ -438,12 +523,19 @@ void PartitionedConvolver::process (const float* input, float* const* outputs, s
     const auto allSilent = silentTail == 0;
 
     // The head too rests once its taps hold only silence.
-    if (heads.empty() || (allSilent && headRests && quiet >= headLength))
+    if (! hasHead || (allSilent && headRests && quiet >= headLength))
+    {
         for (std::size_t k = 0; k < numOutputs(); ++k)
             std::fill_n (outputs[k], numSamples, 0.0f);
+
+        // The history a resting head would have kept: silence.
+        if (hasHead)
+            std::fill_n (head.line.data(), head.taps - 1, 0.0f);
+    }
     else
-        for (std::size_t k = 0; k < heads.size(); ++k)
-            heads[k].process ({ input, numSamples }, { outputs[k], numSamples });
+    {
+        head.process (input, outputs, numSamples);
+    }
 
     for (auto& stage : stages)
     {
