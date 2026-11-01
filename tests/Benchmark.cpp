@@ -105,7 +105,7 @@ void benchBuild (const char* label, ImpulseResponseRequest request)
 }
 
 void benchPlay (const char* label, ImpulseResponseRequest request, size_t block, double seconds,
-                bool living = false, bool changing = false, bool silent = false)
+                bool living = false, bool changing = false, bool silent = false, bool resuming = false)
 {
     const auto& outputs = request.outputs;
     ConvolutionReverb reverb;
@@ -139,8 +139,9 @@ void benchPlay (const char* label, ImpulseResponseRequest request, size_t block,
         reverb.process (pointers.data(), channels, block, controls);
     }
 
-    // Silent: a track with nothing playing, once the room has died away.
-    if (silent)
+    // Silent: a track with nothing playing, once the room has died away. Resuming: the
+    // same, then sound again (the transport starting), so the first block is timed waking.
+    if (silent || resuming)
     {
         for (size_t b = 0; b < (size_t) (12.0 * rate) / block; ++b)
         {
@@ -228,6 +229,8 @@ int main (int argc, char** argv)
     benchPlay ("6 s recording, stereo, silent", recorded, 256, seconds, false, false, true);
     benchPlay ("6 s recording, living, silent", recorded, 256, seconds, true, false, true);
     benchPlay ("6 s recording, 7.1.4, silent", recordedSurround, 256, seconds, false, false, true);
+    benchPlay ("6 s recording, stereo, resuming", recorded, 64, seconds, false, false, false, true);
+    benchPlay ("6 s recording, 7.1.4, resuming", recordedSurround, 256, seconds, false, false, false, true);
     for (size_t block : { 64, 256 })
         benchPlay ("6 s recording, stereo, changing", recorded, block, seconds, true, true);
     benchPlay ("6 s recording, 7.1.4, changing", recordedSurround, 256, seconds, true, true);
@@ -248,6 +251,7 @@ int main (int argc, char** argv)
         for (size_t block : { 64, 256, 1024 })
             benchPlay ("6 s recording, stereo", r, block, seconds);
         benchPlay ("6 s recording, stereo, changing", r, 256, seconds, true, true);
+        benchPlay ("6 s recording, stereo, resuming", r, 64, seconds, false, false, false, true);
     }
 
     return 0;
