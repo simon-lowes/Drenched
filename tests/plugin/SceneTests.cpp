@@ -7,6 +7,7 @@
 #include <array>
 #include <functional>
 #include <cmath>
+#include <map>
 #include <thread>
 
 using namespace drenched;
@@ -61,6 +62,141 @@ namespace
 
         writer->writeFromAudioSampleBuffer (ir, 0, ir.getNumSamples());
         return file;
+    }
+
+    using Values = std::map<juce::String, float>;
+
+    /** Every parameter's value, by id. */
+    Values valuesOf (DrenchedProcessor& p)
+    {
+        Values values;
+
+        for (const auto& id : ParamIDs::all())
+            values[id] = p.getState().getRawParameterValue (id)->load();
+
+        return values;
+    }
+
+    /** Whether two values of a parameter are the same, as it stores them. */
+    bool same (float a, float b)
+    {
+        return std::abs (a - b) <= 1.0e-4f * std::max (1.0f, std::abs (b));
+    }
+
+    /** Sets every parameter to a value of its own (which picks one of two sets that differ
+        in every parameter, the first off every default) and returns what each then holds. */
+    Values setEveryParameter (DrenchedProcessor& p, int which)
+    {
+        const auto& ids = ParamIDs::all();
+
+        for (int i = 0; i < ids.size(); ++i)
+        {
+            auto* param = dynamic_cast<juce::RangedAudioParameter*> (p.getState().getParameter (ids[i]));
+            REQUIRE (param != nullptr);
+            const auto onByDefault = std::round (param->getDefaultValue());
+            auto distinct = static_cast<float> (i + 1) / static_cast<float> (ids.size() + 2);
+
+            // A value that snaps to the default would not show whether it came back.
+            if (same (param->convertFrom0to1 (distinct), param->convertFrom0to1 (param->getDefaultValue())))
+                distinct = std::fmod (distinct + 0.25f, 1.0f);
+
+            if (param->getNumSteps() == 2)
+                param->setValueNotifyingHost (which == 0 ? 1.0f - onByDefault : onByDefault);
+            else
+                param->setValueNotifyingHost (which == 0 ? distinct : std::fmod (distinct + 0.5f, 1.0f));
+        }
+
+        return valuesOf (p);
+    }
+
+    /** What a scene leaves alone: the scene itself, Freeze (played, not stored) and Low CPU
+        (a setting for the computer, not the room). Everything else it brings back. */
+    bool leftAlone (const juce::String& id)
+    {
+        return id == ParamIDs::scene || id == ParamIDs::freeze || id == ParamIDs::lowCpu;
+    }
+
+    /** After scene 1, stored with first, is recalled over second: everything a scene stores
+        is first again, the scene parameter names scene 1, and the rest is left alone. */
+    void checkRecalled (DrenchedProcessor& p, const Values& first, const Values& second)
+    {
+        const auto now = valuesOf (p);
+
+        for (const auto& id : ParamIDs::all())
+        {
+            INFO (id << ": " << now.at (id) << " (stored " << first.at (id) << ", then " << second.at (id) << ")");
+
+            if (id == ParamIDs::scene)
+                CHECK (same (now.at (id), 1.0f));
+            else if (leftAlone (id))
+                CHECK (same (now.at (id), second.at (id)));
+            else
+                CHECK (same (now.at (id), first.at (id)));
+        }
+    }
+}
+
+TEST_CASE ("A scene stores every parameter but those it leaves alone", "[scenes]")
+{
+    testing::Plugin plugin;
+    auto& p = *plugin;
+
+    Values first, second;
+
+    testing::onMessageThread ([&]
+    {
+        first = setEveryParameter (p, 0);
+        REQUIRE (p.storeScene (1, "Everything") == 1);
+        second = setEveryParameter (p, 1);
+    });
+
+    // So a parameter brought back, or left alone, shows.
+    for (const auto& id : ParamIDs::all())
+    {
+        INFO (id << ": " << first.at (id) << " then " << second.at (id));
+        auto* param = dynamic_cast<juce::RangedAudioParameter*> (p.getState().getParameter (id));
+        CHECK_FALSE (same (first.at (id), second.at (id)));
+        CHECK_FALSE (same (first.at (id), param->convertFrom0to1 (param->getDefaultValue())));
+    }
+
+    // The scene holds every parameter it brings back, by id, and nothing it leaves alone.
+    const auto scene = testing::onMessageThread ([&]
+    {
+        return p.getState().state.getChildWithName (SceneIDs::tree).getChildWithProperty (SceneIDs::number, 1);
+    });
+    REQUIRE (scene.isValid());
+
+    for (const auto& id : ParamIDs::all())
+    {
+        INFO (id);
+        CHECK (SceneIDs::isStored (id) == ! leftAlone (id));
+        CHECK (scene.hasProperty (id) == ! leftAlone (id));
+    }
+
+    SECTION ("recalled at once")
+    {
+        testing::onMessageThread ([&] { p.recallScene (1); });
+        checkRecalled (p, first, second);
+    }
+
+    SECTION ("recalled after the session was saved and loaded into another instance")
+    {
+        const auto session = testing::onMessageThread ([&] { return saved (p); });
+
+        testing::Plugin other;
+        testing::onMessageThread ([&] { other->setStateInformation (session.getData(), static_cast<int> (session.getSize())); });
+
+        // The session plays as saved, not as the scene it holds.
+        const auto loaded = valuesOf (*other);
+
+        for (const auto& id : ParamIDs::all())
+        {
+            INFO (id << ": " << loaded.at (id) << ", saved " << second.at (id));
+            CHECK (same (loaded.at (id), second.at (id)));
+        }
+
+        testing::onMessageThread ([&] { other->recallScene (1); });
+        checkRecalled (*other, first, second);
     }
 }
 
