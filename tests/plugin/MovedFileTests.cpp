@@ -91,6 +91,13 @@ TEST_CASE ("A file that moved is found where it most likely is now", "[moved]")
 
     SECTION ("on a network share only if this person has used it")
     {
+       #if JUCE_WINDOWS
+        // A computer that doesn't exist: nothing here may try to reach it.
+        const juce::String asShare ("\\\\drenched-test-nas\\IRs\\hall.wav");
+        const auto share = movedFiles::shareOf (asShare);
+        CHECK (share == "\\\\drenched-test-nas\\irs");
+        CHECK (movedFiles::find (asShare, home, { folder }) == juce::File());
+       #else
         // On Linux and macOS //tmp/... is a local path, so the file is really there; it is
         // still taken for a share (\\tmp\<dir>) and left alone until that share is trusted.
         const auto file = touch (dir.getChildFile ("share").getChildFile ("hall.wav"));
@@ -98,8 +105,6 @@ TEST_CASE ("A file that moved is found where it most likely is now", "[moved]")
         const auto share = movedFiles::shareOf (asShare);
         CHECK (share == ("\\\\tmp\\" + dir.getFileName()).toLowerCase());
         CHECK (movedFiles::find (asShare, home, { folder }) == juce::File());
-
-       #if ! JUCE_WINDOWS // there, //tmp/... really is another computer
         CHECK (movedFiles::find (asShare, home, { folder }, { share }) == juce::File (asShare));
        #endif
     }
@@ -185,10 +190,17 @@ TEST_CASE ("A session can't make the plugin open a file on a share this person h
 {
     // The plugin reads a session's file while the session loads, with no one asked: on
     // Windows that would sign in to whatever computer the session names.
+    juce::String error;
+   #if JUCE_WINDOWS
+    // A computer that doesn't exist: refused before any attempt to reach it.
+    CHECK (DrenchedProcessor::readImpulseResponse (juce::File ("\\\\drenched-test-nas\\IRs\\hall.wav"), error) == nullptr);
+    CHECK (error.contains ("network share"));
+   #else
+    // //tmp/... is local here, so the file is really there and only the check refuses it.
     const auto dir = scratch ("drenched-untrusted-share");
     const auto file = touch (dir.getChildFile ("hall.wav"));
-    juce::String error;
     CHECK (DrenchedProcessor::readImpulseResponse (juce::File ("/" + file.getFullPathName()), error) == nullptr);
     CHECK (error.contains ("network share"));
     dir.deleteRecursively();
+   #endif
 }
