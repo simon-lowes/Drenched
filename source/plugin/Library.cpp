@@ -149,7 +149,17 @@ std::shared_ptr<const RecordedResponse> load (const LibrarySpace& space, juce::S
         return nullptr;
     }
 
-    return prepareFromReader (*reader, name, name, error);
+    // A long recording decoded in a 32-bit host can run out of memory; nothing above
+    // expects an exception, and on a loader thread it would end the host.
+    try
+    {
+        return prepareFromReader (*reader, name, name, error);
+    }
+    catch (const std::exception&)
+    {
+        error = "There isn't enough memory to load " + name + ".";
+        return nullptr;
+    }
 }
 
 } // namespace library

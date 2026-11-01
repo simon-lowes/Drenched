@@ -437,14 +437,55 @@ TEST_CASE ("The host can prepare the plugin from a thread of its own while thing
         const auto end = std::chrono::steady_clock::now() + std::chrono::seconds (4);
         for (int step = 0; std::chrono::steady_clock::now() < end; ++step)
         {
-            switch (step % 4)
+            switch (step % 5)
             {
                 case 0: if (! spaces.empty()) p.getUiState().setProperty (UiIDs::spaceId, spaces[rng() % spaces.size()], nullptr); break;
                 case 1: set (p, ParamIDs::brightness, unit (rng)); break;
                 case 2: p.storeScene (1 + static_cast<int> (rng() % 4), {}); break;
+                case 3: p.getUiState().setProperty (UiIDs::speakers, juce::String (step % 7) + " 0;0 0", nullptr); break;
                 default: { juce::MemoryBlock saved; p.getStateInformation (saved); } break;
             }
-            ((juce::Timer&) p).timerCallback();
+
+            // Between redraws too: the interface writes its state many times a second.
+            if (step % 3 == 0)
+                ((juce::Timer&) p).timerCallback();
+        }
+    });
+    running.store (false);
+    host.join();
+    INFO (prepares.load());
+    CHECK (prepares.load() > 0);
+}
+
+TEST_CASE ("The host can prepare the plugin on its own thread while the interface writes its state", "[plugin][stress]")
+{
+    // The interface writes its state many times a second (the space, speaker trims); a host
+    // that prepares on its own thread meanwhile must not read that state, or the heap can be
+    // corrupted. Under ThreadSanitizer this reports the race at once if it comes back.
+    testing::Plugin plugin;
+    auto& p = *plugin;
+    testing::onMessageThread ([&] { p.prepareToPlay (48000.0, 128); });
+    std::atomic<bool> running { true };
+    std::atomic<int> prepares { 0 };
+    std::thread host ([&]
+    {
+        while (running.load())
+        {
+            p.prepareToPlay (48000.0, 256);
+            prepares.fetch_add (1);
+        }
+    });
+    testing::onMessageThread ([&]
+    {
+        std::vector<juce::String> spaces;
+        for (const auto& space : library::spaces())
+            spaces.push_back (space.id);
+        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds (3);
+        for (size_t step = 0; std::chrono::steady_clock::now() < end; ++step)
+        {
+            if (! spaces.empty())
+                p.getUiState().setProperty (UiIDs::spaceId, spaces[step % spaces.size()], nullptr);
+            p.getUiState().setProperty (UiIDs::speakers, juce::String (static_cast<int> (step % 7)) + " 0;0 0", nullptr);
         }
     });
     running.store (false);
