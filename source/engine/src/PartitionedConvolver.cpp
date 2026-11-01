@@ -369,7 +369,7 @@ PartitionedConvolver::PartitionedConvolver (const std::vector<std::span<const fl
     const auto startOf = [] (std::size_t block) { return block >= slackFrom ? 2 * block : block; };
     auto begin = latency == 0 ? headLength : latency; // where the next stage starts
 
-    for (std::size_t block = begin; begin < total; block *= growthFactor)
+    for (std::size_t block = begin; begin < total; block = std::min (block * growthFactor, largestBlock))
     {
         // A larger stage only pays for itself when the rest fills at least one
         // of its blocks; otherwise this stage takes the rest. Rounding a short
@@ -378,8 +378,9 @@ PartitionedConvolver::PartitionedConvolver (const std::vector<std::span<const fl
         //
         // No stage grows past largestBlock: a transform can't be spread, so one of a
         // larger block (8 ms for 262144 samples) would take longer than a small
-        // block's whole callback. The largest stage takes all the rest instead.
-        const auto next = block * growthFactor;
+        // block's whole callback. The largest stage takes all the rest instead. With a
+        // latency the blocks start from it (1024, 8192, ...), so growth is capped too.
+        const auto next = std::min (block * growthFactor, largestBlock);
         const auto nextBegin = startOf (next);
         const auto last = block >= largestBlock || total < nextBegin + next;
         const auto end = last ? total : nextBegin;
@@ -419,6 +420,16 @@ void PartitionedConvolver::reset() noexcept
         stage->reset();
 
     quiet = restingAfter;
+}
+
+std::vector<std::size_t> PartitionedConvolver::stageBlocks() const
+{
+    std::vector<std::size_t> blocks;
+
+    for (const auto& stage : stages)
+        blocks.push_back (stage->B);
+
+    return blocks;
 }
 
 bool PartitionedConvolver::atRest() const noexcept

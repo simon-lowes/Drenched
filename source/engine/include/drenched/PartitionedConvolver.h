@@ -90,6 +90,9 @@ public:
     std::size_t length() const noexcept { return irLength; }
     std::size_t latency() const noexcept { return delay; }
 
+    /** The block size of each stage, smallest first. Allocates; not for the audio thread. */
+    std::vector<std::size_t> stageBlocks() const;
+
 private:
     struct Stage;
 
