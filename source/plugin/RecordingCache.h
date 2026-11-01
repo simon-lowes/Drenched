@@ -4,10 +4,6 @@
 
 #include <juce_core/juce_core.h>
 
-#if ! JUCE_WINDOWS
- #include <sys/stat.h>
-#endif
-
 #include <list>
 #include <memory>
 #include <mutex>
@@ -49,37 +45,12 @@ namespace drenched
         /** Something that changes whenever the file's content can have. JUCE's modification
             time is whole seconds on macOS and Linux, so a file exported again at the same length
             within the second (a DAW bouncing an IR over the last one) kept its key, and the old
-            recording played. So there it is the file's identity (a replacement saved beside it
-            and renamed over it is another file) with its modification and status-change times
-            to the nanosecond; the status-change time can't be set back, so even a rewrite in
-            place whose time was restored is seen. Windows times are already finer. */
-        static juce::String changeStampOf (const juce::File& file)
-        {
-           #if JUCE_WINDOWS
-            return juce::String (file.getLastModificationTime().toMilliseconds());
-           #else
-            struct stat info {};
-
-            if (stat (file.getFullPathName().toRawUTF8(), &info) != 0)
-                return "missing";
-
-           #if JUCE_MAC || JUCE_IOS
-            const auto& modified = info.st_mtimespec;
-            const auto& changed = info.st_ctimespec;
-           #else
-            const auto& modified = info.st_mtim;
-            const auto& changed = info.st_ctim;
-           #endif
-
-            const auto stamp = [] (const timespec& t)
-            {
-                return juce::String (static_cast<juce::int64> (t.tv_sec)) + "." + juce::String (static_cast<juce::int64> (t.tv_nsec));
-            };
-
-            return juce::String (static_cast<juce::int64> (info.st_dev)) + ":" + juce::String (static_cast<juce::int64> (info.st_ino))
-                 + "|" + stamp (modified) + "|" + stamp (changed);
-           #endif
-        }
+            recording played; and any tool can put a file's time back. So it is the file's
+            identity (a replacement saved beside it and renamed over it is another file) with its
+            modification and status-change times at the system's full resolution. The
+            status-change time isn't set back by tools, so even a rewrite in place whose
+            modification time was restored is seen. RecordingCache.cpp. */
+        static juce::String changeStampOf (const juce::File& file);
 
         std::shared_ptr<const RecordedResponse> find (const juce::String& key)
         {
