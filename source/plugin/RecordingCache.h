@@ -82,6 +82,14 @@ namespace drenched
             return entries.size();
         }
 
+        /** Forgets every recording, so the next choice of each is read again. For tests of
+            the background reads, which the shared cache otherwise skips. */
+        void clear()
+        {
+            const std::lock_guard lock (mutex);
+            entries.clear();
+        }
+
         static std::size_t bytesOf (const RecordedResponse& response) noexcept
         {
             auto samples = std::size_t {};

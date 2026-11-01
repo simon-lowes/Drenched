@@ -1,34 +1,14 @@
-// Runs the D1 store's SQL on SQLite through a small stand-in for D1's API.
+// Runs the D1 store's SQL on SQLite through a small stand-in for D1's API
+// (test/fake-d1.js).
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 
 import worker from '../src/index.js';
 import { d1Store } from '../src/stores.js';
+import { fakeD1 } from './fake-d1.js';
 import { testKeys } from './keys.js';
 import { lifeCycle } from './scenario.js';
-
-function fakeD1()
-{
-    const db = new DatabaseSync (':memory:');
-    db.exec (readFileSync (new URL ('../schema.sql', import.meta.url), 'utf8'));
-
-    return {
-        prepare (sql)
-        {
-            let args = [];
-            const statement = {
-                bind (...values) { args = values; return statement; },
-                async first() { return db.prepare (sql).get (...args) ?? null; },
-                async all() { return { results: db.prepare (sql).all (...args) }; },
-                async run() { return { meta: { changes: Number (db.prepare (sql).run (...args).changes) } }; },
-            };
-            return statement;
-        },
-    };
-}
 
 test ('the licence life cycle, kept in D1', () => lifeCycle (d1Store (fakeD1())));
 

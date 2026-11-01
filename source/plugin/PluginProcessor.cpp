@@ -438,7 +438,10 @@ void DrenchedProcessor::loadLibrarySpace (const juce::String& id, bool now)
             {
                 const std::lock_guard lock (recordedLock);
 
-                if (libraryWanted != id)
+                // Another space was chosen meanwhile, or this one was read at once while
+                // this read was going (prepareToPlay, as a new plugin is): it plays already,
+                // so a second copy would only build the same room again.
+                if (libraryWanted != id || (libraryLoadedId == id && libraryResponse != nullptr))
                     return;
 
                 libraryResponse = std::move (loaded);
@@ -717,6 +720,12 @@ void DrenchedProcessor::matchRoomAsync (const juce::File& file, std::function<vo
                 done (result);
         });
     });
+}
+
+std::shared_ptr<const RecordedResponse> DrenchedProcessor::playingRecording() const
+{
+    const auto built = builder->lastBuilt();
+    return built ? built->recorded : nullptr;
 }
 
 void DrenchedProcessor::analyseResponseAsync (std::function<void (const juce::var&)> done)

@@ -179,6 +179,10 @@ public:
     /** Changes whenever a new response starts playing. From any thread. */
     std::uint64_t responseVersion() const noexcept { return builder->buildCount(); }
 
+    /** The recording the playing response was built from, a library space's or a file's;
+        null for a modelled space or before anything has been built. From any thread. */
+    std::shared_ptr<const RecordedResponse> playingRecording() const;
+
     /** The decay displays: analyses the playing response on a background thread (see
         analyseResponse), then calls `done` on the message thread with the result for the
         interface (analysisToVar), or with void when nothing has been built. Message thread. */

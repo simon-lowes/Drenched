@@ -21,7 +21,8 @@ add_executable(drenched_plugin_tests
     AudioThreadTests.cpp
     HostTextTests.cpp
     HeldControlsTests.cpp
-    ParameterWatchTests.cpp)
+    ParameterWatchTests.cpp
+    MessageLoopTests.cpp)
 
 target_link_libraries(drenched_plugin_tests PRIVATE Drenched Catch2::Catch2)
 target_include_directories(drenched_plugin_tests PRIVATE

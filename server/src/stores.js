@@ -1,6 +1,6 @@
 // Where licences and activations are kept: Cloudflare D1 in production, memory
 // in tests. Both give the same answers; test/d1.test.js runs the D1 one on
-// SQLite to prove its SQL.
+// SQLite to prove its SQL, and test/paddle.test.js runs every webhook on both.
 //
 // Dates are YYYY-MM-DD strings, so they compare as text.
 
