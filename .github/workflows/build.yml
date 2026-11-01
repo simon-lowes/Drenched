@@ -5,14 +5,19 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Nightly, only the interface's random test at full length (200 actions per look).
+  schedule:
+    - cron: '23 3 * * *'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # The nightly run is on main's ref too; its own group keeps it from cancelling a push.
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'schedule' && 'nightly' || 'ci' }}
   cancel-in-progress: true
 
 jobs:
   server:
     name: Activation server
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -34,12 +39,20 @@ jobs:
       - name: Install Playwright and Chromium
         working-directory: tests/ui
         run: npm ci && npx playwright install --with-deps chromium
+      # The random test: 50 actions per look on a new seed each run, 200 nightly. A failure
+      # names the seed; re-running the job keeps the run number, and so the seed.
       - name: Tests
         working-directory: tests/ui
-        run: npm test
+        env:
+          DRENCHED_UI_ACTIONS: ${{ github.event_name == 'schedule' && '200' || '50' }}
+        run: |
+          export DRENCHED_UI_SEED=$(( GITHUB_RUN_NUMBER * 100 ))
+          echo "Random test: DRENCHED_UI_SEED=$DRENCHED_UI_SEED DRENCHED_UI_ACTIONS=$DRENCHED_UI_ACTIONS"
+          npm test
 
   build:
     name: ${{ matrix.name }}
+    if: github.event_name != 'schedule'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -292,6 +305,7 @@ jobs:
     # tests sign codes with the published test key, which a release build only accepts
     # with DRENCHED_ALLOW_TEST_LICENCE.
     name: Licence and trial (Linux, release build)
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -317,6 +331,7 @@ jobs:
 
   linux-i686:
     name: Linux (i686, 32-bit)
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
