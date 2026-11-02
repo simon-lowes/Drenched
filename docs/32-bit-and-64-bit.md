@@ -9,10 +9,13 @@ on any operating system.
 
 | System | Download | What's in it |
 | --- | --- | --- |
-| macOS 11 or later | `Drenched-macOS` | VST3, AU, CLAP and app, each for Apple Silicon and Intel |
+| macOS 11 or later | `Drenched-macOS.tar.gz` | VST3, AU, CLAP and app, each for Apple Silicon and Intel |
 | Windows 10 or 11, 32 or 64-bit | `Drenched-Windows` | One VST3 holding both versions, a CLAP for each, and both apps |
-| Linux, 64-bit | `Drenched-Linux-x64` | VST3, CLAP and app |
-| Linux, 32-bit | `Drenched-Linux-i686` | VST3, CLAP and app |
+| Linux, 64-bit | `Drenched-Linux-x64.tar.gz` | VST3, CLAP and app |
+| Linux, 32-bit | `Drenched-Linux-i686.tar.gz` | VST3, CLAP and app |
+
+Unpack a `.tar.gz` by double-clicking it on macOS, or with `tar xzf` on Linux;
+it keeps the app runnable.
 
 On Windows the host picks the right half of `Drenched.vst3` by itself. Copy it
 to the folder your host scans:

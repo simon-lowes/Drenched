@@ -181,18 +181,18 @@ rebuilt from the Markdown with `tools/user_guide_html.sh`, which needs pandoc).
 
 Every push builds the plugin on macOS (Universal), Windows (32 and 64-bit)
 and Linux (32 and 64-bit) in GitHub Actions. Open the latest run under
-**Actions** and download the installer for your platform: `Drenched-macOS-Installer`
-(a .pkg with the Audio Unit, VST3, CLAP and the app, each optional) or
-`Drenched-Windows-Installer` (puts the 64-bit and 32-bit plug-ins where each kind of
-host looks, and the app). The installers are unsigned for now: on macOS, right-click
-the .pkg and choose Open; on Windows, choose More info > Run anyway.
+**Actions** and download the installer for your platform: `Drenched-<version>-macOS.dmg`
+(a .pkg with the Audio Unit, VST3, CLAP and the app, each optional, plus the user guide) or
+`Drenched-<version>-Windows-Setup.exe` (puts the 64-bit and 32-bit plug-ins where each kind of
+host looks, and the app). The installers are unsigned for now: see the user guide's
+Installing section for getting past macOS and Windows warnings.
 Both show the third-party licences (`packaging/third-party-licences.txt`); after changing
 `NOTICE.md` or a dependency, rebuild that file with `python3 tools/third_party_licences.py`
 (after a CMake configure, which fetches the licence texts) and commit it.
 
-The plug-ins on their own are there too: `Drenched-macOS`,
+The plug-ins on their own are there too: `Drenched-macOS.tar.gz`,
 `Drenched-Windows` (one VST3 for 32 and 64-bit hosts, plus both CLAPs and
-apps), `Drenched-Linux-x64` or `Drenched-Linux-i686`. See
+apps), `Drenched-Linux-x64.tar.gz` or `Drenched-Linux-i686.tar.gz`. See
 [32-bit and 64-bit](docs/32-bit-and-64-bit.md) for where to install each,
 what 32-bit can't do, and bridging. Builds are unsigned for now: on macOS, clear the
 quarantine flag with `xattr -dr com.apple.quarantine <plugin>` before
