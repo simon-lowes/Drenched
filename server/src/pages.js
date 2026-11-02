@@ -25,6 +25,10 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 a{color:var(--ac)}
 `;
 
+// The pages' only script, allowed by its hash in the Content-Security-Policy that
+// index.js sends (test/pages.test.js checks the two agree), so no other script can run.
+export const copyScript = "document.getElementById('copy').addEventListener('click',function(){var t=document.getElementById('code');t.select();navigator.clipboard&&navigator.clipboard.writeText(t.value);this.textContent='Copied'})";
+
 function page (title, body)
 {
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -36,7 +40,7 @@ export function activationPage ({ licence = '', machine = '', error = null, code
     const result = code
         ? `<div class="out" role="status"><label for="code">Activation code<small>Copy it to the computer with Drenched and paste it under "Activate without internet".</small></label>
 <textarea id="code" readonly>${escape (code)}</textarea>
-<button type="button" onclick="var t=document.getElementById('code');t.select();navigator.clipboard&&navigator.clipboard.writeText(t.value);this.textContent='Copied'">Copy code</button></div>
+<button type="button" id="copy">Copy code</button></div><script>${copyScript}</script>
 <p>${name ? 'Licensed to ' + escape (name) + '. ' : ''}This computer now holds one of the licence's three places.</p>`
         : '';
 
@@ -55,12 +59,20 @@ ${error ? `<p class="err" role="alert">${escape (error)}</p>` : ''}
 
 /** After checkout: the buyer's licence numbers, a short wait while the sale is recorded,
     or, once the order is refunded, that its numbers were withdrawn. */
-export function thanksPage ({ keys = [], transaction = '', withdrawn = false } = {})
+export function thanksPage ({ keys = [], transaction = '', withdrawn = false, expired = false } = {})
 {
     if (withdrawn)
     {
         return page ('Drenched licence withdrawn', `<h1>This order's licence numbers have been withdrawn</h1>
 <p role="status">The payment was refunded or disputed, so its numbers no longer activate Drenched. Contact support if you think that is a mistake.</p>`);
+    }
+
+    // The page shows numbers only on the day of the sale and the next: its address
+    // ends up in browser history, screenshots and receipts, and the email keeps them.
+    if (expired)
+    {
+        return page ('Your Drenched licence', `<h1>Your Drenched licence</h1>
+<p role="status">This page no longer shows the order's licence numbers. They are in the email sent when you bought Drenched. Contact support if you can't find it.</p>`);
     }
 
     if (keys.length === 0)

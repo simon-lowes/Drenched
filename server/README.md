@@ -11,6 +11,11 @@ and it has no dependencies.
    makes one licence number per copy bought, looks up the buyer's name and
    email in Paddle, and emails the numbers through Resend. After checkout the
    buyer's browser can open `/thanks?transaction=txn_…` to see them at once.
+   The page shows them only on the day of the sale and the next (its address
+   ends up in browser history and on receipts); after that it points to the
+   email. Every page is sent with a Content-Security-Policy that allows only
+   its one script, by hash (`copyScript` in `src/pages.js`; `test/pages.test.js`
+   fails if the two drift), and with `no-referrer`, `DENY` framing and HSTS.
 2. **Activation.** The plugin sends the number and its computer code to
    `/v1/activate` and gets back a signed activation code (Ed25519). It checks
    that code offline from then on, so it never needs the server again.
@@ -44,7 +49,7 @@ and email.
 | `POST /v1/activate` `{licence, machine}` | `200 {code, name}`; `400 invalid-licence / invalid-machine`, `404 unknown-licence`, `403 revoked`, `409 computer-limit` |
 | `POST /v1/deactivate` `{licence, machine}` | `200 {ok}`; `429 too-many-moves` |
 | `GET, POST /activate` | The offline activation page |
-| `GET /thanks?transaction=txn_…` | The buyer's numbers after checkout |
+| `GET /thanks?transaction=txn_…` | The buyer's numbers after checkout (for two days) |
 | `POST /v1/paddle` | Paddle webhooks (signature checked) |
 | `POST /v1/admin/licences` `{name, email, orderRef?, note?}` | Make a licence by hand (giveaways, reviewers) |
 | `GET /v1/admin/licences/{key}` | A licence, its computers and moves |
