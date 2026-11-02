@@ -1,4 +1,17 @@
-Copyright 2020 The Fraunces Project Authors (github.com/undercasetype/Fraunces) Fraunces-Italic[SOFT,WONK,opsz,wght].ttf: Copyright 2020 The Fraunces Project Authors (github.com/undercasetype/Fraunces)
+The typefaces in this folder, each under the SIL Open Font License 1.1 below:
+
+Copyright 2020 The Fraunces Project Authors (github.com/undercasetype/Fraunces)
+Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
+Copyright 2017 IBM Corp. with Reserved Font Name "Plex" (IBM Plex Sans, IBM Plex Mono)
+Copyright 2022 The Instrument Sans Project Authors (https://github.com/Instrument/instrument-sans)
+Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font)
+Copyright 2020 The Space Grotesk Project Authors (https://github.com/floriankarsten/space-grotesk)
+Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
+Copyright 2021 The Hanken Grotesk Project Authors (https://github.com/marcologous/hanken-grotesk)
+
+IBM Plex Sans and IBM Plex Mono are IBM's own Latin-1 web subsets, unmodified
+(@ibm/plex-sans 1.1.0 and @ibm/plex-mono 2.5.0), since "Plex" is a Reserved Font
+Name. The others are the Latin subsets from Fontsource.
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

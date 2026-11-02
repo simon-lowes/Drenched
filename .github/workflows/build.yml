@@ -164,6 +164,16 @@ jobs:
           python3 tools/third_party_licences.py build
           git diff --exit-code packaging/third-party-licences.txt || { echo "Run tools/third_party_licences.py and commit the result"; exit 1; }
 
+      # Likewise the user guide the installers ship. Ubuntu 24.04's pandoc (3.1.3) is the
+      # one the committed page is built with; a newer one may write it differently.
+      - name: Check the user guide page is up to date
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get install -y --no-install-recommends pandoc > /dev/null
+          bash tools/user_guide_html.sh
+          git diff --exit-code packaging/user-guide.html || { echo "Run tools/user_guide_html.sh and commit the result"; exit 1; }
+
       - name: Build
         shell: bash
         run: cmake --build build --config Release --parallel
