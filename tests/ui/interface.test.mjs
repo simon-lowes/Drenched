@@ -13,8 +13,12 @@ import { chromium } from 'playwright';
 
 const here = path.dirname (fileURLToPath (import.meta.url));
 const page0 = pathToFileURL (path.resolve (here, '../../source/ui/index.html')).href;
-// DRENCHED_UI_ACTIONS and DRENCHED_UI_SEED run the random test longer, or on other seeds.
+// DRENCHED_UI_ACTIONS and DRENCHED_UI_SEED run the random test longer or shorter, or on other
+// seeds. CI runs 50 actions on a new seed for each pull request, and 200 every night.
 const actionsPerLook = +(process.env.DRENCHED_UI_ACTIONS || 200);
+const firstSeed = +(process.env.DRENCHED_UI_SEED || 1000);
+assert.ok (Number.isInteger (actionsPerLook) && actionsPerLook > 0, 'DRENCHED_UI_ACTIONS: ' + process.env.DRENCHED_UI_ACTIONS);
+assert.ok (Number.isSafeInteger (firstSeed) && firstSeed >= 0, 'DRENCHED_UI_SEED: ' + process.env.DRENCHED_UI_SEED);
 
 /** Stands in for JUCE's bridge: records what the page sends, and lets the test send. */
 function fakePlugin()
@@ -50,6 +54,19 @@ async function open (look)
 }
 
 const fromPlugin = (name, payload) => page.evaluate (([n, p]) => window.__fromPlugin (n, p), [name, payload]);
+
+/** Waits until the page has drawn: a message from the plugin redraws it on the next animation frame. */
+const drawn = () => page.evaluate (() => new Promise (r => requestAnimationFrame (() => requestAnimationFrame (r))));
+
+/** Waits until the page has sent the plugin a message called name whose payload has key, and returns them all. */
+async function sentWith (name, key)
+{
+    await page.waitForFunction (([n, k]) => window.__sent.some (([m, p]) => m === n && p && k in p), [name, key], { timeout: 2000 });
+    return page.evaluate (([n, k]) => window.__sent.filter (([m, p]) => m === n && p && k in p).map (([, p]) => p), [name, key]);
+}
+
+/** The value shown in the visible field with this data-fid. */
+const shown = (fid) => page.evaluate (f => [...document.querySelectorAll ('[data-fid="' + f + '"]')].find (e => e.getBoundingClientRect().width > 0)?.value, fid);
 
 // Messages the plugin really sends (PluginEditor.cpp), with awkward but possible contents.
 const NAMES = ['St Paul\'s <Nave> & "Choir"', '', 'x'.repeat (200), 'é日本 room', '<img src=x onerror=window.__ran=1>', 'a\\b\'c'];
@@ -121,8 +138,10 @@ async function visible (selector)
 
 async function randomly (look, seed)
 {
-    let s = seed;
-    const rnd = () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
+    // An LCG modulo 2^31, worked in 32-bit integers: in doubles the product passes 2^53 and
+    // loses its low bits, and about 1 seed in 60 then fell into a cycle of a few hundred draws.
+    let s = seed & 0x7fffffff;
+    const rnd = () => (s = (Math.imul (s, 1103515245) + 12345) & 0x7fffffff) / 2147483648;
     const pick = a => a[Math.floor (rnd() * a.length)];
     const done = [];
 
@@ -212,8 +231,10 @@ test ('Random use of every look raises no script errors', async (t) =>
         await t.test (look, async () =>
         {
             await open (look);
-            const last = await randomly (look, +(process.env.DRENCHED_UI_SEED || 1000) + i);
-            assert.deepEqual (errors, [], 'after: ' + last);
+            const seed = firstSeed + i;
+            const last = await randomly (look, seed);
+            // Enough to run this look again: DRENCHED_UI_SEED=<first seed> DRENCHED_UI_ACTIONS=<actions>.
+            assert.deepEqual (errors, [], `seed ${seed} (DRENCHED_UI_SEED=${firstSeed}), ${actionsPerLook} actions, after: ${last}`);
             assert.equal (await page.evaluate (() => window.__ran), undefined, 'a name was shown as markup');
         });
     }
@@ -223,13 +244,25 @@ test ('A redraw while a field is being edited completes', async () =>
 {
     await open ('anodised');
     await page.click ('[data-act="adv"]');
-    const field = (await visible ('input[data-type]'))[0];
-    assert.ok (field, 'a typed value field');
+    const field = (await visible ('input[data-fid="ro-decay"]'))[0];
+    assert.ok (field, 'the Decay value field');
+    await page.evaluate (() => { window.__sent = []; });
     await field.fill ('12');
 
-    // A message from the plugin redraws the page around the field being edited.
-    await fromPlugin ('state', { ui: { locks: 'mix' } });
-    await page.waitForTimeout (50);
+    // Messages from the plugin redraw the page around the field being edited: the Pre-delay
+    // field beside it shows the new value, and the Decay field still holds what was typed.
+    await fromPlugin ('state', { ui: { locks: 'mix' }, params: { predelay: 30 } });
+    await drawn();
+    assert.equal (await shown ('ro-pre'), '30 ms', 'the page did not redraw');
+    assert.deepEqual (await page.evaluate (() => [document.activeElement.getAttribute ('data-fid'), document.activeElement.value]), ['ro-decay', '12']);
+    assert.deepEqual (await page.evaluate (() => window.__sent), [], 'sent before Enter');
+
+    // Then Enter commits it: once, as 12 s, and the field shows it formatted.
+    await page.keyboard.press ('Enter');
+    const sent = await sentWith ('params', 'decay1k');
+    assert.equal (sent.length, 1, JSON.stringify (sent));
+    assert.ok (Math.abs ((sent[0].decay500 + sent[0].decay1k) / 2 - 12) < 1e-9, 'decay sent: ' + JSON.stringify (sent[0]));
+    assert.equal (await shown ('ro-decay'), '12.0 s');
     assert.deepEqual (errors, []);
 });
 
@@ -289,7 +322,8 @@ test ('The focused control is kept across a redraw, and an input method can comp
     await page.evaluate (() => { document.activeElement.__mark = true; });
     await page.keyboard.press ('ArrowUp');
     await fromPlugin ('state', { params: { size: 120 } });
-    await page.waitForTimeout (50);
+    await drawn();
+    assert.equal (await page.evaluate (() => document.querySelector ('[data-fid="kn-size"]')?.getAttribute ('aria-valuenow')), '120', 'the page did not redraw');
     assert.ok (await page.evaluate (() => document.activeElement.__mark === true && document.activeElement.getAttribute ('aria-valuenow') === String (+st.mix.toFixed (2))),
                'the knob was replaced');
 
@@ -1007,15 +1041,30 @@ test ('A space this version doesn\'t have stays the session\'s space', async () 
     // A session saved by a newer Drenched may name a space this one lacks. The plugin plays
     // the first modelled space meanwhile, and the session must keep naming the newer one,
     // or saving it here would lose it. So the page never sends another space in its place.
+    await page.goto ('about:blank');
     await open ('anodised');
+    const playing = await page.evaluate (() => SPACES[st.sp].id);
     await page.evaluate (() => { window.__sent = []; });
     await fromPlugin ('state', { ui: { spaceId: 'from-a-newer-version' } });
-    await page.waitForTimeout (50);
     await fromPlugin ('state', { ui: { locks: 'mix' } });
-    await page.click ('[data-act="adv"]');
-    await page.waitForTimeout (50);
+    await drawn();
+    assert.equal (await page.getAttribute ('[data-act="lock"][data-k="mix"]', 'aria-pressed'), 'true', 'the page did not take the messages');
 
-    const spaces = await page.evaluate (() => window.__sent.filter (([n, p]) => n === 'ui' && p && 'spaceId' in p));
-    assert.deepEqual (spaces, []);
+    // A change the page must send goes out without a space in it...
+    await page.click ('[data-act="lock"][data-k="mix"]');
+    assert.deepEqual (await sentWith ('ui', 'locks'), [{ locks: '' }]);
+    await page.click ('[data-act="adv"]');
+    await drawn();
+    assert.deepEqual (await page.evaluate (() => window.__sent.filter (([n, p]) => n === 'ui' && p && 'spaceId' in p)), []);
+    assert.equal (await page.evaluate (() => SPACES[st.sp].id), playing, 'the page shows another space');
+
+    // ...and choosing a space sends it, so the check above would have seen one sent.
+    await page.click ('[data-act="adv"]');
+    await page.click ('[data-act="browse"]');
+    const pick = (await visible ('[data-act="pick"][aria-current="false"]'))[0];
+    assert.ok (pick, 'a space to choose');
+    const chosen = await pick.evaluate (e => SPACES[+e.getAttribute ('data-v')].id);
+    await pick.click();
+    assert.deepEqual ((await sentWith ('ui', 'spaceId')).map (p => p.spaceId), [chosen]);
     assert.deepEqual (errors, []);
 });

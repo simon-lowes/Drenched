@@ -35,12 +35,22 @@ function storeTest (name, body)
         test (`${name} (${kind} store)`, () => body ((options = {}) => setup ({ ...options, store: makeStore() })));
 }
 
-async function setup ({ store, failMail = 0, productId = 'pro_drenched' })
+async function setup ({ store, failMail = 0, failLookup = 0, productId = 'pro_drenched', apiKey = 'pdl_key' })
 {
     const mail = [];
-    let failures = failMail;
-    const paddle = { webhookSecret: SECRET, apiKey: 'pdl_key', apiBase: 'https://sandbox-api.paddle.com', productId,
-                     ...paddleFetch ({ ctm_ada: { name: 'Ada Lovelace', email: 'ada@example.com' } }) };
+    let failures = failMail, lookupFailures = failLookup;
+    const customers = paddleFetch ({ ctm_ada: { name: 'Ada Lovelace', email: 'ada@example.com' } });
+
+    // Paddle's API down for the first failLookup lookups: an error status, then no answer at all.
+    const fetch = async (url, init) =>
+    {
+        if (lookupFailures-- > 0)
+            return lookupFailures % 2 ? new Response ('{}', { status: 503 }) : Promise.reject (new TypeError ('fetch failed'));
+
+        return customers.fetch (url, init);
+    };
+
+    const paddle = { webhookSecret: SECRET, apiKey, apiBase: 'https://sandbox-api.paddle.com', productId, fetch, calls: customers.calls };
     const app = createApp ({
         store, signingKey: (await testKeys()).privateKey, adminToken: 'secret-token', paddle, now: () => NOW,
         mailer: async (m) => { if (failures-- > 0) throw new Error ('mail down'); mail.push (m); },
@@ -55,7 +65,18 @@ async function setup ({ store, failMail = 0, productId = 'pro_drenched' })
         return { status: response.status, body: await response.json() };
     };
 
-    return { app, store, mail, send, paddle };
+    // A body sent as it is, signed as Paddle would sign it.
+    const sendRaw = async (body) =>
+    {
+        const response = await app (new Request ('https://licence.test/v1/paddle', {
+            method: 'POST', body, headers: { 'content-type': 'application/json', 'paddle-signature': await signBody (body, SECRET, NOW) },
+        }));
+        return { status: response.status, body: await response.json() };
+    };
+
+    const thanks = async (transaction) => (await app (new Request ('https://licence.test/thanks?transaction=' + transaction))).text();
+
+    return { app, store, mail, send, sendRaw, thanks, paddle };
 }
 
 const sale = (id, items) => ({ event_type: 'transaction.completed', data: { id, status: 'completed', customer_id: 'ctm_ada', items } });
@@ -140,14 +161,78 @@ storeTest ('the same sale delivered twice at once issues and emails its numbers 
     assert.ok (licences.every ((l) => mail[0].text.includes (l.key) && l.emailed));
 });
 
-storeTest ('a signed body that is not JSON is refused, not retried for ever', async (setup) =>
+storeTest ('a signed body that is not a JSON object is answered 200, so Paddle stops sending it', async (setup) =>
 {
-    const { app } = await setup();
-    const body = '{not json';
-    const response = await app (new Request ('https://licence.test/v1/paddle', {
-        method: 'POST', body, headers: { 'paddle-signature': await signBody (body, SECRET, NOW) },
-    }));
-    assert.equal (response.status, 400);
+    // Paddle retries every answer but 200, 4xx included, and each retry sends the same
+    // signed bytes, so only a 200 ends it (developer.paddle.com, "Handle webhook delivery").
+    const { store, sendRaw } = await setup();
+
+    for (const body of ['{not json', '', 'null', '[]', '42', '"transaction.completed"'])
+        assert.deepEqual (await sendRaw (body), { status: 200, body: { ok: false, error: 'bad-json' } }, JSON.stringify (body));
+
+    // The hook still works afterwards.
+    assert.deepEqual (await sendRaw (JSON.stringify (sale ('txn_01h04vsc0qhwtsbsxh3422gggg', [drenched()]))), { status: 200, body: { ok: true, licences: 1 } });
+    assert.equal ((await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422gggg')).length, 1);
+});
+
+storeTest ('a sale whose items are not a list issues nothing and is not retried', async (setup) =>
+{
+    const { store, send } = await setup();
+
+    for (const items of [{}, 'pro_drenched', 3, null])
+    {
+        assert.deepEqual (await send (sale ('txn_01h04vsc0qhwtsbsxh3422hhhh', items)), { status: 200, body: { ok: true, licences: 0 } }, JSON.stringify (items));
+        assert.equal ((await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422hhhh')).length, 0);
+    }
+});
+
+storeTest ('a failed customer lookup issues nothing, so Paddle\'s retry issues the numbers to the right buyer', async (setup) =>
+{
+    // Numbers issued without the lookup would carry no name or email, and the retry, finding
+    // them made, would never look the buyer up or email them.
+    const { store, mail, send, paddle } = await setup ({ failLookup: 2 });
+    const event = sale ('txn_01h04vsc0qhwtsbsxh3422iiii', [drenched (2)]);
+
+    for (const attempt of ['an error status', 'no answer'])
+    {
+        assert.equal ((await send (event)).status, 500, attempt);
+        assert.equal ((await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422iiii')).length, 0, attempt);
+        assert.equal (mail.length, 0, attempt);
+    }
+
+    assert.deepEqual (await send (event), { status: 200, body: { ok: true, licences: 2 } });
+    const licences = await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422iiii');
+    assert.deepEqual (licences.map ((l) => [l.copy, l.name, l.email]), [[0, 'Ada Lovelace', 'ada@example.com'], [1, 'Ada Lovelace', 'ada@example.com']]);
+    assert.equal (paddle.calls.length, 1);
+    assert.equal (mail.length, 1);
+    assert.equal (mail[0].to, 'ada@example.com');
+    assert.ok (licences.every ((l) => mail[0].text.includes (l.key)));
+});
+
+storeTest ('without a Paddle API key the buyer\'s email comes from the checkout\'s custom data', async (setup) =>
+{
+    const { store, mail, send, paddle, thanks } = await setup ({ apiKey: null });
+    const event = sale ('txn_01h04vsc0qhwtsbsxh3422jjjj', [drenched()]);
+    event.data.custom_data = { email: 'grace@example.com' };
+
+    assert.deepEqual (await send (event), { status: 200, body: { ok: true, licences: 1 } });
+    const [licence] = await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422jjjj');
+    assert.equal (licence.email, 'grace@example.com');
+    assert.equal (licence.name, '');
+    assert.equal (paddle.calls.length, 0);
+    assert.equal (mail.length, 1);
+    assert.equal (mail[0].to, 'grace@example.com');
+    assert.match (mail[0].text, /^Hello,/);
+    assert.ok (mail[0].text.includes (licence.key));
+
+    // With no email either, the number is still made (the checkout page shows it) and the
+    // sale is not retried, as there is nobody to email.
+    assert.deepEqual (await send (sale ('txn_01h04vsc0qhwtsbsxh3422kkkk', [drenched()])), { status: 200, body: { ok: true, licences: 1 } });
+    const [unmailed] = await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422kkkk');
+    assert.equal (unmailed.email, '');
+    assert.equal (unmailed.emailed, null);
+    assert.equal (mail.length, 1);
+    assert.ok ((await thanks ('txn_01h04vsc0qhwtsbsxh3422kkkk')).includes (unmailed.key));
 });
 
 storeTest ('several copies make several numbers in one email', async (setup) =>
@@ -201,6 +286,64 @@ storeTest ('refunds and chargebacks withdraw the numbers; a reversed chargeback 
 
     await send ({ event_type: 'adjustment.updated', data: { id: 'adj_2', action: 'chargeback_reverse', status: 'approved', transaction_id: 'txn_01h04vsc0qhwtsbsxh3422cccc' } });
     assert.equal ((await store.getLicence (licence.key)).revoked, false);
+});
+
+const refund = (id, transaction, extra = {}) => ({ event_type: 'adjustment.updated', data: { id, action: 'refund', status: 'approved', transaction_id: transaction, ...extra } });
+
+storeTest ('the checkout page stops showing numbers once they are withdrawn', async (setup) =>
+{
+    const { store, send, thanks } = await setup();
+    await send (sale ('txn_01h04vsc0qhwtsbsxh3422llll', [drenched (2)]));
+    const keys = (await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422llll')).map ((l) => l.key);
+
+    const before = await thanks ('txn_01h04vsc0qhwtsbsxh3422llll');
+    assert.ok (keys.every ((k) => before.includes (k)));
+
+    assert.deepEqual ((await send (refund ('adj_3', 'txn_01h04vsc0qhwtsbsxh3422llll'))).body, { ok: true, revoked: 2 });
+    const after = await thanks ('txn_01h04vsc0qhwtsbsxh3422llll');
+    assert.ok (keys.every ((k) => ! after.includes (k)), 'a withdrawn number is shown');
+
+    // It says so, rather than waiting for ever for numbers that will not come.
+    assert.doesNotMatch (after, /http-equiv="refresh"/);
+    assert.match (after, /withdrawn/);
+});
+
+storeTest ('a partial refund keeps every copy of the order and marks it for support', async (setup) =>
+{
+    // A partial adjustment names the transaction item and an amount, never a quantity
+    // (developer.paddle.com, adjustment.created), and the amount can as well be a goodwill
+    // discount as the price of some copies. So nothing is withdrawn; support withdraws the
+    // copies refunded (POST /v1/admin/licences/{key} {revoked: true}).
+    const { store, send } = await setup();
+    await send (sale ('txn_01h04vsc0qhwtsbsxh3422mmmm', [drenched (3)]));
+
+    const partial = refund ('adj_4', 'txn_01h04vsc0qhwtsbsxh3422mmmm', {
+        type: 'partial', items: [{ id: 'adjitm_1', item_id: 'txnitm_1', type: 'partial', amount: '4900' }],
+    });
+
+    assert.deepEqual (await send (partial), { status: 200, body: { ok: true, revoked: 0, flagged: 3 } });
+    const licences = await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422mmmm');
+    assert.deepEqual (licences.map ((l) => l.revoked), [false, false, false]);
+    assert.ok (licences.every ((l) => l.note === 'partial refund adj_4'));
+
+    // Paddle delivering it again changes nothing more.
+    assert.deepEqual (await send (partial), { status: 200, body: { ok: true, revoked: 0, flagged: 3 } });
+
+    // A full refund of the same order afterwards withdraws them all.
+    assert.deepEqual ((await send (refund ('adj_5', 'txn_01h04vsc0qhwtsbsxh3422mmmm'))).body, { ok: true, revoked: 3 });
+});
+
+storeTest ('a refund or chargeback for a transaction never seen is acknowledged and changes nothing', async (setup) =>
+{
+    const { store, send } = await setup();
+    await send (sale ('txn_01h04vsc0qhwtsbsxh3422nnnn', [drenched()]));
+
+    assert.deepEqual (await send (refund ('adj_5', 'txn_01h04vsc0qhwtsbsxh3422zzzz')), { status: 200, body: { ok: true, revoked: 0 } });
+    assert.deepEqual (await send (refund ('adj_6', 'txn_01h04vsc0qhwtsbsxh3422zzzz', { action: 'chargeback' })), { status: 200, body: { ok: true, revoked: 0 } });
+    assert.deepEqual (await send (refund ('adj_7', 'txn_01h04vsc0qhwtsbsxh3422zzzz', { action: 'chargeback_reverse' })), { status: 200, body: { ok: true, restored: 0 } });
+
+    assert.equal ((await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422zzzz')).length, 0);
+    assert.equal ((await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422nnnn'))[0].revoked, false, 'another order was withdrawn');
 });
 
 storeTest ('unsigned, wrongly signed or other events issue nothing', async (setup) =>

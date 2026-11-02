@@ -99,8 +99,10 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
         if (! paddle?.webhookSecret || ! await verifySignature (request.headers.get ('paddle-signature'), raw, paddle.webhookSecret, now()))
             return json (401, { error: 'bad-signature' });
 
-        // Signed but not JSON: answering 500 would have Paddle send it again for ever.
-        let event;
+        // Signed by Paddle but not a JSON object. Paddle retries any answer but 200 (4xx too),
+        // sending the same bytes each time, so only a 200 stops it. Paddle's dashboard keeps
+        // the body; the log notes only its size, as a body can hold a buyer's email.
+        let event = null;
 
         try
         {
@@ -108,10 +110,15 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
         }
         catch
         {
-            return json (400, { error: 'bad-json' });
         }
 
-        const data = event?.data ?? {};
+        if (! event || typeof event !== 'object' || Array.isArray (event))
+        {
+            console.error (`Paddle sent a signed body that is not a JSON object (${raw.length} characters)`);
+            return json (200, { ok: false, error: 'bad-json' });
+        }
+
+        const data = event.data ?? {};
 
         if (event.event_type === 'transaction.completed')
         {
@@ -171,6 +178,16 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
         if (adjustment && data.status === 'approved' && (data.action === 'refund' || data.action === 'chargeback') && data.transaction_id)
         {
             const licences = await store.listByOrder (data.transaction_id);
+
+            // A partial refund gives only an amount, never which copies, and is as often a
+            // goodwill discount: the numbers stay, marked for support to look at.
+            if (data.action === 'refund' && data.type === 'partial')
+            {
+                for (const l of licences)
+                    await store.updateLicence (l.key, { note: `partial refund ${data.id ?? ''}`.trim() });
+
+                return json (200, { ok: true, revoked: 0, flagged: licences.length });
+            }
 
             for (const l of licences)
                 await store.updateLicence (l.key, { revoked: true, note: `${data.action} ${data.id ?? ''}`.trim() });
@@ -334,7 +351,8 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
             {
                 const transaction = url.searchParams.get ('transaction') ?? '';
                 const licences = /^txn_[a-z0-9]{10,40}$/.test (transaction) ? await store.listByOrder (transaction) : [];
-                return html (200, thanksPage ({ keys: licences.filter ((l) => ! l.revoked).map ((l) => l.key), transaction }));
+                const keys = licences.filter ((l) => ! l.revoked).map ((l) => l.key);
+                return html (200, thanksPage ({ keys, transaction, withdrawn: licences.length > 0 && keys.length === 0 }));
             }
 
             if ((path === '/' || path === '/activate') && request.method === 'GET')

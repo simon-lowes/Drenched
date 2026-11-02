@@ -114,6 +114,10 @@ The interface has its own tests, run in a browser with Node 22:
 cd tests/ui && npm ci && npx playwright install chromium && npm test
 ```
 
+The random test makes 200 actions per look on seed 1000. CI makes 50 on a new
+seed for each run, and 200 nightly; a failure names its seed, so
+`DRENCHED_UI_SEED=<seed> DRENCHED_UI_ACTIONS=<actions> npm test` runs it again.
+
 On Linux, install JUCE's dependencies first (see `.github/workflows/build.yml`).
 On Windows, install the WebView2 SDK package and point CMake at it:
 
