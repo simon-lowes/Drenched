@@ -307,7 +307,7 @@ Every feature is in both the 32-bit and 64-bit versions, and sessions move freel
 
 Send reports to whoever sent you the beta. Click **Report a bug** (on the
 Beta chip at the top, or in the Spaces window's tools) and Drenched copies
-your setup to the clipboard: its version, format, host, system, sample rate,
+your setup to the clipboard: its version and build, format, host, system, sample rate,
 buffer size, channels, space and look. Paste that into your message, then
 add:
 

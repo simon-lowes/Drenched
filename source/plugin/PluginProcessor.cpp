@@ -1187,8 +1187,16 @@ juce::String DrenchedProcessor::bugReportDetails()
     const auto irName = ui.getProperty (UiIDs::irName, "").toString();
     const auto space = chosenSpaceId();
 
+   #ifdef DRENCHED_BUILD_NUMBER
+    const juce::String buildNumber (DRENCHED_BUILD_NUMBER), commit (DRENCHED_COMMIT);
+   #else
+    const juce::String buildNumber, commit ("unknown");
+   #endif
+    const auto build = (buildNumber.isEmpty() ? juce::String ("local build") : "build " + buildNumber)
+                       + " (" + commit + ")";
+
     juce::StringArray lines;
-    lines.add ("Drenched " + version + (LicenceManager::isBeta() ? " beta" : "") + ", "
+    lines.add ("Drenched " + version + (LicenceManager::isBeta() ? " beta" : "") + ", " + build + ", "
                + juce::String (static_cast<int> (sizeof (void*) * 8)) + "-bit");
     lines.add ("Format: " + juce::String (getWrapperTypeDescription (wrapperType)));
     lines.add ("Host: " + juce::String (juce::PluginHostType().getHostDescription()));
