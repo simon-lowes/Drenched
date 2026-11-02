@@ -1109,3 +1109,108 @@ test ('Only the interface\'s own scripts run: markup that gets into the page run
     await page.waitForFunction (was => st.adv !== was, before);
     assert.deepEqual (errors.filter (e => ! /Content Security Policy/.test (e)), []);
 });
+
+test ('Every button\'s name starts from the words it shows, so speaking them reaches it, in every look', async () =>
+{
+    // Voice control finds a button by the words on it, so a button's accessible name has to
+    // hold its visible text (WCAG 2.5.3). Thumbnails drawn inert and text hidden from
+    // assistive technology are left out, as a screen reader leaves them out.
+    await open ('anodised');
+    const looks = await page.evaluate (() => SKINS.map (s => s.id));
+    const bad = new Set();
+
+    for (const look of looks)
+    {
+        for (const where of ['plan', 'section', 'stage', 'browse', 'skins', 'adv'])
+        {
+            await page.goto ('about:blank');
+            await open (look);
+            await page.evaluate ((w) =>
+            {
+                if (w === 'stage')
+                    st.mode = 'stage';
+                else if (w === 'plan' || w === 'section')
+                    st.view = w;
+                else
+                    st[w] = true;
+                window.schedule();
+            }, where);
+            await drawn();
+
+            const found = await page.evaluate (() =>
+            {
+                const words = t => t.toLowerCase().replace (/[^a-z0-9]+/g, ' ').trim();
+                const out = [];
+
+                document.querySelectorAll ('button[aria-label], a[aria-label], [role="button"][aria-label], [role="radio"][aria-label], [role="checkbox"][aria-label], [role="switch"][aria-label], [role="tab"][aria-label], [role="option"][aria-label]').forEach (el =>
+                {
+                    if (el.closest ('[inert], [aria-hidden="true"]'))
+                        return;
+
+                    const parts = [];
+                    const walk = document.createTreeWalker (el, NodeFilter.SHOW_TEXT);
+
+                    for (let n; (n = walk.nextNode());)
+                        if (! n.parentElement.closest ('[inert], [aria-hidden="true"], .vh'))
+                            parts.push (n.nodeValue);
+
+                    const shown = words (parts.join (' '));
+
+                    if (shown && ! words (el.getAttribute ('aria-label')).includes (shown))
+                        out.push ('"' + parts.join (' ').replace (/\s+/g, ' ').trim() + '" named "' + el.getAttribute ('aria-label') + '"');
+                });
+
+                return out;
+            });
+
+            found.forEach (f => bad.add (look + ' ' + where + ': ' + f));
+        }
+    }
+
+    assert.deepEqual ([...bad], []);
+    assert.deepEqual (errors, []);
+});
+
+test ('The listener and source handles on the room drawing say every way they move', async () =>
+{
+    for (const view of ['plan', 'section'])
+    {
+        await page.goto ('about:blank');
+        await open ('section');
+        await page.evaluate ((v) => { st.view = v; window.schedule(); }, view);
+        await drawn();
+
+        const lis = '[data-drag="lis"]';
+        const text = () => page.getAttribute (lis, 'aria-valuetext');
+        const before = await text();
+        assert.match (before, /metres from the front, (centre|\d+% (left|right))$/, view);
+        assert.ok (await page.getAttribute (lis, 'aria-valuenow') !== null, view + ': no aria-valuenow');
+
+        // Across the room changes what is said, as distance does.
+        await page.focus (lis);
+        await page.keyboard.press ('ArrowRight');
+        await drawn();
+        assert.notEqual (await text(), before, view + ': moving across says nothing new');
+
+        await page.keyboard.press ('End');
+        await drawn();
+        assert.equal (await page.evaluate (() => st.dist), 100, view);
+        await page.keyboard.press ('Home');
+        await drawn();
+        assert.equal (await page.evaluate (() => st.dist), 0, view);
+    }
+
+    // The source only moves across, between the walls; it is drawn on the plan.
+    await page.evaluate (() => { st.view = 'plan'; window.schedule(); });
+    await drawn();
+    const src = '[data-drag="src"]';
+    await page.focus (src);
+    await page.keyboard.press ('End');
+    await drawn();
+    assert.equal (await page.getAttribute (src, 'aria-valuenow'), '94');
+    await page.keyboard.press ('Home');
+    await drawn();
+    assert.equal (await page.getAttribute (src, 'aria-valuenow'), '6');
+    assert.equal (await page.getAttribute (src, 'aria-valuetext'), '88% left');
+    assert.deepEqual (errors, []);
+});
