@@ -121,11 +121,13 @@ jobs:
         shell: pwsh
         run: nuget install Microsoft.Web.WebView2 -Version 1.0.2903.40 -OutputDirectory packages
 
+      # Keyed on the runner image too: the cache holds built tools (juceaide), and a copy
+      # built on an older image or compiler must not be restored onto a newer one.
       - name: Cache dependencies
         uses: actions/cache@v6
         with:
           path: build/_deps
-          key: deps-${{ matrix.artifact }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+          key: deps-${{ matrix.artifact }}-${{ matrix.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
 
       - name: Configure
         shell: bash
@@ -247,13 +249,37 @@ jobs:
           mkdir -p dist
           find build -path "*_artefacts*" \( -name "*.vst3" -o -name "*.component" -o -name "*.clap" -o -name "*.app" -o -name "Drenched.exe" -o -name "Drenched" -type f \) -prune -exec cp -R {} dist/ \; || true
           ls -la dist
+          # Every format this system builds, or the job stops here rather than at whichever
+          # later step happens to need the missing one.
+          case "$RUNNER_OS" in
+            macOS)   WANT="Drenched.vst3 Drenched.component Drenched.clap Drenched.app" ;;
+            Windows) WANT="Drenched.vst3 Drenched.clap Drenched.exe" ;;
+            Linux)   WANT="Drenched.vst3 Drenched.clap Drenched" ;;
+          esac
+          for f in $WANT; do [ -e "dist/$f" ] || { echo "not built: $f"; exit 1; }; done
 
-      - name: Upload plugins
+      # Windows: the folder, which the bundle job downloads. macOS and Linux: one .tar.gz,
+      # since a zipped artifact loses the executable bit (the app wouldn't start).
+      - name: Upload plugins (Windows)
+        if: runner.os == 'Windows'
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: dist
-          if-no-files-found: warn
+          if-no-files-found: error
+
+      - name: Pack plugins (macOS, Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: tar czf "${{ matrix.artifact }}.tar.gz" -C dist .
+
+      - name: Upload plugins (macOS, Linux)
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ matrix.artifact }}.tar.gz
+          archive: false
+          if-no-files-found: error
 
       # The beta installer: one .pkg with each format as a component (not signed yet).
       - name: Build installer (macOS)
@@ -337,7 +363,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: build/_deps
-          key: deps-Drenched-Linux-x64-${{ hashFiles('cmake/Dependencies.cmake') }}
+          key: deps-Drenched-Linux-x64-ubuntu-24.04-${{ hashFiles('cmake/Dependencies.cmake') }}
 
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DDRENCHED_BETA=OFF -DDRENCHED_ALLOW_TEST_LICENCE=ON
@@ -405,7 +431,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: build/_deps
-          key: deps-Drenched-Linux-x64-${{ hashFiles('cmake/Dependencies.cmake') }}
+          key: deps-Drenched-Linux-x64-ubuntu-24.04-${{ hashFiles('cmake/Dependencies.cmake') }}
 
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DDRENCHED_SANITIZE=${{ matrix.sanitize }}
@@ -446,12 +472,15 @@ jobs:
           A=build-i686/source/plugin/Drenched_artefacts/Release
           cp -R "$A/VST3/Drenched.vst3" "$A/CLAP/Drenched.clap" "$A/Standalone/Drenched" dist/
           ls -la dist
+          tar czf Drenched-Linux-i686.tar.gz -C dist .
 
+      # A .tar.gz, since a zipped artifact loses the executable bit.
       - name: Upload plugins
         uses: actions/upload-artifact@v7
         with:
-          name: Drenched-Linux-i686
-          path: dist
+          path: Drenched-Linux-i686.tar.gz
+          archive: false
+          if-no-files-found: error
 
   windows-bundle:
     # One download for Windows: a VST3 bundle holding both the 32-bit and 64-bit
