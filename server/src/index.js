@@ -150,6 +150,26 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
                 licences = await store.listByOrder (data.id);
             }
 
+            // A refund or chargeback that arrived first: the numbers exist, so the order still
+            // shows as handled, but withdrawn, and are never sent. Read after the numbers are
+            // made, as the refund records itself before reading them: whichever runs second
+            // sees the other.
+            const held = await store.getAdjustment (data.id);
+
+            if (held?.outcome === 'withdrawn')
+            {
+                for (const l of licences)
+                    if (! l.revoked)
+                        await store.updateLicence (l.key, { revoked: true, note: held.note });
+
+                return json (200, { ok: true, licences: licences.length, withdrawn: licences.length });
+            }
+
+            if (held?.outcome === 'flagged')
+                for (const l of licences)
+                    if (l.note !== held.note)
+                        await store.updateLicence (l.key, { note: held.note });
+
             // The first licence stands for the whole email: the delivery that marks it sends
             // it, and gives the mark back if sending fails, so a retry sends it instead.
             const first = licences[0];
@@ -177,20 +197,26 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
 
         if (adjustment && data.status === 'approved' && (data.action === 'refund' || data.action === 'chargeback') && data.transaction_id)
         {
-            const licences = await store.listByOrder (data.transaction_id);
-
             // A partial refund gives only an amount, never which copies, and is as often a
             // goodwill discount: the numbers stay, marked for support to look at.
-            if (data.action === 'refund' && data.type === 'partial')
+            const partial = data.action === 'refund' && data.type === 'partial';
+            const note = `${partial ? 'partial refund' : data.action} ${data.id ?? ''}`.trim();
+
+            // Recorded before the numbers are read, so a sale still on its way (Paddle retries
+            // one the server failed to take) issues them withdrawn or flagged too.
+            await store.recordAdjustment (data.transaction_id, { outcome: partial ? 'flagged' : 'withdrawn', note });
+            const licences = await store.listByOrder (data.transaction_id);
+
+            if (partial)
             {
                 for (const l of licences)
-                    await store.updateLicence (l.key, { note: `partial refund ${data.id ?? ''}`.trim() });
+                    await store.updateLicence (l.key, { note });
 
                 return json (200, { ok: true, revoked: 0, flagged: licences.length });
             }
 
             for (const l of licences)
-                await store.updateLicence (l.key, { revoked: true, note: `${data.action} ${data.id ?? ''}`.trim() });
+                await store.updateLicence (l.key, { revoked: true, note });
 
             return json (200, { ok: true, revoked: licences.length });
         }
@@ -198,6 +224,7 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
         // The bank found for us after all.
         if (adjustment && data.status === 'approved' && data.action === 'chargeback_reverse' && data.transaction_id)
         {
+            await store.clearAdjustment (data.transaction_id);
             const licences = await store.listByOrder (data.transaction_id);
 
             for (const l of licences)
