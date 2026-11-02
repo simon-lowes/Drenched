@@ -1,7 +1,10 @@
 ; The Windows installer for the friends beta, built in CI by Inno Setup 6 from the
 ; merged Windows download (see .github/workflows/build.yml, windows-installer).
 ;
-;   iscc /DAppVersion=0.1.0 /DSource=<folder of the merged download> /O<output folder> Drenched.iss
+;   iscc /DAppVersion=0.1.0 /DBuild=<CI run number> /DSource=<folder of the merged download> /O<output folder> Drenched.iss
+;
+; Build tells beta drops of one version apart (file name, Apps list, upgrade); without it
+; the installer has the plain version.
 ;
 ; The source folder holds the merged VST3 bundle (32 and 64-bit inside), CLAP\64-bit and
 ; CLAP\32-bit, Drenched.exe and "Drenched (32-bit).exe". On 64-bit Windows both sets go in,
@@ -11,6 +14,15 @@
 #ifndef AppVersion
   #define AppVersion "0.1.0"
 #endif
+#ifdef Build
+  #define FullVersion AppVersion + "." + Build
+  #define FileVersion AppVersion + "-build-" + Build
+  #define VerName AppVersion + " beta (build " + Build + ")"
+#else
+  #define FullVersion AppVersion
+  #define FileVersion AppVersion
+  #define VerName AppVersion + " beta"
+#endif
 #ifndef Source
   #define Source "dist"
 #endif
@@ -19,20 +31,21 @@
 [Setup]
 AppId={{6B0F3C2E-5C1D-4F7A-9E2B-D7A1C3E5F801}
 AppName=Drenched
-AppVersion={#AppVersion}
-AppVerName=Drenched {#AppVersion} beta
+AppVersion={#FullVersion}
+VersionInfoVersion={#FullVersion}
+AppVerName=Drenched {#VerName}
 AppPublisher=Drenched
 DefaultDirName={autopf}\Drenched
 DefaultGroupName=Drenched
 DisableProgramGroupPage=yes
-OutputBaseFilename=Drenched-{#AppVersion}-Windows-Setup
+OutputBaseFilename=Drenched-{#FileVersion}-Windows-Setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x86compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
-UninstallDisplayName=Drenched {#AppVersion}
+UninstallDisplayName=Drenched {#VerName}
 UninstallDisplayIcon={app}\Drenched.exe
 ; Several components' licences ask for their notices in documentation shipped with the
 ; binaries; the licence page shows them all (tools/third_party_licences.py builds the file).

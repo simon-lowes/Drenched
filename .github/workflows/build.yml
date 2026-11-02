@@ -247,8 +247,10 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
+          # The run number tells beta drops of the same version apart, in the file names
+          # and in the package version (so an install over an older drop is an upgrade).
           VERSION=$(sed -n 's/^project(Drenched VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
-          bash packaging/macos/build-pkg.sh dist "$VERSION" "Drenched-$VERSION-macOS.pkg"
+          bash packaging/macos/build-pkg.sh dist "$VERSION.$GITHUB_RUN_NUMBER" "Drenched-$VERSION-build-$GITHUB_RUN_NUMBER-macOS.pkg"
 
       # What a tester gets: the package installed as they would install it, every format
       # where hosts look (not moved to the build folder's copies), and the installed Audio
@@ -285,14 +287,15 @@ jobs:
         shell: bash
         run: |
           VERSION=$(sed -n 's/^project(Drenched VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          NAME="Drenched-$VERSION-build-$GITHUB_RUN_NUMBER-macOS"
           mkdir dmg
-          cp "Drenched-$VERSION-macOS.pkg" dmg/
+          cp "$NAME.pkg" dmg/
           cp packaging/user-guide.html "dmg/User guide.html"
-          hdiutil create -volname "Drenched $VERSION" -srcfolder dmg -fs HFS+ -format UDZO -ov "Drenched-$VERSION-macOS.dmg"
-          hdiutil verify "Drenched-$VERSION-macOS.dmg"
-          hdiutil attach -nobrowse -mountpoint dmg-check "Drenched-$VERSION-macOS.dmg"
+          hdiutil create -volname "Drenched $VERSION build $GITHUB_RUN_NUMBER" -srcfolder dmg -fs HFS+ -format UDZO -ov "$NAME.dmg"
+          hdiutil verify "$NAME.dmg"
+          hdiutil attach -nobrowse -mountpoint dmg-check "$NAME.dmg"
           ls -la dmg-check
-          [ -f "dmg-check/Drenched-$VERSION-macOS.pkg" ] && [ -f "dmg-check/User guide.html" ] || { echo "disk image is missing a file"; exit 1; }
+          [ -f "dmg-check/$NAME.pkg" ] && [ -f "dmg-check/User guide.html" ] || { echo "disk image is missing a file"; exit 1; }
           hdiutil detach dmg-check
 
       # Uploaded as the file itself rather than zipped, so it downloads as a .dmg.
@@ -493,7 +496,7 @@ jobs:
           $version = (Select-String -Path CMakeLists.txt -Pattern '^project\(Drenched VERSION ([0-9.]+)').Matches[0].Groups[1].Value
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
-          & $iscc "/DAppVersion=$version" "/DSource=$PWD\dist" "/O$PWD\installer" packaging\windows\Drenched.iss
+          & $iscc "/DAppVersion=$version" "/DBuild=$env:GITHUB_RUN_NUMBER" "/DSource=$PWD\dist" "/O$PWD\installer" packaging\windows\Drenched.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem installer
 

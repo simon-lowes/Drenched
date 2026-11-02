@@ -24,6 +24,10 @@ TEST_CASE ("Bug report details name the version, format, host, computer, audio, 
     const auto lines = juce::StringArray::fromLines (details);
     REQUIRE (lines.size() == 8);
     CHECK (lines[0].startsWith ("Drenched "));
+    // Which build: CI's run number (or "local build") and the commit it was built from.
+    CHECK ((lines[0].contains (", build ") || lines[0].contains (", local build ")));
+    const auto commit = lines[0].fromFirstOccurrenceOf ("(", false, false).upToFirstOccurrenceOf (")", false, false);
+    CHECK ((commit == "unknown" || (commit.length() == 7 && commit.containsOnly ("0123456789abcdef"))));
     CHECK ((lines[0].endsWith ("32-bit") || lines[0].endsWith ("64-bit")));
     CHECK (lines[1].startsWith ("Format: "));
     CHECK (lines[2].startsWith ("Host: "));

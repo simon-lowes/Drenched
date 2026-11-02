@@ -45,6 +45,29 @@ juce_add_binary_data(DrenchedLibrary
 
 set_target_properties(DrenchedLibrary PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# Which build this is, so testers' bug reports and installers can be told apart while
+# the version stays the same between beta drops. CI numbers each run (GITHUB_RUN_NUMBER);
+# a local build has no number. The commit is read when CMake configures.
+set(DRENCHED_BUILD_NUMBER "$ENV{GITHUB_RUN_NUMBER}" CACHE STRING "Build number (CI run), empty for a local build")
+if(NOT DRENCHED_BUILD_NUMBER MATCHES "^[0-9]*$")
+    message(FATAL_ERROR "DRENCHED_BUILD_NUMBER must be a whole number, not ${DRENCHED_BUILD_NUMBER}")
+endif()
+set(DRENCHED_COMMIT "unknown")
+find_package(Git QUIET)
+if(GIT_FOUND)
+    execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse --short=7 HEAD
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+                    OUTPUT_VARIABLE gitCommit OUTPUT_STRIP_TRAILING_WHITESPACE
+                    RESULT_VARIABLE gitResult ERROR_QUIET)
+    if(gitResult EQUAL 0 AND gitCommit MATCHES "^[0-9a-f]+$")
+        set(DRENCHED_COMMIT "${gitCommit}")
+    endif()
+endif()
+# CFBundleVersion on macOS is the build number when there is one.
+if(DRENCHED_BUILD_NUMBER)
+    set(drenchedBundleVersion BUILD_VERSION "${DRENCHED_BUILD_NUMBER}")
+endif()
+
 juce_add_plugin(Drenched
     PRODUCT_NAME "Drenched"
     COMPANY_NAME "Drenched"
@@ -67,7 +90,12 @@ juce_add_plugin(Drenched
     VST3_CATEGORIES Fx Reverb
     AU_MAIN_TYPE kAudioUnitType_Effect
     AAX_CATEGORY AAX_ePlugInCategory_Reverb
+    ${drenchedBundleVersion}
     COPY_PLUGIN_AFTER_BUILD FALSE)
+
+# Only the bug report needs these, so a new commit recompiles one file, not the plug-in.
+set_source_files_properties(PluginProcessor.cpp PROPERTIES COMPILE_DEFINITIONS
+    "DRENCHED_BUILD_NUMBER=\"${DRENCHED_BUILD_NUMBER}\";DRENCHED_COMMIT=\"${DRENCHED_COMMIT}\"")
 
 target_sources(Drenched PRIVATE
     Library.cpp
