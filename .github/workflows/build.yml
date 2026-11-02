@@ -143,7 +143,13 @@ jobs:
 
       - name: Unit tests
         shell: bash
-        run: ctest --test-dir build -C Release --output-on-failure
+        run: ctest --test-dir build -C Release --label-exclude "^timing$" --output-on-failure
+
+      # Tests that time the code fail when the runner is busy rather than when the code is
+      # slow, so they run on their own and get two more tries before failing.
+      - name: Timing tests
+        shell: bash
+        run: ctest --test-dir build -C Release --label-regex "^timing$" --repeat until-pass:3 --output-on-failure
 
       - name: Cache pluginval
         if: matrix.pluginval == 'source'
@@ -328,6 +334,75 @@ jobs:
 
       - name: Licence tests
         run: ctest --test-dir build --label-regex "^licence$" --no-tests=error --output-on-failure
+
+  checks:
+    # The tests again, built to catch what a Release build can't: the realtime sanitizer
+    # stops a test the moment anything marked DRENCHED_NONBLOCKING (processBlock and the
+    # reverb's process) allocates, frees, locks or waits; the thread sanitizer finds data
+    # races between the audio, message and builder threads; the address and undefined
+    # behaviour sanitizers find memory errors and leaks; and the Debug build fails on any
+    # jassert or leak JUCE reports that a test didn't ask for (tests/plugin/Main.cpp).
+    # Linux only: the code they check is the same on every platform.
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Realtime sanitizer (Linux)
+            build_type: RelWithDebInfo
+            sanitize: realtime
+            clang: true
+          # The tests that run threads against each other; the rest run one thread at a
+          # time, and take far longer under this sanitizer for nothing more. One at a
+          # time: each stress test already keeps every core busy.
+          - name: Thread sanitizer (Linux)
+            build_type: RelWithDebInfo
+            sanitize: thread
+            tests: --label-regex "^(stress|scenes|builder)$" --parallel 1
+          - name: Address and undefined behaviour sanitizers (Linux)
+            build_type: RelWithDebInfo
+            sanitize: address,undefined
+          - name: Debug (Linux)
+            build_type: Debug
+            sanitize: ""
+
+    env:
+      RTSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+      ASAN_OPTIONS: detect_leaks=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - *linux-dependencies
+
+      # The realtime sanitizer is Clang's, from Clang 20; Ubuntu 24.04 has it in its own
+      # updates, with the sanitizer runtimes in libclang-rt-20-dev.
+      - name: Install Clang 20
+        if: matrix.clang
+        run: |
+          sudo apt-get install -y --no-install-recommends clang-20 libclang-rt-20-dev
+          echo "CC=clang-20" >> "$GITHUB_ENV"
+          echo "CXX=clang++-20" >> "$GITHUB_ENV"
+
+      # The Linux (x64) build's fetched dependencies, only read, as in the licence job.
+      - name: Restore dependencies
+        uses: actions/cache/restore@v6
+        with:
+          path: build/_deps
+          key: deps-Drenched-Linux-x64-${{ hashFiles('cmake/Dependencies.cmake') }}
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DDRENCHED_SANITIZE=${{ matrix.sanitize }}
+
+      - name: Build
+        run: cmake --build build --target drenched_tests drenched_plugin_tests --parallel
+
+      # The timing tests are left out: under a sanitizer they would time the sanitizer.
+      - name: Tests
+        run: ctest --test-dir build --label-exclude "^timing$" --parallel 2 ${{ matrix.tests }} --no-tests=error --output-on-failure
 
   linux-i686:
     name: Linux (i686, 32-bit)

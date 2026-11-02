@@ -38,13 +38,16 @@ public:
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
-    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    /** Real-time safe: no allocation, locks or blocking calls, which RealtimeSanitizer
+        checks (drenched/Realtime.h), except bouncing offline (isNonRealtime), where the
+        host waits for each block and a change is built in it. */
+    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) DRENCHED_NONBLOCKING override;
     using AudioProcessor::processBlock;
 
     /** Bypassed, only the dry sound plays, delayed by the same latency as when the
         reverb plays, so the host's latency compensation stays right. The reverb
-        fades out and back in rather than clicking. */
-    void processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+        fades out and back in rather than clicking. Real-time safe as processBlock is. */
+    void processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer&) DRENCHED_NONBLOCKING override;
     using AudioProcessor::processBlockBypassed;
 
     juce::AudioProcessorEditor* createEditor() override;
@@ -180,6 +183,21 @@ public:
 
     /** Changes whenever a new response starts playing. From any thread. */
     std::uint64_t responseVersion() const noexcept { return builder->buildCount(); }
+
+    /** For tests: waits up to timeoutMs until the builder has built every room asked of it
+        so far (see KernelBuilder::waitUntilIdle); whether it has. A moved control reaches
+        the builder from the timer, so run that first. Never on the audio thread. */
+    bool waitForBuilder (int timeoutMs) const { return builder->waitUntilIdle (std::chrono::milliseconds (timeoutMs)); }
+
+    /** For tests: whether the room built last is the one the settings, the space and the
+        output speakers ask for now. False before anything is prepared and while the
+        chosen recording is still being read. Message thread. */
+    bool roomIsCurrent() const;
+
+    /** For tests: whether the plugin still has work going on in the background (a file or
+        recording read, a room matched or analysed, a room to build). Once there is none,
+        what that work handed to the message thread is already waiting there. */
+    bool hasBackgroundWork() const;
 
     /** The recording the playing response was built from, a library space's or a file's;
         null for a modelled space or before anything has been built. From any thread. */

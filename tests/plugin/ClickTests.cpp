@@ -1,5 +1,6 @@
 #include "PluginTestHelpers.h"
 
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
@@ -94,35 +95,38 @@ namespace
     float decibels (float x) { return juce::Decibels::gainToDecibels (x, -200.0f); }
 }
 
-TEST_CASE ("No control clicks when it jumps from one end of its range to the other", "[plugin][clicks]")
+// One test case per control (TestType::value is its place in ParamIDs::ordered), so each
+// is its own CTest entry: they run in parallel, and each stays well inside the timeout
+// under sanitizers, where all of them in one would not.
+TEMPLATE_LIST_TEST_CASE ("No control clicks when it jumps from one end of its range to the other", "[plugin][clicks]",
+                         testing::EachParameter)
 {
-    for (const auto* id : ParamIDs::ordered)
+    const auto* id = ParamIDs::ordered[TestType::value];
+
+    for (const auto [from, to] : { std::pair { 0.0f, 1.0f }, std::pair { 1.0f, 0.0f } })
     {
-        for (const auto [from, to] : { std::pair { 0.0f, 1.0f }, std::pair { 1.0f, 0.0f } })
-        {
-            testing::Plugin p;
+        testing::Plugin p;
 
-            // Bouncing offline, so each change is built at the block it happens.
-            testing::onMessageThread ([&] { p->setNonRealtime (true); p->prepareToPlay (rate, blockSize); });
-            auto* control = find (*p, id);
-            REQUIRE (control != nullptr);
-            auto* mix = find (*p, ParamIDs::mix);
-            mix->setValueNotifyingHost (mix->convertTo0to1 (50.0f));
-            control->setValueNotifyingHost (from);
+        // Bouncing offline, so each change is built at the block it happens.
+        testing::onMessageThread ([&] { p->setNonRealtime (true); p->prepareToPlay (rate, blockSize); });
+        auto* control = find (*p, id);
+        REQUIRE (control != nullptr);
+        auto* mix = find (*p, ParamIDs::mix);
+        mix->setValueNotifyingHost (mix->convertTo0to1 (50.0f));
+        control->setValueNotifyingHost (from);
 
-            Tone tone { *p };
-            tone.play (1.5);
-            const auto jump = tone.now();
-            const auto before = tone.peak (jump - 12000, jump);
-            control->setValueNotifyingHost (to);
-            tone.play (1.5);
+        Tone tone { *p };
+        tone.play (1.5);
+        const auto jump = tone.now();
+        const auto before = tone.peak (jump - 12000, jump);
+        control->setValueNotifyingHost (to);
+        tone.play (1.5);
 
-            const auto level = std::max (before, tone.peak (tone.now() - 12000, tone.now()));
-            const auto click = decibels (tone.roughness (jump, jump + 24000) / level);
-            const auto settled = decibels (tone.roughness (tone.now() - 12000, tone.now()) / level);
+        const auto level = std::max (before, tone.peak (tone.now() - 12000, tone.now()));
+        const auto click = decibels (tone.roughness (jump, jump + 24000) / level);
+        const auto settled = decibels (tone.roughness (tone.now() - 12000, tone.now()) / level);
 
-            INFO (id << " from " << from << " to " << to << ": click " << click << " dB, settled " << settled << " dB");
-            CHECK (click < std::max (-40.0f, settled + 6.0f));
-        }
+        INFO (id << " from " << from << " to " << to << ": click " << click << " dB, settled " << settled << " dB");
+        CHECK (click < std::max (-40.0f, settled + 6.0f));
     }
 }

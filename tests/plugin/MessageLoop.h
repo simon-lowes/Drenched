@@ -55,6 +55,25 @@ namespace testing
        #endif
     }
 
+    /** Dispatches every message already waiting for the message thread, and any those
+        post in turn, without waiting for more: whether there were any. Linux and Windows
+        only. */
+    inline bool dispatchWaiting()
+    {
+       #if JUCE_MAC
+        FAIL ("No message loop to run on macOS: use DRENCHED_NEEDS_MESSAGE_LOOP()");
+        return false;
+       #else
+        REQUIRE (juce::MessageManager::existsAndIsCurrentThread());
+        auto any = false;
+
+        while (juce::detail::dispatchNextMessageOnSystemQueue (true))
+            any = true;
+
+        return any;
+       #endif
+    }
+
     /** Runs the message loop, 10 ms at a time, until `done` returns true (checked between
         runs, on the message thread). False if it still hasn't after timeoutMs. */
     template <typename Predicate>

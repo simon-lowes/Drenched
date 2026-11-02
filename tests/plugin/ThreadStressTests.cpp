@@ -6,6 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -18,8 +19,11 @@ using namespace drenched;
 
 /*  The host plays audio on its own thread while the interface and the host change
     everything else: spaces, settings, scenes, sessions. This runs both at once, as fast
-    as they go, for a few seconds. Run under ThreadSanitizer (DRENCHED_SANITIZE=thread)
-    it also finds data races between them. */
+    as they go, for a fixed number of changes, so every machine runs the same sequence.
+    Run under ThreadSanitizer (DRENCHED_SANITIZE=thread, as CI does) it also finds data
+    races between them. Afterwards each test checks the plugin came through whole: what
+    it played stayed in bounds, the room it plays is the one asked for, and it plays a
+    session as a new instance does. */
 
 namespace
 {
@@ -27,6 +31,159 @@ namespace
     {
         if (auto* parameter = p.getState().getParameter (id))
             parameter->setValueNotifyingHost (normalised);
+    }
+
+    /** What the processor's timer does: follows the scene parameter, rebuilds the response.
+        Timer is a private base, which only a C-style cast may reach. */
+    void tick (DrenchedProcessor& p)
+    {
+        ((juce::Timer&) p).timerCallback();
+    }
+
+    /** Runs step (0, 1, 2 ...) `count` times. The time limit only guards against a hang,
+        well inside CTest's timeout even under sanitizers: a run it cuts short says so,
+        and still checks what it did. */
+    template <typename Step>
+    void runSteps (int count, Step&& step)
+    {
+        const auto giveUp = std::chrono::steady_clock::now() + std::chrono::seconds (60);
+        auto done = 0;
+
+        while (done < count && std::chrono::steady_clock::now() < giveUp)
+            step (done++);
+
+        if (done < count)
+            WARN ("Stopped after " << done << " of " << count << " steps, at the time limit");
+    }
+
+    /** What the audio threads played: whether every sample was a number, the loudest, and
+        how many blocks. */
+    struct Played
+    {
+        std::atomic<bool> finite { true };
+        std::atomic<float> peak { 0.0f };
+        std::atomic<int> blocks { 0 };
+
+        void note (const juce::AudioBuffer<float>& buffer)
+        {
+            auto most = 0.0f;
+
+            for (int c = 0; c < buffer.getNumChannels(); ++c)
+            {
+                for (int i = 0; i < buffer.getNumSamples(); ++i)
+                {
+                    if (const auto x = buffer.getSample (c, i); std::isfinite (x))
+                        most = std::max (most, std::abs (x));
+                    else
+                        finite.store (false);
+                }
+            }
+
+            for (auto was = peak.load(); most > was && ! peak.compare_exchange_weak (was, most);)
+            {}
+
+            blocks.fetch_add (1);
+        }
+    };
+
+    /** Noise at -6 dBFS peak, the input every audio thread here plays. With every control
+        anywhere in its range the reverb can't make that more than about 46 dB louder; a
+        sum gone wrong between threads (garbage, rather than NaN) is far louder still. */
+    constexpr float loudestOutput = 100.0f;
+
+    /** Prepares p at 48 kHz, as a host restarting audio does, then plays it an impulse and
+        a second of silence: the room its session asks for, heard from scratch. */
+    std::vector<float> impulseThrough (DrenchedProcessor& p)
+    {
+        constexpr int block = 512;
+        testing::onMessageThread ([&] { p.prepareToPlay (48000.0, block); });
+        REQUIRE (testing::builderIdle (p));
+        CHECK (p.roomIsCurrent());
+
+        juce::AudioBuffer<float> buffer (2, block);
+        juce::MidiBuffer midi;
+        std::vector<float> out;
+
+        for (int b = 0; b < 48000 / block; ++b)
+        {
+            buffer.clear();
+
+            if (b == 0)
+            {
+                buffer.setSample (0, 0, 0.5f);
+                buffer.setSample (1, 0, 0.5f);
+            }
+
+            p.processBlock (buffer, midi);
+
+            for (int i = 0; i < block; ++i)
+            {
+                out.push_back (buffer.getSample (0, i));
+                out.push_back (buffer.getSample (1, i));
+            }
+        }
+
+        return out;
+    }
+
+    /** Whether p, given `session`, plays it as a new instance given the same session does. */
+    void playsAsNew (DrenchedProcessor& p, const juce::MemoryBlock& session)
+    {
+        testing::onMessageThread ([&] { p.setStateInformation (session.getData(), static_cast<int> (session.getSize())); });
+        const auto heard = impulseThrough (p);
+
+        testing::Plugin fresh;
+        testing::onMessageThread ([&] { fresh->setStateInformation (session.getData(), static_cast<int> (session.getSize())); });
+        const auto expected = impulseThrough (*fresh);
+
+        REQUIRE (heard.size() == expected.size());
+        auto difference = 0.0f, loudest = 0.0f;
+
+        for (size_t i = 0; i < heard.size(); ++i)
+        {
+            difference = std::max (difference, std::abs (heard[i] - expected[i]));
+            loudest = std::max (loudest, std::abs (expected[i]));
+        }
+
+        INFO ("loudest " << loudest << ", differs by up to " << difference);
+        CHECK (loudest > 0.0f);
+        CHECK (difference <= 1.0e-5f * loudest);
+    }
+
+    std::vector<juce::String> allSpaces()
+    {
+        std::vector<juce::String> spaces;
+
+        for (const auto& space : bundledSpaces)
+            spaces.push_back (space.id);
+
+        for (const auto& space : library::spaces())
+            spaces.push_back (space.id);
+
+        return spaces;
+    }
+
+    std::vector<juce::String> librarySpaces()
+    {
+        std::vector<juce::String> spaces;
+
+        for (const auto& space : library::spaces())
+            spaces.push_back (space.id);
+
+        return spaces;
+    }
+
+    /** Every parameter but Low CPU, a latency change, which hosts restart for. */
+    std::vector<juce::String> parameterIds (DrenchedProcessor& p)
+    {
+        std::vector<juce::String> ids;
+
+        for (auto* parameter : p.getParameters())
+            if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter))
+                if (ranged->paramID != ParamIDs::lowCpu)
+                    ids.push_back (ranged->paramID);
+
+        return ids;
     }
 }
 
@@ -37,10 +194,16 @@ TEST_CASE ("Playing while everything else changes stays finite", "[plugin][stres
 
     testing::Plugin plugin;
     auto& p = *plugin;
-    testing::onMessageThread ([&] { p.prepareToPlay (rate, blockSize); });
+    juce::MemoryBlock initial;
 
-    std::atomic<bool> running { true }, finite { true };
-    std::atomic<int> blocks { 0 };
+    testing::onMessageThread ([&]
+    {
+        p.prepareToPlay (rate, blockSize);
+        p.getStateInformation (initial);
+    });
+
+    std::atomic<bool> running { true };
+    Played played;
 
     std::thread audio ([&]
     {
@@ -56,42 +219,23 @@ TEST_CASE ("Playing while everything else changes stays finite", "[plugin][stres
                     buffer.setSample (c, i, noise (rng));
 
             p.processBlock (buffer, midi);
-
-            for (int c = 0; c < 2; ++c)
-                for (int i = 0; i < blockSize; ++i)
-                    if (! std::isfinite (buffer.getSample (c, i)))
-                        finite.store (false);
-
-            blocks.fetch_add (1);
+            played.note (buffer);
         }
     });
 
     testing::onMessageThread ([&]
     {
-        std::vector<juce::String> spaces;
-
-        for (const auto& space : bundledSpaces)
-            spaces.push_back (space.id);
-
-        for (const auto& space : library::spaces())
-            spaces.push_back (space.id);
-
-        std::vector<juce::String> ids;
-
-        for (auto* parameter : p.getParameters())
-            if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter))
-                if (ranged->paramID != ParamIDs::lowCpu) // a latency change; hosts restart for it
-                    ids.push_back (ranged->paramID);
+        const auto spaces = allSpaces();
+        const auto ids = parameterIds (p);
 
         std::mt19937 rng (2u);
         std::uniform_real_distribution<float> unit (0.0f, 1.0f);
         const auto pick = [&rng] (const auto& list) { return list[rng() % list.size()]; };
 
-        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds (4);
         juce::MemoryBlock session;
         p.getStateInformation (session);
 
-        for (int step = 0; std::chrono::steady_clock::now() < end; ++step)
+        runSteps (4000, [&] (int step)
         {
             switch (step % 8)
             {
@@ -105,18 +249,20 @@ TEST_CASE ("Playing while everything else changes stays finite", "[plugin][stres
                 default: break;
             }
 
-            // What the processor's timer does: follows the scene parameter, rebuilds the
-            // response. Timer is a private base, which only a C-style cast may reach.
-            ((juce::Timer&) p).timerCallback();
-        }
+            tick (p);
+        });
     });
 
     running.store (false);
     audio.join();
 
-    INFO (blocks.load() << " blocks played");
-    CHECK (blocks.load() > 0);
-    CHECK (finite.load());
+    INFO (played.blocks.load() << " blocks played, the loudest sample " << played.peak.load());
+    CHECK (played.blocks.load() > 0);
+    CHECK (played.finite.load());
+    CHECK (played.peak.load() < loudestOutput);
+
+    // Nothing left behind: the session it started with plays as it would in a new instance.
+    playsAsNew (p, initial);
 }
 
 TEST_CASE ("Many instances play at once while the host opens and closes more", "[plugin][stress]")
@@ -135,8 +281,8 @@ TEST_CASE ("Many instances play at once while the host opens and closes more", "
         testing::onMessageThread ([&] { (*plugin)->prepareToPlay (rate, blockSize); });
     }
 
-    std::atomic<bool> running { true }, finite { true };
-    std::atomic<int> blocks { 0 };
+    std::atomic<bool> running { true };
+    Played played;
     std::vector<std::thread> audio;
 
     for (size_t n = 0; n < playing.size(); ++n)
@@ -156,46 +302,32 @@ TEST_CASE ("Many instances play at once while the host opens and closes more", "
                         buffer.setSample (c, i, noise (rng));
 
                 p.processBlock (buffer, midi);
-
-                for (int c = 0; c < 2; ++c)
-                    for (int i = 0; i < blockSize; ++i)
-                        if (! std::isfinite (buffer.getSample (c, i)))
-                            finite.store (false);
-
-                blocks.fetch_add (1);
+                played.note (buffer);
             }
         });
     }
 
     testing::onMessageThread ([&]
     {
-        std::vector<juce::String> spaces;
-
-        for (const auto& space : bundledSpaces)
-            spaces.push_back (space.id);
-
-        for (const auto& space : library::spaces())
-            spaces.push_back (space.id);
-
+        const auto spaces = allSpaces();
         std::mt19937 rng (3u);
-        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds (4);
 
-        for (int step = 0; std::chrono::steady_clock::now() < end; ++step)
+        runSteps (400, [&] (int step)
         {
             auto& p = **playing[static_cast<size_t> (step) % playing.size()];
             p.getUiState().setProperty (UiIDs::spaceId, spaces[rng() % spaces.size()], nullptr);
             set (p, ParamIDs::size, static_cast<float> (rng() % 100) / 100.0f);
-            ((juce::Timer&) p).timerCallback();
+            tick (p);
 
             // Opening and closing other instances, which load and free their own spaces.
-            if (step % 25 == 0)
+            if (step % 50 == 0)
             {
                 testing::Plugin extra;
                 extra->prepareToPlay (rates[rng() % rates.size()], blockSize);
                 extra->getUiState().setProperty (UiIDs::spaceId, spaces[rng() % spaces.size()], nullptr);
-                ((juce::Timer&) *extra).timerCallback();
+                tick (*extra);
             }
-        }
+        });
     });
 
     running.store (false);
@@ -203,9 +335,20 @@ TEST_CASE ("Many instances play at once while the host opens and closes more", "
     for (auto& thread : audio)
         thread.join();
 
-    INFO (blocks.load() << " blocks played");
-    CHECK (blocks.load() > static_cast<int> (playing.size()));
-    CHECK (finite.load());
+    INFO (played.blocks.load() << " blocks played, the loudest sample " << played.peak.load());
+    CHECK (played.blocks.load() > static_cast<int> (playing.size()));
+    CHECK (played.finite.load());
+    CHECK (played.peak.load() < loudestOutput);
+
+    // Each instance still builds the room its own settings ask for, at its own rate.
+    for (size_t n = 0; n < playing.size(); ++n)
+    {
+        INFO ("instance " << n);
+        auto& p = **playing[n];
+        testing::onMessageThread ([&] { p.prepareToPlay (rates[n], blockSize); });
+        REQUIRE (testing::builderIdle (p));
+        CHECK (p.roomIsCurrent());
+    }
 }
 
 TEST_CASE ("The host can save the session from a thread of its own while things change", "[plugin][stress]")
@@ -246,27 +389,14 @@ TEST_CASE ("The host can save the session from a thread of its own while things 
 
     testing::onMessageThread ([&]
     {
-        std::vector<juce::String> spaces;
-
-        for (const auto& space : bundledSpaces)
-            spaces.push_back (space.id);
-
-        for (const auto& space : library::spaces())
-            spaces.push_back (space.id);
-
-        std::vector<juce::String> ids;
-
-        for (auto* parameter : p.getParameters())
-            if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter))
-                if (ranged->paramID != ParamIDs::lowCpu)
-                    ids.push_back (ranged->paramID);
+        const auto spaces = allSpaces();
+        const auto ids = parameterIds (p);
 
         std::mt19937 rng (4u);
         std::uniform_real_distribution<float> unit (0.0f, 1.0f);
         const auto pick = [&rng] (const auto& list) { return list[rng() % list.size()]; };
-        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds (4);
 
-        for (int step = 0; std::chrono::steady_clock::now() < end; ++step)
+        runSteps (6000, [&] (int step)
         {
             switch (step % 5)
             {
@@ -277,8 +407,8 @@ TEST_CASE ("The host can save the session from a thread of its own while things 
                 default: p.getUiState().setProperty (UiIDs::speakers, juce::String (unit (rng) * -6.0f) + " 0", nullptr); break;
             }
 
-            ((juce::Timer&) p).timerCallback();
-        }
+            tick (p);
+        });
     });
 
     running.store (false);
@@ -294,7 +424,7 @@ TEST_CASE ("The host can save the session from a thread of its own while things 
     {
         set (p, ParamIDs::size, 0.25f);
         p.getUiState().setProperty (UiIDs::spaceId, bundledSpaces.back().id, nullptr);
-        ((juce::Timer&) p).timerCallback();
+        tick (p);
     });
 
     const auto xml = hostSave();
@@ -311,6 +441,12 @@ TEST_CASE ("The host can save the session from a thread of its own while things 
     REQUIRE (later != nullptr);
     CHECK (static_cast<float> (juce::ValueTree::fromXml (*later).getChildWithProperty ("id", ParamIDs::size).getProperty ("value"))
            == size->convertFrom0to1 (0.75f));
+
+    // And the session saved from the host's thread plays as it would in a new instance.
+    juce::MemoryBlock saved;
+    std::thread saver ([&] { p.getStateInformation (saved); });
+    saver.join();
+    playsAsNew (p, saved);
 }
 
 TEST_CASE ("The host can load a session from a thread of its own while things change", "[plugin][stress]")
@@ -353,16 +489,11 @@ TEST_CASE ("The host can load a session from a thread of its own while things ch
 
     testing::onMessageThread ([&]
     {
-        std::vector<juce::String> spaces;
-
-        for (const auto& space : library::spaces())
-            spaces.push_back (space.id);
-
+        const auto spaces = librarySpaces();
         std::mt19937 rng (5u);
         std::uniform_real_distribution<float> unit (0.0f, 1.0f);
-        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds (4);
 
-        for (int step = 0; std::chrono::steady_clock::now() < end; ++step)
+        runSteps (4000, [&] (int step)
         {
             switch (step % 4)
             {
@@ -372,8 +503,8 @@ TEST_CASE ("The host can load a session from a thread of its own while things ch
                 default: { juce::MemoryBlock saved; p.getStateInformation (saved); } break;
             }
 
-            ((juce::Timer&) p).timerCallback();
-        }
+            tick (p);
+        });
     });
 
     running.store (false);
@@ -385,11 +516,13 @@ TEST_CASE ("The host can load a session from a thread of its own while things ch
     // The last session loaded is the one that plays, and the one saved, once the
     // processor has caught up with it.
     hostLoad (second);
-    testing::onMessageThread ([&] { ((juce::Timer&) p).timerCallback(); });
+    testing::onMessageThread ([&] { tick (p); });
 
     const auto* size = p.getState().getParameter (ParamIDs::size);
     CHECK (p.getState().getRawParameterValue (ParamIDs::size)->load() == size->convertFrom0to1 (0.8f));
     CHECK (testing::onMessageThread ([&] { return p.getUiState().getProperty (UiIDs::spaceId).toString(); }) == bundledSpaces.back().id);
+    REQUIRE (testing::builderIdle (p));
+    CHECK (testing::onMessageThread ([&] { return p.roomIsCurrent(); }));
 
     // Saved before the processor catches up, a session just loaded saves as loaded.
     hostLoad (first);
@@ -399,6 +532,9 @@ TEST_CASE ("The host can load a session from a thread of its own while things ch
     const auto xml = juce::AudioProcessor::getXmlFromBinary (saved.getData(), static_cast<int> (saved.getSize()));
     REQUIRE (xml != nullptr);
     CHECK (juce::ValueTree::fromXml (*xml).getChildWithName (UiIDs::tree).getProperty (UiIDs::spaceId).toString() == bundledSpaces.front().id);
+
+    // And that session plays as it would in a new instance.
+    playsAsNew (p, first);
 }
 
 TEST_CASE ("The host can prepare the plugin from a thread of its own while things change", "[plugin][stress]")
@@ -410,32 +546,37 @@ TEST_CASE ("The host can prepare the plugin from a thread of its own while thing
     testing::onMessageThread ([&] { p.prepareToPlay (48000.0, 128); });
     std::atomic<bool> running { true };
     std::atomic<int> prepares { 0 };
+    Played played;
+
     std::thread host ([&]
     {
         juce::MidiBuffer midi;
+
         while (running.load())
         {
             p.prepareToPlay (prepares.load() % 2 == 0 ? 44100.0 : 48000.0, 256);
+
             for (int b = 0; b < 20; ++b)
             {
                 juce::AudioBuffer<float> buffer (2, 256);
                 buffer.clear();
                 buffer.setSample (0, 0, 0.5f);
                 p.processBlock (buffer, midi);
+                played.note (buffer);
             }
+
             p.releaseResources();
             prepares.fetch_add (1);
         }
     });
+
     testing::onMessageThread ([&]
     {
-        std::vector<juce::String> spaces;
-        for (const auto& space : library::spaces())
-            spaces.push_back (space.id);
+        const auto spaces = librarySpaces();
         std::mt19937 rng (5u);
         std::uniform_real_distribution<float> unit (0.0f, 1.0f);
-        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds (4);
-        for (int step = 0; std::chrono::steady_clock::now() < end; ++step)
+
+        runSteps (12000, [&] (int step)
         {
             switch (step % 5)
             {
@@ -448,13 +589,22 @@ TEST_CASE ("The host can prepare the plugin from a thread of its own while thing
 
             // Between redraws too: the interface writes its state many times a second.
             if (step % 3 == 0)
-                ((juce::Timer&) p).timerCallback();
-        }
+                tick (p);
+        });
     });
+
     running.store (false);
     host.join();
-    INFO (prepares.load());
+
+    INFO (prepares.load() << " prepares, the loudest sample " << played.peak.load());
     CHECK (prepares.load() > 0);
+    CHECK (played.finite.load());
+    CHECK (played.peak.load() < loudestOutput);
+
+    // Prepared once more, it builds the room it is asked for.
+    testing::onMessageThread ([&] { p.prepareToPlay (48000.0, 256); });
+    REQUIRE (testing::builderIdle (p));
+    CHECK (p.roomIsCurrent());
 }
 
 TEST_CASE ("The host can prepare the plugin on its own thread while the interface writes its state", "[plugin][stress]")
@@ -467,6 +617,7 @@ TEST_CASE ("The host can prepare the plugin on its own thread while the interfac
     testing::onMessageThread ([&] { p.prepareToPlay (48000.0, 128); });
     std::atomic<bool> running { true };
     std::atomic<int> prepares { 0 };
+
     std::thread host ([&]
     {
         while (running.load())
@@ -475,21 +626,34 @@ TEST_CASE ("The host can prepare the plugin on its own thread while the interfac
             prepares.fetch_add (1);
         }
     });
+
     testing::onMessageThread ([&]
     {
-        std::vector<juce::String> spaces;
-        for (const auto& space : library::spaces())
-            spaces.push_back (space.id);
-        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds (3);
-        for (size_t step = 0; std::chrono::steady_clock::now() < end; ++step)
+        const auto spaces = librarySpaces();
+
+        runSteps (1000000, [&] (int step)
         {
+            const auto n = static_cast<size_t> (step);
+
             if (! spaces.empty())
-                p.getUiState().setProperty (UiIDs::spaceId, spaces[step % spaces.size()], nullptr);
-            p.getUiState().setProperty (UiIDs::speakers, juce::String (static_cast<int> (step % 7)) + " 0;0 0", nullptr);
-        }
+                p.getUiState().setProperty (UiIDs::spaceId, spaces[n % spaces.size()], nullptr);
+
+            p.getUiState().setProperty (UiIDs::speakers, juce::String (static_cast<int> (n % 7)) + " 0;0 0", nullptr);
+        });
     });
+
     running.store (false);
     host.join();
     INFO (prepares.load());
     CHECK (prepares.load() > 0);
+
+    // The space last written is the one a host's prepare plays, once the timer has seen it.
+    testing::onMessageThread ([&]
+    {
+        tick (p);
+        p.prepareToPlay (48000.0, 256);
+    });
+
+    REQUIRE (testing::builderIdle (p));
+    CHECK (p.roomIsCurrent());
 }

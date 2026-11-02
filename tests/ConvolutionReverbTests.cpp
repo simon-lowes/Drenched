@@ -227,6 +227,60 @@ TEST_CASE ("Swapping kernels mid-sound keeps the old tail ringing", "[reverb]")
     REQUIRE (swapped.takeRetired() == nullptr);
 }
 
+TEST_CASE ("Prepared again, the reverb plays the room built next from its first block, with nothing of the one before", "[reverb][swap]")
+{
+    // A host restarting audio (prepareToPlay) is followed by the room it is to play,
+    // built before the first block (a session just loaded, say). Nothing rings in the
+    // old room after prepare(), so the new one plays alone at once: no handover, which
+    // would pass the first 40 ms of input through a room nobody asked for, to ring for
+    // its whole length. So a bounce sounds the same whatever was loaded before.
+    constexpr double sr = 48000.0;
+    auto wanted = hall (sr);
+    auto before = wanted;
+    before.space = 0; // a much longer room
+    before.decaySeconds = bundledSpaces[0].decaySeconds;
+
+    ReverbControls c;
+    c.mix = 0.5f;
+
+    // Played before with the reverb ducked all the way, which must not carry over either.
+    auto ducked = c;
+    ducked.ducking = 1.0f;
+
+    const auto played = [&] (bool wasPlaying)
+    {
+        ConvolutionReverb reverb;
+        reverb.prepare (sr);
+
+        if (wasPlaying)
+        {
+            reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (before)));
+            auto l = testing::noise (24000, 7), r = testing::noise (24000, 8);
+            run (reverb, l, r, ducked);
+            reverb.prepare (sr);
+        }
+
+        reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (wanted)));
+        auto l = testing::noise (48000, 9), r = testing::noise (48000, 10);
+        run (reverb, l, r, c);
+        return l;
+    };
+
+    const auto fresh = played (false);
+    const auto again = played (true);
+
+    auto difference = 0.0f, loudest = 0.0f;
+
+    for (std::size_t n = 0; n < fresh.size(); ++n)
+    {
+        difference = std::max (difference, std::abs (again[n] - fresh[n]));
+        loudest = std::max (loudest, std::abs (fresh[n]));
+    }
+
+    INFO ("loudest " << loudest << ", differs by up to " << difference);
+    CHECK (difference <= 1.0e-5f * loudest);
+}
+
 TEST_CASE ("A kernel for the wrong sample rate is never played", "[reverb]")
 {
     ConvolutionReverb reverb;
@@ -480,45 +534,114 @@ TEST_CASE ("The builder builds once the request settles and frees retired kernel
         REQUIRE (reverb.isReady());
 
         request.decaySeconds[3] = 0.9f;
+        const auto builds = builder.buildCount();
         builder.request (request);
 
-        for (int i = 0; i < 200 && builder.lastBuilt() != request; ++i)
-            std::this_thread::sleep_for (std::chrono::milliseconds (10));
-
+        REQUIRE (builder.waitUntilIdle (testing::buildTimeout));
         REQUIRE (builder.lastBuilt() == request);
+        CHECK (builder.buildCount() == builds + 1);
     }
 }
 
 TEST_CASE ("A request that needn't settle is built at once", "[reverb][builder]")
 {
     // A scene recalled or a space chosen is a single change, not a control being dragged,
-    // so it shouldn't wait for the value to rest.
+    // so it shouldn't wait for the value to rest. The rest here is far longer than the
+    // test waits for, so only a request built without it can land.
     ConvolutionReverb reverb;
     reverb.prepare (48000.0);
 
-    KernelBuilder builder (reverb, std::chrono::seconds (30));
+    KernelBuilder builder (reverb, std::chrono::minutes (10));
     auto request = hall (48000.0);
     builder.buildNow (request);
 
-    const auto waitFor = [&builder] (const ImpulseResponseRequest& wanted, int milliseconds)
-    {
-        for (int i = 0; i < milliseconds / 10 && builder.lastBuilt() != wanted; ++i)
-            std::this_thread::sleep_for (std::chrono::milliseconds (10));
-
-        return builder.lastBuilt() == wanted;
-    };
-
     request.decaySeconds[3] = 0.9f;
     builder.request (request);
-    CHECK_FALSE (waitFor (request, 300));
+    CHECK_FALSE (builder.waitUntilIdle (std::chrono::milliseconds (0))); // still settling
+    CHECK (builder.lastBuilt() != request);
 
     // The same request again, now not to settle, goes ahead.
     builder.request (request, false);
-    CHECK (waitFor (request, 10000));
+    CHECK (builder.waitUntilIdle (testing::buildTimeout));
+    CHECK (builder.lastBuilt() == request);
 
     request.decaySeconds[3] = 1.7f;
     builder.request (request, false);
-    CHECK (waitFor (request, 10000));
+    CHECK (builder.waitUntilIdle (testing::buildTimeout));
+    CHECK (builder.lastBuilt() == request);
+}
+
+TEST_CASE ("A room built at once replaces one asked for before it, which is never built", "[reverb][builder]")
+{
+    // The timer asks for the room as the settings were at its last tick; prepareToPlay
+    // then builds the room as they are now. The older request must not be built after
+    // it, or the room would go back to what it was a moment before.
+    ConvolutionReverb reverb;
+    reverb.prepare (48000.0);
+    KernelBuilder builder (reverb, std::chrono::minutes (10)); // so the request waits
+    auto request = hall (48000.0);
+    builder.buildNow (request);
+
+    auto older = request;
+    older.decaySeconds[3] = 0.6f;
+    builder.request (older);
+
+    auto now = request;
+    now.decaySeconds[3] = 1.2f;
+    builder.buildNow (now);
+
+    CHECK (builder.waitUntilIdle (std::chrono::milliseconds (0))); // nothing left to build
+    CHECK (builder.lastBuilt() == now);
+
+    // A request after it is built as usual.
+    auto later = request;
+    later.decaySeconds[3] = 1.5f;
+    builder.request (later, false);
+    REQUIRE (builder.waitUntilIdle (testing::buildTimeout));
+    CHECK (builder.lastBuilt() == later);
+}
+
+TEST_CASE ("The builder is idle only once everything asked of it is built", "[reverb][builder]")
+{
+    ConvolutionReverb reverb;
+    reverb.prepare (48000.0);
+    KernelBuilder builder (reverb, std::chrono::milliseconds (30));
+
+    // Nothing asked yet.
+    CHECK (builder.waitUntilIdle (std::chrono::milliseconds (0)));
+
+    auto request = hall (48000.0);
+    builder.buildNow (request);
+    CHECK (builder.waitUntilIdle (std::chrono::milliseconds (0)));
+    const auto builds = builder.buildCount();
+
+    // The room already built, asked for again: nothing to build, and idle once seen.
+    builder.request (request);
+    CHECK (builder.waitUntilIdle (testing::buildTimeout));
+    CHECK (builder.buildCount() == builds);
+
+    // Several changes in a row while one settles: only the last is built, and the
+    // builder is not idle until it has been.
+    for (const auto decay : { 0.5f, 0.7f, 0.9f })
+    {
+        request.decaySeconds[3] = decay;
+        builder.request (request);
+    }
+
+    CHECK_FALSE (builder.waitUntilIdle (std::chrono::milliseconds (0)));
+    REQUIRE (builder.waitUntilIdle (testing::buildTimeout));
+    CHECK (builder.lastBuilt() == request);
+    CHECK (builder.buildCount() == builds + 1);
+
+    // A request built at once by buildNow() is not built again. (The builder's thread may
+    // have taken it up meanwhile, in which case it lets it go once buildNow() is done.)
+    request.decaySeconds[3] = 1.3f;
+    builder.request (request);
+    builder.buildNow (request);
+    const auto afterNow = builder.buildCount();
+    REQUIRE (builder.waitUntilIdle (testing::buildTimeout));
+    CHECK (builder.buildCount() == afterNow);
+    CHECK (builder.lastBuilt() == request);
 }
 
 TEST_CASE ("Freeze holds the room above the crossover, for as long as it is on", "[reverb][freeze]")

@@ -4,6 +4,7 @@
 #include "drenched/ImpulseResponseSynth.h"
 #include "drenched/LivingTail.h"
 #include "drenched/PartitionedConvolver.h"
+#include "drenched/Realtime.h"
 #include "drenched/ReverbCloud.h"
 #include "drenched/SpeakerLayout.h"
 #include "drenched/SpeakerTrim.h"
@@ -156,17 +157,18 @@ public:
     /** Stereo in and out. */
     void prepare (double newSampleRate) { prepare (newSampleRate, layouts::stereo(), layouts::stereo()); }
 
-    void reset() noexcept;
+    // Checked for allocation, locks and blocking calls under RealtimeSanitizer (Realtime.h).
+    void reset() noexcept DRENCHED_NONBLOCKING;
 
     /** In place: channels holds max(inputs, outputs) buffers; the first
         inputs.size() carry the input and all outputs.size() are written. A control
         that isn't a number (or is infinite) keeps the last value that was. */
     void process (float* const* channels, std::size_t numChannels, std::size_t numSamples,
-                  const ReverbControls& controls) noexcept;
+                  const ReverbControls& controls) noexcept DRENCHED_NONBLOCKING;
 
     /** Stereo layouts, in place, any length. right may equal left for a mono
         input, and then only left is written. */
-    void process (float* left, float* right, std::size_t numSamples, const ReverbControls& controls) noexcept;
+    void process (float* left, float* right, std::size_t numSamples, const ReverbControls& controls) noexcept DRENCHED_NONBLOCKING;
 
     /** From any thread except the audio thread. A kernel that was submitted
         but not yet picked up is replaced (and freed here). */

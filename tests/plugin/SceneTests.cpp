@@ -1,6 +1,7 @@
 #include "PluginTestHelpers.h"
 
 #include <Library.h>
+#include <RecordingCache.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -451,8 +452,11 @@ TEST_CASE ("A bounce whose host holds the message thread doesn't hang on a scene
 
     bounce.join();
 
+    // The first block waits for the message thread for its full 2 s, as it is held. Waiting
+    // again would take the next block as long; playing it takes milliseconds, even under
+    // sanitizers, so half the wait tells the two apart with room to spare.
     CHECK (seconds[0] < 5.0);
-    CHECK (seconds[1] < 0.5); // not waited for again
+    CHECK (seconds[1] < 1.0); // not waited for again
 
     testing::onMessageThread ([&] { p.releaseResources(); });
 }
@@ -501,10 +505,7 @@ TEST_CASE ("Going back to a scene's room plays it at once", "[scenes]")
     {
         const auto before = p.responseVersion();
         testing::onMessageThread ([&] { p.recallScene (scene); });
-
-        for (int i = 0; i < 300 && p.responseVersion() == before; ++i)
-            juce::Thread::sleep (10);
-
+        REQUIRE (testing::builderIdle (p));
         return p.responseVersion() != before;
     };
 
@@ -523,6 +524,10 @@ TEST_CASE ("A scene whose file is still being read leaves the room as it was", "
 {
     // A file not played recently is read in the background. Until it has been, the room
     // stays as it was, rather than playing the last file with the new scene's settings.
+    // Each section runs this again, writing the same files again within the second, so
+    // they would still be prepared from the run before (RecordingCache knows a file by its
+    // path, size and time to the second): none has been played yet in this run.
+    RecordingCache::shared().clear();
     const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("drenched-scene-reading");
     dir.deleteRecursively();
     const auto plate = writePlate (dir);
@@ -555,14 +560,13 @@ TEST_CASE ("A scene whose file is still being read leaves the room as it was", "
 
     // The tests run no message loop, so the background read never comes back by itself:
     // sceneImpulseResponseRead below stands in for it.
+    // Whether a change built a new room, once the builder has finished with it (so a
+    // change that builds nothing is known not to without waiting to see).
     const auto builtAfter = [&p] (const std::function<void()>& change)
     {
         const auto before = p.responseVersion();
         testing::onMessageThread (change);
-
-        for (int i = 0; i < 300 && p.responseVersion() == before; ++i)
-            juce::Thread::sleep (10);
-
+        REQUIRE (testing::builderIdle (p));
         return p.responseVersion() != before;
     };
 
@@ -575,18 +579,7 @@ TEST_CASE ("A scene whose file is still being read leaves the room as it was", "
     };
 
     // Until the builder has finished with everything asked of it so far.
-    const auto settle = [&p]
-    {
-        for (auto seen = p.responseVersion();;)
-        {
-            juce::Thread::sleep (300);
-
-            if (const auto now = p.responseVersion(); now != seen)
-                seen = now;
-            else
-                return;
-        }
-    };
+    const auto settle = [&p] { REQUIRE (testing::builderIdle (p)); };
 
     REQUIRE (builtAfter ([&] { p.recallScene (1); }));
     settle();

@@ -51,7 +51,8 @@ public:
     void request (const ImpulseResponseRequest& wanted, bool settle = true);
 
     /** Builds and submits on the calling thread, blocking until done. For
-        prepareToPlay, so playback starts with the right response. */
+        prepareToPlay, so playback starts with the right response. A request made
+        before it and not yet built is dropped: this one is newer. */
     void buildNow (const ImpulseResponseRequest& wanted);
 
     /** The request the newest submitted kernel was built from, if any. */
@@ -69,10 +70,19 @@ public:
     /** Changes every time a kernel is built. From any thread. */
     std::uint64_t buildCount() const noexcept { return builds.load (std::memory_order_acquire); }
 
+    /** Waits until everything asked of the builder so far is done: no request waiting
+        (to settle or to start) and no build running, on its thread or in buildNow().
+        Returns whether that happened within the timeout. A request that turns out to
+        equal the last build counts as done once the builder has seen it. For tests and
+        tools that need to know a change has landed, or that none is coming; any thread
+        but the audio thread. */
+    bool waitUntilIdle (std::chrono::milliseconds timeout) const;
+
 private:
     void run();
-    void build (const ImpulseResponseRequest& wanted);
+    void build (const ImpulseResponseRequest& wanted, std::uint64_t serial);
     void freeRetired();
+    void finishBuilding (const ImpulseResponseRequest* builtNow, std::uint64_t serial);
 
     ConvolutionReverb& reverb;
     const std::chrono::milliseconds debounceTime;
@@ -82,12 +92,20 @@ private:
 
     mutable std::mutex mutex;
     std::condition_variable wake;
+    mutable std::condition_variable idle; // notified when a build finishes or a request is dropped
     std::optional<ImpulseResponseRequest> pending, built;
     std::shared_ptr<const ImpulseResponseSet> builtResponses;
     std::chrono::steady_clock::time_point pendingSince;
+    int building = 0; // builds running, on the worker or in buildNow()
     bool quit = false;
 
+    // Every request and buildNow() numbered in the order they were asked, so one asked
+    // for earlier is never built after a later one: asked counts them, pendingAsked is
+    // the pending request's number.
+    std::uint64_t asked = 0, pendingAsked = 0;
+
     std::mutex buildMutex; // one build at a time
+    std::uint64_t newestBuild = 0; // guarded by buildMutex: the number of the last build started
 
     // Guarded by buildMutex: the last loaded response, at the session rate.
     std::shared_ptr<const RecordedResponse> resampledFrom;

@@ -36,7 +36,7 @@ target_compile_definitions(drenched_plugin_tests PRIVATE
     DRENCHED_UI_TESTS_DIR="${PROJECT_SOURCE_DIR}/tests/ui")
 
 # A hang (for example waiting on a message loop) fails in two minutes, not CTest's 25.
-catch_discover_tests(drenched_plugin_tests PROPERTIES TIMEOUT 120)
+catch_discover_tests(drenched_plugin_tests ADD_TAGS_AS_LABELS PROPERTIES TIMEOUT 120)
 
 # The trial and the licence: LicenceManager with a fake clock, file and activation server,
 # and the plugin muting its reverb once the trial is over. A beta build leaves all of that
