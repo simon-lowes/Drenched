@@ -103,7 +103,8 @@ namespace
 TEST_CASE ("A surround file keeps its channels and folds down to stereo", "[surround][recorded]")
 {
     const auto layout = layouts::fivePointOne(); // L R C LFE Ls Rs
-    const auto recorded = prepareRecordedResponse (surroundFile (layout), rate, "5.1 room", layout);
+    const auto file = surroundFile (layout);
+    const auto recorded = prepareRecordedResponse (file, rate, "5.1 room", layout);
 
     REQUIRE (recorded->isSurround());
     CHECK (recorded->channels == 6);
@@ -127,8 +128,23 @@ TEST_CASE ("A surround file keeps its channels and folds down to stereo", "[surr
     CHECK (recorded->room.decaySeconds[4] > 0.4f);
     CHECK (recorded->room.decaySeconds[4] < 0.6f);
 
-    // The trim before the direct sound is the same on every channel.
-    CHECK (std::abs (sp[0][static_cast<std::size_t> (0.001 * rate)]) > 0.0f);
+    // The trim before the direct sound is the same on every channel: each is its file
+    // channel moved earlier by the same amount, keeping 1 ms before the direct sound, at
+    // one shared level. (The first 0.3 s, before the fade at the end.)
+    const auto pad = static_cast<std::size_t> (0.03 * rate), lead = static_cast<std::size_t> (0.001 * rate);
+    const auto gain = sp[0][lead] / file[0][pad];
+    REQUIRE (gain > 0.0f);
+
+    for (std::size_t k = 0; k < sp.size(); ++k)
+    {
+        INFO ("channel " << k);
+        float off = 0.0f;
+
+        for (std::size_t n = 0; n < static_cast<std::size_t> (0.3 * rate); ++n)
+            off = std::max (off, std::abs (sp[k][n] - gain * file[k][pad - lead + n]));
+
+        CHECK (off < 1.0e-6f * gain);
+    }
 }
 
 TEST_CASE ("A file with channels Drenched can't place is refused with a reason", "[surround][recorded]")
@@ -197,11 +213,23 @@ TEST_CASE ("A 5.1 recording on 7.1.4 fills the speakers it lacks from its fold-d
     // The side speakers are near the recording's surrounds and play them.
     CHECK (correlation (placed.paths[0][4], sp[4]) > 0.9999);
 
-    // The heights and rears get reverb of their own, not a copy of a captured channel.
+    // The heights and rears get reverb of their own, not a copy of a captured channel, below
+    // the level of the speakers playing the recording: the rears about 3 dB down, the heights
+    // (whose early sound is held back more) about 5 dB.
+    double playing = 0.0;
+
+    for (const std::size_t k : { 0u, 1u, 2u, 4u, 5u })
+        playing += energyOf (placed.paths[0][k]) / 5.0;
+
     for (const std::size_t k : { 6u, 7u, 8u, 9u, 10u, 11u })
     {
-        INFO ("speaker " << k);
-        CHECK (energyOf (placed.paths[0][k]) > 0.0);
+        const auto level = energyOf (placed.paths[0][k]) / playing;
+        INFO ("speaker " << k << ": " << 10.0 * std::log10 (level) << " dB");
+
+        if (k < 8)
+            CHECK ((level > 0.35 && level < 0.7));
+        else
+            CHECK ((level > 0.24 && level < 0.48));
 
         for (const auto& captured : sp)
             CHECK (std::abs (correlation (placed.paths[0][k], captured)) < 0.5);
@@ -222,7 +250,17 @@ TEST_CASE ("Cross-feed keeps each input of a surround recording on its own side"
     CHECK (energyOf (none.paths[0][5]) == 0.0);
     CHECK (energyOf (none.paths[1][0]) == 0.0);
     CHECK (energyOf (none.paths[1][4]) == 0.0);
-    CHECK (energyOf (none.paths[0][2]) > 0.0); // both still reach the centre
+
+    // Both still reach the centre, which rises with the rest of each input's own side.
+    for (std::size_t s = 0; s < 2; ++s)
+    {
+        INFO ("input " << s);
+        const auto own = s == 0 ? 0u : 1u; // L or R
+        const auto raised = energyOf (none.paths[s][own]) / energyOf (full.paths[s][own]);
+        CHECK (raised > 1.2);
+        CHECK (std::abs (energyOf (none.paths[s][2]) / energyOf (full.paths[s][2]) / raised - 1.0) < 1.0e-5);
+        CHECK (correlation (none.paths[s][2], full.paths[s][2]) > 0.9999);
+    }
 
     // Each input keeps its level.
     double left = 0.0, right = 0.0;

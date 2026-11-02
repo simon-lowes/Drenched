@@ -1,5 +1,7 @@
 #include "PluginTestHelpers.h"
 
+#include <TestHelpers.h>
+
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
@@ -72,6 +74,16 @@ namespace
         });
     }
 
+    void setParameter (DrenchedProcessor& p, const char* id, float value)
+    {
+        testing::onMessageThread ([&]
+        {
+            for (auto* each : p.getParameters())
+                if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (each); ranged != nullptr && ranged->paramID == id)
+                    ranged->setValueNotifyingHost (ranged->convertTo0to1 (value));
+        });
+    }
+
     double energy (const std::vector<float>& x, size_t from)
     {
         double e = 0.0;
@@ -130,26 +142,62 @@ TEST_CASE ("Audio before the plugin is prepared passes through unharmed", "[plug
 
 TEST_CASE ("A new sample rate mid-session plays the same room", "[plugin][host]")
 {
+    // The room at each rate is heard as the 48 kHz one is: the same decay (a kernel built
+    // for the wrong rate rings twice or half as long) and the same pre-delay (one counted
+    // in samples rather than milliseconds moves). Fully wet, so the onset is the room's.
     testing::Plugin p;
+    setParameter (*p, ParamIDs::mix, 100.0f);
 
-    for (const auto rate : { 44100.0, 96000.0, 22050.0, 192000.0, 8000.0, 384000.0, 48000.0 })
+    struct Room
     {
-        INFO (rate);
+        double rt60 = 0.0, onsetMs = 0.0;
+    };
+
+    const auto hear = [&p] (double rate)
+    {
         prepare (*p, rate, 256);
         testing::onMessageThread ([&] { p->releaseResources(); });
         prepare (*p, rate, 256);
 
-        std::vector<float> click (static_cast<size_t> (rate), 0.0f);
+        // Long enough for the default room's 1 kHz decay to fall well past the T20 range.
+        std::vector<float> click (static_cast<size_t> (2.5 * rate), 0.0f);
         click[0] = 1.0f;
         const auto out = play (*p, click, [] (int) { return 256; });
 
         bool finite = true;
+        float peak = 0.0f;
 
         for (const auto sample : out)
+        {
             finite = finite && std::isfinite (sample);
+            peak = std::max (peak, std::abs (sample));
+        }
 
-        CHECK (finite);
-        CHECK (energy (out, static_cast<size_t> (rate * 0.05)) > 1.0e-6);
+        REQUIRE (finite);
+        REQUIRE (peak > 1.0e-3f);
+
+        // The onset: where the room's first arrival comes within 12 dB of the peak. A lower
+        // threshold catches the ringing of that band-limited arrival instead, which at 8 kHz
+        // (a millisecond is 8 samples) starts a whole millisecond early at about -24 dB.
+        size_t onset = 0;
+
+        while (std::abs (out[onset]) < 0.25f * peak)
+            ++onset;
+
+        return Room { testing::measureRt60 (out, rate, 1000.0), 1000.0 * static_cast<double> (onset) / rate };
+    };
+
+    const auto reference = hear (48000.0);
+    INFO ("at 48 kHz: T20 " << reference.rt60 << " s, onset " << reference.onsetMs << " ms");
+    REQUIRE (reference.rt60 > 1.0);
+    REQUIRE (reference.onsetMs > 10.0); // the default pre-delay, 18 ms
+
+    for (const auto rate : { 44100.0, 96000.0, 22050.0, 192000.0, 8000.0, 384000.0, 48000.0 })
+    {
+        const auto room = hear (rate);
+        INFO ("at " << rate << " Hz: T20 " << room.rt60 << " s, onset " << room.onsetMs << " ms");
+        CHECK (std::abs (room.rt60 / reference.rt60 - 1.0) < 0.1);
+        CHECK (std::abs (room.onsetMs - reference.onsetMs) < 0.5);
     }
 }
 

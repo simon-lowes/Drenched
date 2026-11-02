@@ -312,6 +312,7 @@ void ConvolutionReverb::reset() noexcept
     delayFade = 0;
     tailFade = 0;
     duckEnvelope = 0.0f;
+    duckGain = 1.0f; // nothing heard yet, so nothing ducked
     firstBlock = true;
 
     std::fill (dryLines.begin(), dryLines.end(), 0.0f);

@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <initializer_list>
 #include <random>
 #include <vector>
 
@@ -152,6 +153,92 @@ TEST_CASE ("Match a room hears a dry recording as a short decay", "[match]")
     {
         INFO (decayBandCentres[b] << " Hz: heard " << heard.decaySeconds[b] << " s");
         CHECK (heard.decaySeconds[b] < 0.3f);
+    }
+}
+
+namespace
+{
+    /** Steeply filtered: eight second-order high-passes at lowHz and low-passes at highHz
+        (either 0 for none). */
+    std::vector<float> steeply (std::vector<float> x, double lowHz, double highHz)
+    {
+        for (int stage = 0; stage < 8; ++stage)
+        {
+            Biquad hp, lp;
+            hp.setCoefficients (Biquad::highPass (rate, lowHz));
+            lp.setCoefficients (Biquad::lowPass (rate, highHz));
+
+            if (lowHz > 0.0)
+                hp.process (x.data(), x.size());
+
+            if (highHz > 0.0)
+                lp.process (x.data(), x.size());
+        }
+
+        return x;
+    }
+
+    double rms (const std::vector<float>& x)
+    {
+        double e = 0.0;
+
+        for (const auto v : x)
+            e += static_cast<double> (v) * v;
+
+        return std::sqrt (e / static_cast<double> (x.size()));
+    }
+
+    /** Adds a steady noise between lowHz and highHz (either 0 for no limit), `level`
+        times the RMS of `relativeTo`: where it is louder than the room, the room is never
+        heard to decay. */
+    std::vector<float> withHum (std::vector<float> recording, double lowHz, double highHz, double level,
+                                const std::vector<float>& relativeTo, unsigned seed)
+    {
+        const auto hum = steeply (testing::noise (recording.size(), seed), lowHz, highHz);
+        const auto gain = static_cast<float> (level * rms (relativeTo) / rms (hum));
+
+        for (std::size_t n = 0; n < recording.size(); ++n)
+            recording[n] += gain * hum[n];
+
+        return recording;
+    }
+}
+
+TEST_CASE ("Match a room takes a band it can't hear from the nearest band it can", "[match]")
+{
+    // The grand hall, whose decay changes from band to band, so a borrowed value shows.
+    const auto room = spaceResponse (0);
+    const auto truth = trueDecay (room);
+    const auto recording = playIn (phrases (40.0, 61u), room);
+
+    const auto check = [&] (const RoomEstimate& heard, std::size_t unheard, std::size_t nearest)
+    {
+        INFO (decayBandCentres[unheard] << " Hz: heard " << heard.decaySeconds[unheard] << " s from " << heard.decaysHeard[unheard]
+                                        << " decays; " << decayBandCentres[nearest] << " Hz: heard " << heard.decaySeconds[nearest]
+                                        << " s from " << heard.decaysHeard[nearest] << " decays, room " << truth[nearest] << " s");
+        CHECK (heard.decaysHeard[unheard] == 0);
+        CHECK (heard.decaysHeard[nearest] >= 3);
+        CHECK (std::abs (heard.decaySeconds[nearest] / truth[nearest] - 1.0) < 0.2);
+        CHECK (heard.decaySeconds[unheard] == heard.decaySeconds[nearest]);
+    };
+
+    SECTION ("the top band, from the one below")
+    {
+        // A steady hiss in the 8 kHz band, 20 dB above what the room plays there. (From
+        // 10 dB above to 30 dB the band goes unheard and the 4 kHz band is still heard.)
+        const auto heard = matchRoom ({ withHum (recording, 7000.0, 10000.0, 10.0, steeply (recording, 7000.0, 10000.0), 62u) }, rate);
+        check (heard, 7, 6);
+    }
+
+    SECTION ("the two bottom bands, from the nearest one above them")
+    {
+        // The recording with nothing below 250 Hz, and a hum below 130 Hz instead, as loud
+        // as the 250 Hz band: the 63 and 125 Hz bands hear only the hum. (From 10 dB under
+        // it to 15 dB over, those two go unheard and the 250 Hz band is still heard.)
+        const auto thinned = steeply (recording, 250.0, 0.0);
+        const auto heard = matchRoom ({ withHum (thinned, 0.0, 130.0, 1.0, testing::octaveBand (thinned, rate, 250.0), 63u) }, rate);
+        check (heard, 1, 2);
+        check (heard, 0, 2); // past the 125 Hz band, which is not heard either
     }
 }
 
