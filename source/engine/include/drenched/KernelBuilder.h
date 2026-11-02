@@ -31,8 +31,10 @@ public:
         two per speaker), or 0 for no limit. A 32-bit process has 2 to 4 GB to
         share with the host and every other plug-in, so there a long surround
         response at a high sample rate is shortened to fit (32 M samples peaks
-        near 600 MB while building: 9.1.6 at 96 kHz keeps 10 s). Stereo is never
-        shortened. 64-bit builds have no limit. */
+        near 600 MB while building: 9.1.6 at 96 kHz keeps 10 s). Stereo is held to
+        the same budget, 8 M samples a path, which only the longest responses reach
+        at the highest rates (41.7 s at 192 kHz: a 30 s file at Size above 139 %,
+        or 10.4 s at 768 kHz). 64-bit builds have no limit. */
     static constexpr std::size_t defaultSampleBudget = sizeof (void*) < 8 ? 32'000'000 : 0;
 
     explicit KernelBuilder (ConvolutionReverb& target,

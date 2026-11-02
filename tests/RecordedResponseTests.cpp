@@ -14,7 +14,10 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <complex>
+#include <numbers>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -203,15 +206,33 @@ TEST_CASE ("With its own decay a loaded response plays back unchanged", "[record
 TEST_CASE ("Loaded responses are resampled to the session rate", "[recorded]")
 {
     const auto fileRate = GENERATE (44100.0, 96000.0);
+    const auto level = GENERATE (LoadedLevel::sessionRate, LoadedLevel::fileRate);
     const auto source = synthesiseImpulseResponse (requestFor (3, fileRate));
     const auto recorded = prepareRecordedResponse (fileOf (source), fileRate, "room");
 
-    const auto out = renderImpulseResponse (requestForRecorded (recorded, 48000.0));
+    auto request = requestForRecorded (recorded, 48000.0);
+    request.loadedLevel = level;
+    const auto out = renderImpulseResponse (request);
 
     CHECK (out.sampleRate == 48000.0);
     const auto expected = static_cast<double> (recorded->responses.length()) * 48000.0 / fileRate;
     CHECK (std::abs (static_cast<double> (out.length()) - expected) <= 2.0);
-    CHECK (std::abs (totalEnergy (out) - 1.0) < 1.0e-3);
+
+    if (level == LoadedLevel::sessionRate)
+    {
+        // Sessions saved before LoadedLevel::fileRate: unit energy at any rate.
+        CHECK (std::abs (totalEnergy (out) - 1.0) < 1.0e-3);
+    }
+    else
+    {
+        // The file's gain kept: the resampled energy times (file rate / session rate)^2.
+        const auto resampled = resampleResponses (recorded->responses, 48000.0);
+        const auto ratio = fileRate / 48000.0;
+        const auto wanted = ratio * ratio * totalEnergy (resampled);
+        INFO (fileRate << " Hz file: energy " << totalEnergy (out) << ", wanted " << wanted);
+        CHECK (std::abs (totalEnergy (out) / wanted - 1.0) < 1.0e-3);
+        CHECK (std::abs (shapedEnergy (*recorded, resampled, request) / wanted - 1.0) < 1.0e-6);
+    }
 
     for (std::size_t b = 1; b < 7; ++b)
     {
@@ -220,6 +241,153 @@ TEST_CASE ("Loaded responses are resampled to the session rate", "[recorded]")
         INFO (fileRate << " Hz file, band " << decayBandCentres[b] << " Hz: wanted " << wanted << " s, measured " << measured << " s");
         CHECK (std::abs (measured - wanted) / wanted < 0.12);
     }
+}
+
+TEST_CASE ("A loaded response plays at its file's level at any session rate", "[recorded][rates]")
+{
+    // A band's gain, as a steady sound hears it: the response's frequency response at 32
+    // frequencies across the octave, the same ones at every rate, summed over the paths.
+    const auto bandDb = [] (const ImpulseResponseSet& set, double centre)
+    {
+        constexpr int points = 32;
+        double e = 0.0;
+
+        for (int k = 0; k < points; ++k)
+        {
+            const auto f = centre / std::sqrt (2.0) * std::pow (2.0, (k + 0.5) / points);
+            const auto turn = std::polar (1.0, -2.0 * std::numbers::pi * f / set.sampleRate);
+
+            for (const auto& p : set.paths)
+            {
+                std::complex<double> h {}, w { 1.0 };
+
+                for (const auto v : p)
+                {
+                    h += static_cast<double> (v) * w;
+                    w *= turn;
+                }
+
+                e += std::norm (h);
+            }
+        }
+
+        return 10.0 * std::log10 (e / points);
+    };
+
+    const auto fileRate = GENERATE (44100.0, 48000.0);
+    const auto recorded = prepareRecordedResponse (fileOf (synthesiseImpulseResponse (requestFor (3, fileRate))), fileRate, "room");
+
+    enum Shaping { asRecorded, reshaped, resized };
+
+    for (const auto shaping : { asRecorded, reshaped, resized })
+    {
+        auto request = requestForRecorded (recorded, fileRate);
+
+        // A shorter decay with more of the tail; or a smaller room.
+        if (shaping == reshaped)
+        {
+            request.earlyLatePercent = 70.0f;
+
+            for (auto& d : request.decaySeconds)
+                d *= 0.7f;
+        }
+        else if (shaping == resized)
+        {
+            request.sizePercent = 80.0f;
+        }
+
+        for (const auto level : { LoadedLevel::sessionRate, LoadedLevel::fileRate })
+        {
+            request.loadedLevel = level;
+            request.sampleRate = fileRate;
+            const auto atFileRate = renderImpulseResponse (request);
+
+            for (const auto sessionRate : { 44100.0, 48000.0, 88200.0, 96000.0, 192000.0 })
+            {
+                request.sampleRate = sessionRate;
+                const auto out = renderImpulseResponse (request);
+
+                for (const auto centre : { 125.0, 1000.0, 8000.0 })
+                {
+                    const auto change = bandDb (out, centre) - bandDb (atFileRate, centre);
+                    INFO (fileRate << " Hz file" << (shaping == reshaped ? ", reshaped," : shaping == resized ? ", resized," : "")
+                                   << " at " << sessionRate << " Hz, " << (level == LoadedLevel::fileRate ? "file" : "session")
+                                   << " rate level, " << centre << " Hz band: " << change << " dB");
+
+                    if (shaping == resized)
+                    {
+                        // Played faster, the room's top end goes over the file's Nyquist,
+                        // which a higher rate keeps, so Size's colour differs a little from
+                        // rate to rate at the top, by either level.
+                        if (level == LoadedLevel::fileRate && centre < 5000.0)
+                            CHECK (std::abs (change) < 0.2);
+                    }
+                    else if (level == LoadedLevel::fileRate)
+                    {
+                        CHECK (std::abs (change) < 0.05);
+                    }
+                    else if (sessionRate > fileRate)
+                    {
+                        // What the file lacks above its Nyquist, made up in the bands it has.
+                        CHECK (std::abs (change - 10.0 * std::log10 (sessionRate / fileRate)) < 0.15);
+                    }
+                    else
+                    {
+                        // What the session's Nyquist cuts off, made up.
+                        CHECK ((change > -0.05 && change < 0.5));
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE ("At its own rate a loaded response plays the same by either level", "[recorded][rates]")
+{
+    const auto recorded = prepareRecordedResponse (fileOf (synthesiseImpulseResponse (requestFor (1))), 48000.0, "chapel");
+    auto request = requestForRecorded (recorded, 48000.0);
+    request.sizePercent = 120.0f;
+    request.earlyLatePercent = 70.0f;
+    CHECK (shapedEnergy (*recorded, recorded->responses, request) == 1.0);
+    const auto before = renderImpulseResponse (request);
+
+    request.loadedLevel = LoadedLevel::fileRate;
+    CHECK (shapedEnergy (*recorded, recorded->responses, request) == 1.0);
+    const auto after = renderImpulseResponse (request);
+
+    REQUIRE (after.length() == before.length());
+
+    for (std::size_t p = 0; p < 4; ++p)
+        CHECK (after.paths[p] == before.paths[p]);
+}
+
+TEST_CASE ("The builder rebuilds a loaded response when its level changes", "[recorded][builder][rates]")
+{
+    const auto recorded = prepareRecordedResponse (fileOf (synthesiseImpulseResponse (requestFor (3, 44100.0))), 44100.0, "room");
+
+    ConvolutionReverb reverb;
+    reverb.prepare (96000.0);
+    KernelBuilder builder (reverb);
+    auto request = requestForRecorded (recorded, 96000.0);
+    builder.buildNow (request);
+    const auto before = totalEnergy (*builder.lastResponses());
+    const auto count = builder.buildCount();
+
+    // Requests differ by it, so a session's level reaches the builder.
+    request.loadedLevel = LoadedLevel::fileRate;
+    CHECK (builder.lastBuilt() != request);
+    builder.request (request, false);
+
+    for (int wait = 0; wait < 400 && builder.buildCount() == count; ++wait)
+        std::this_thread::sleep_for (std::chrono::milliseconds (10));
+
+    REQUIRE (builder.lastBuilt() == request);
+
+    const auto wanted = shapedEnergy (*recorded, resampleResponses (recorded->responses, 96000.0), request);
+    INFO ("energy " << before << " at the session rate's level, " << totalEnergy (*builder.lastResponses()) << " at the file's, wanted " << wanted);
+    CHECK (std::abs (before - 1.0) < 1.0e-3);
+    CHECK (std::abs (totalEnergy (*builder.lastResponses()) / wanted - 1.0) < 1.0e-3);
+    CHECK (std::abs (wanted - 44100.0 / 96000.0) < 0.02);
 }
 
 TEST_CASE ("Editing the decay reshapes a loaded response band by band", "[recorded]")
@@ -422,27 +590,62 @@ TEST_CASE ("The living tail fits a loaded room", "[recorded][livingtail]")
 
 TEST_CASE ("The builder plays a loaded response", "[recorded][builder]")
 {
+    // Recorded at 44.1 kHz, played at 48 kHz: the file's response resampled, at unit
+    // energy as every response plays (see "Loaded responses are resampled to the
+    // session rate").
     const auto recorded = prepareRecordedResponse (fileOf (synthesiseImpulseResponse (requestFor (3, 44100.0))), 44100.0, "room");
+    auto expected = resampleResponses (recorded->responses, 48000.0);
+    REQUIRE (expected.sampleRate == 48000.0);
 
-    ConvolutionReverb reverb;
-    reverb.prepare (48000.0);
-    KernelBuilder builder (reverb);
-    builder.buildNow (requestForRecorded (recorded, 48000.0));
+    const auto gain = static_cast<float> (1.0 / std::sqrt (totalEnergy (expected)));
 
-    REQUIRE (builder.lastBuilt().has_value());
-    CHECK (builder.lastBuilt()->recorded == recorded);
+    for (auto& path : expected.paths)
+        for (auto& s : path)
+            s *= gain;
 
-    // An impulse through the reverb comes back as the loaded room.
-    std::vector<float> l (48000, 0.0f), r (48000, 0.0f);
-    l[0] = r[0] = 1.0f;
+    // An impulse into each input in turn comes back as the loaded room's own paths from
+    // that input: fully wet, with nothing else in the wet path, and no pre-delay.
     ReverbControls controls;
     controls.mix = 1.0f;
+    controls.predelayMs = 0.0f;
 
-    for (std::size_t pos = 0; pos < l.size(); pos += 256)
-        reverb.process (l.data() + pos, r.data() + pos, std::min<std::size_t> (256, l.size() - pos), controls);
+    using P = ImpulseResponseSet;
+    const std::array<std::array<P::Path, 2>, 2> paths { { { P::leftToLeft, P::leftToRight }, { P::rightToLeft, P::rightToRight } } };
 
-    CHECK (energy (l) > 0.0);
-    CHECK (std::all_of (l.begin(), l.end(), [] (float s) { return std::isfinite (s); }));
+    for (std::size_t input = 0; input < 2; ++input)
+    {
+        ConvolutionReverb reverb;
+        reverb.prepare (48000.0);
+        KernelBuilder builder (reverb);
+        builder.buildNow (requestForRecorded (recorded, 48000.0));
+
+        REQUIRE (builder.lastBuilt().has_value());
+        CHECK (builder.lastBuilt()->recorded == recorded);
+
+        std::array<std::vector<float>, 2> out { std::vector<float> (expected.length() + 4800, 0.0f),
+                                                std::vector<float> (expected.length() + 4800, 0.0f) };
+        out[input][0] = 1.0f;
+
+        for (std::size_t pos = 0; pos < out[0].size(); pos += 256)
+            reverb.process (out[0].data() + pos, out[1].data() + pos, std::min<std::size_t> (256, out[0].size() - pos), controls);
+
+        for (std::size_t output = 0; output < 2; ++output)
+        {
+            const auto& wanted = expected.paths[paths[input][output]];
+            double residual = 0.0;
+
+            for (std::size_t n = 0; n < out[output].size(); ++n)
+            {
+                const auto difference = static_cast<double> (out[output][n]) - (n < wanted.size() ? wanted[n] : 0.0f);
+                residual += difference * difference;
+            }
+
+            const auto db = 10.0 * std::log10 (residual / energy (wanted) + 1.0e-30);
+            INFO ("input " << input << " to output " << output << ": residual " << db << " dB");
+            CHECK (energy (wanted) > 0.0);
+            CHECK (db < -60.0);
+        }
+    }
 }
 
 #if defined (__SSE__) || defined (_M_X64)
@@ -477,8 +680,10 @@ TEST_CASE ("Offline work leaves the calling thread's handling of tiny numbers as
         builder.buildNow (request);
         CHECK (control() == mode);
 
+        // The analysis hears the decay the room was built with.
         const auto analysis = analyseResponse (*builder.lastResponses());
-        CHECK (analysis.rt60[3] > 0.0f);
+        INFO ("500 Hz: analysed " << analysis.rt60[3] << " s, asked for " << request.decaySeconds[3] << " s");
+        CHECK (std::abs (analysis.rt60[3] / request.decaySeconds[3] - 1.0f) < 0.1f);
         CHECK (control() == mode);
     }
 

@@ -39,8 +39,18 @@ namespace drenched
         static juce::String keyOf (const juce::File& file)
         {
             return "file:" + file.getFullPathName() + "|" + juce::String (file.getSize())
-                 + "|" + juce::String (file.getLastModificationTime().toMilliseconds());
+                 + "|" + changeStampOf (file);
         }
+
+        /** Something that changes whenever the file's content can have. JUCE's modification
+            time is whole seconds on macOS and Linux, so a file exported again at the same length
+            within the second (a DAW bouncing an IR over the last one) kept its key, and the old
+            recording played; and any tool can put a file's time back. So it is the file's
+            identity (a replacement saved beside it and renamed over it is another file) with its
+            modification and status-change times at the system's full resolution. The
+            status-change time isn't set back by tools, so even a rewrite in place whose
+            modification time was restored is seen. RecordingCache.cpp. */
+        static juce::String changeStampOf (const juce::File& file);
 
         std::shared_ptr<const RecordedResponse> find (const juce::String& key)
         {

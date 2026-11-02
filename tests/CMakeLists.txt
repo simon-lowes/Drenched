@@ -31,8 +31,13 @@ include(Catch)
 catch_discover_tests(drenched_tests)
 add_subdirectory(plugin)
 
-# SOFA files from libmysofa's own test set, read where FetchContent put them.
-target_compile_definitions(drenched_tests PRIVATE DRENCHED_SOFA_TEST_DIR="${mysofa_SOURCE_DIR}/tests")
+# SOFA files from libmysofa's own test set, read where FetchContent put them; small files
+# made for these tests (tests/data/README.md); and the licence vectors the activation
+# server's tests read too, so the two can't drift apart.
+target_compile_definitions(drenched_tests PRIVATE
+    DRENCHED_SOFA_TEST_DIR="${mysofa_SOURCE_DIR}/tests"
+    DRENCHED_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
+    DRENCHED_LICENCE_VECTORS="${PROJECT_SOURCE_DIR}/server/test/vectors.json")
 
 # What the engine costs to build and play; run it by hand (see Benchmark.cpp).
 add_executable(drenched_bench Benchmark.cpp)

@@ -2,12 +2,16 @@
 
 #include "TestHelpers.h"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iterator>
+#include <memory>
+#include <numbers>
 #include <string>
 #include <vector>
 
@@ -53,10 +57,16 @@ namespace
 
     float tag (const std::vector<float>& channel) { return channel.front(); }
 
-    std::vector<char> readFile (const std::string& name)
+    std::vector<char> readFile (const std::string& name, const std::string& folder = DRENCHED_SOFA_TEST_DIR)
     {
-        std::ifstream in (std::string (DRENCHED_SOFA_TEST_DIR) + "/" + name, std::ios::binary);
+        std::ifstream in (folder + "/" + name, std::ios::binary);
         return { std::istreambuf_iterator<char> (in), std::istreambuf_iterator<char>() };
+    }
+
+    /** One of the small SOFA files made for these tests (tests/data/make_sofa_files.py). */
+    std::vector<char> readTestFile (const std::string& name)
+    {
+        return readFile (name, DRENCHED_TEST_DATA_DIR);
     }
 } // namespace
 
@@ -174,4 +184,131 @@ TEST_CASE ("SOFA files that aren't room responses are refused with a reason", "[
     for (const auto fraction : { 0.01, 0.1, 0.5, 0.9, 0.999 })
         CHECK_THROWS_AS (readSofa (file.data(), static_cast<std::size_t> (fraction * static_cast<double> (file.size()))),
                          std::invalid_argument);
+}
+
+TEST_CASE ("SOFA receivers placed by azimuth and distance are told left from right", "[sofa]")
+{
+    // Two receivers 9 cm either side, the right one (azimuth -90) listed first; sources
+    // ahead and 30 degrees left and right. Each response's first sample is 100 m + r + 1.
+    const auto file = readTestFile ("spherical-receivers.sofa");
+    REQUIRE (! file.empty());
+
+    const auto set = readSofa (file.data(), file.size());
+    REQUIRE (set.receivers == 2);
+    REQUIRE (set.measurements == 3);
+    REQUIRE (set.receiverSide.size() == 2);
+    CHECK (set.receiverSide[0] == Catch::Approx (-0.09f).margin (1.0e-6));
+    CHECK (set.receiverSide[1] == Catch::Approx (0.09f).margin (1.0e-6));
+
+    // SOFA's azimuth runs anticlockwise, Drenched's clockwise.
+    CHECK (set.sources[0].azimuth == Catch::Approx (0.0f).margin (1.0e-4));
+    CHECK (set.sources[1].azimuth == Catch::Approx (-30.0f).margin (1.0e-4));
+    CHECK (set.sources[2].azimuth == Catch::Approx (30.0f).margin (1.0e-4));
+
+    const auto choice = chooseSofaChannels (set);
+    REQUIRE (choice.channels.size() == 4);
+    CHECK (choice.left == 1);
+    CHECK (choice.right == 2);
+
+    // Left source to the left receiver (the second), to the right one, then the right source.
+    CHECK (tag (choice.channels[0]) == 102.0f);
+    CHECK (tag (choice.channels[1]) == 101.0f);
+    CHECK (tag (choice.channels[2]) == 202.0f);
+    CHECK (tag (choice.channels[3]) == 201.0f);
+}
+
+TEST_CASE ("SOFA emitters placed by azimuth and distance around their source are heard where they are", "[sofa]")
+{
+    // A loudspeaker 2 m ahead with two drivers 1 m to its left (azimuth 90) and right.
+    // Each response's first sample is 10 e + r + 1; receiver 0 is on the left.
+    const auto file = readTestFile ("spherical-emitters.sofa");
+    REQUIRE (! file.empty());
+
+    const auto set = readSofa (file.data(), file.size());
+    REQUIRE (set.emitters == 2);
+    REQUIRE (set.sources.size() == 2);
+
+    const auto apart = static_cast<float> (std::atan2 (1.0, 2.0) * 180.0 / std::numbers::pi);
+    CHECK (set.sources[0].emitter == 0);
+    CHECK (set.sources[0].azimuth == Catch::Approx (-apart).margin (1.0e-3));
+    CHECK (set.sources[1].azimuth == Catch::Approx (apart).margin (1.0e-3));
+    CHECK (set.sources[0].elevation == Catch::Approx (0.0f).margin (1.0e-3));
+
+    const auto choice = chooseSofaChannels (set);
+    REQUIRE (choice.channels.size() == 4);
+    CHECK (choice.left == 0);
+    CHECK (choice.right == 1);
+    CHECK (tag (choice.channels[0]) == 1.0f);  // left driver, left receiver
+    CHECK (tag (choice.channels[1]) == 2.0f);  // left driver, right receiver
+    CHECK (tag (choice.channels[2]) == 11.0f); // right driver, left receiver
+    CHECK (tag (choice.channels[3]) == 12.0f);
+}
+
+TEST_CASE ("An ambisonic SOFA file says whether it is AmbiX, FuMa or N3D, and each plays the same", "[sofa][ambisonic]")
+{
+    // One B-format room response written three ways (tests/data/make_sofa_files.py).
+    struct Written
+    {
+        const char* file;
+        AmbisonicFormat format;
+    };
+
+    std::vector<std::shared_ptr<const RecordedResponse>> loaded;
+
+    for (const auto& [name, format] : { Written { "ambisonic-ambix.sofa", AmbisonicFormat::ambiX },
+                                        Written { "ambisonic-fuma.sofa", AmbisonicFormat::fuMa },
+                                        Written { "ambisonic-n3d.sofa", AmbisonicFormat::ambiXN3D } })
+    {
+        INFO (name);
+        const auto file = readTestFile (name);
+        REQUIRE (! file.empty());
+
+        const auto set = readSofa (file.data(), file.size());
+        CHECK (set.ambisonic);
+        CHECK (set.ambisonicFormat == format);
+        CHECK (set.receivers == 4);
+
+        const auto response = prepareSofaResponse (file.data(), file.size(), name);
+        REQUIRE (response != nullptr);
+        CHECK (response->ambisonic);
+        REQUIRE (response->speakers.size() == 4);
+        loaded.push_back (response);
+    }
+
+    // Read in its own format, each is the same sound field: the same AmbiX channels, and
+    // the same stereo decode. (FuMa's W was written 3 dB down and so rounded differently.)
+    const auto& reference = *loaded.front();
+
+    for (std::size_t k = 1; k < loaded.size(); ++k)
+    {
+        const auto& other = *loaded[k];
+
+        const auto compare = [] (const std::vector<float>& a, const std::vector<float>& b)
+        {
+            REQUIRE (a.size() == b.size());
+            float worst = 0.0f, peak = 0.0f;
+
+            for (std::size_t n = 0; n < a.size(); ++n)
+            {
+                worst = std::max (worst, std::abs (a[n] - b[n]));
+                peak = std::max (peak, std::abs (a[n]));
+            }
+
+            INFO ("differs by " << worst << " of a peak of " << peak);
+            CHECK (peak > 0.0f);
+            CHECK (worst <= 1.0e-4f * peak);
+        };
+
+        for (std::size_t c = 0; c < 4; ++c)
+        {
+            INFO (other.name << ", AmbiX channel " << c);
+            compare (other.speakers[c], reference.speakers[c]);
+        }
+
+        for (std::size_t p = 0; p < 4; ++p)
+        {
+            INFO (other.name << ", stereo path " << p);
+            compare (other.responses.paths[p], reference.responses.paths[p]);
+        }
+    }
 }

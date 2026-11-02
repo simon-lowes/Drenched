@@ -43,15 +43,15 @@ double totalEnergy (const ImpulseResponseSet& set) noexcept
     return sum;
 }
 
-/** Scales the set to unit energy, and returns the gain it used. */
-float normalise (ImpulseResponseSet& set) noexcept
+/** Scales the set to the given energy (unit by default), and returns the gain it used. */
+float normalise (ImpulseResponseSet& set, double energy = 1.0) noexcept
 {
     const auto total = totalEnergy (set);
 
     if (total <= 0.0)
         return 1.0f;
 
-    const auto gain = static_cast<float> (std::sqrt (1.0 / total));
+    const auto gain = static_cast<float> (std::sqrt (energy / total));
 
     for (auto& p : set.paths)
         for (auto& v : p)
@@ -767,9 +767,25 @@ ImpulseResponseSet resampleResponses (const ImpulseResponseSet& responses, doubl
     return out;
 }
 
-ImpulseResponseSet shapeRecordedResponse (ImpulseResponseSet set, const RecordedResponse& recorded,
-                                          const ImpulseResponseRequest& request, const std::array<double, 4>& sides)
+double shapedEnergy (const RecordedResponse& recorded, const ImpulseResponseSet& resampled, const ImpulseResponseRequest& request)
 {
+    const auto fileRate = recorded.responses.sampleRate;
+    const auto atFile = totalEnergy (recorded.responses);
+
+    if (request.loadedLevel == LoadedLevel::sessionRate || atFile <= 0.0 || resampled.sampleRate <= 0.0)
+        return 1.0;
+
+    const auto ratio = fileRate / resampled.sampleRate;
+    return ratio * ratio * totalEnergy (resampled) / atFile;
+}
+
+ImpulseResponseSet shapeRecordedResponse (ImpulseResponseSet set, const RecordedResponse& recorded,
+                                          const ImpulseResponseRequest& request, const std::array<double, 4>& sides,
+                                          std::optional<double> energy)
+{
+    if (! energy.has_value())
+        energy = shapedEnergy (recorded, set, request);
+
     const auto sr = set.sampleRate;
     const auto lead = static_cast<double> (samplesOf (leadSeconds, sr));
     const auto seconds = [&] (std::size_t n) { return std::max (0.0, (static_cast<double> (n) - lead) / sr); };
@@ -850,7 +866,7 @@ ImpulseResponseSet shapeRecordedResponse (ImpulseResponseSet set, const Recorded
         }
     }
 
-    normalise (set);
+    normalise (set, *energy);
     return set;
 }
 

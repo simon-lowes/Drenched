@@ -1,7 +1,6 @@
 #pragma once
 
-#include "DroppedFile.h"
-#include "HeldControls.h"
+#include "PageMessages.h"
 #include "ParameterWatch.h"
 #include "PluginProcessor.h"
 #include "WebView.h"
@@ -21,8 +20,10 @@ namespace drenched
 
     The page owns the drawing and the interaction. This class owns the bridge: it serves the
     page's files from the binary, pushes parameter and session state to the page, and turns
-    the page's events into parameter changes, gestures and saved interface state. */
+    the page's events into parameter changes, gestures and saved interface state (what each
+    event does is in PageMessages, which this window serves). */
 class DrenchedEditor final : public juce::AudioProcessorEditor,
+                             private PageMessages::Window,
                              private juce::ValueTree::Listener,
                              private juce::AsyncUpdater,
                              private juce::ChangeListener,
@@ -50,14 +51,19 @@ private:
     juce::var uiValues();
     void sendFullState();
 
-    void onReady (const juce::var&);
-    void onParams (const juce::var&);
-    void onGesture (const juce::var&);
-    void onUi (const juce::var&);
-    void onLoadIr (const juce::var&);
-    void onDropIr (const juce::var&);
-    void onMatch (const juce::var&);
-    void onScene (const juce::String& action, const juce::var&);
+    // PageMessages::Window
+    void send (const juce::Identifier& event, const juce::var& payload) override;
+    void pageReady() override;
+    void interfaceChanged() override;
+    void captureChanged() override;
+    void displaysOpened (bool open) override;
+    void chooseImpulseResponse (bool keepSettings) override;
+    void chooseRecordingToMatch() override;
+    void lookChosen (const juce::String& skin) override;
+    void openInBrowser (const juce::URL&) override;
+    void copyToClipboard (const juce::String&) override;
+    juce::String clipboardText() override;
+
     void sendDisplays();
     void sendCaptureStatus();
     void sendLicenceStatus();
@@ -76,9 +82,7 @@ private:
     // The parameters are looked at every tick, not listened to (see ParameterWatch).
     ParameterWatch watch { state };
     std::atomic<bool> uiDirty { true };
-    bool settingFromUi = false;
-    bool pageReady = false;
-    HeldControls held { state };
+    bool pageLoaded = false;
     std::array<float, 4> meterDb { -60.0f, -60.0f, -60.0f, -60.0f };
     std::array<float, maxChannels> speakerDb = [] { std::array<float, maxChannels> a {}; a.fill (-60.0f); return a; }();
     bool metersWereLive = false;
@@ -94,11 +98,13 @@ private:
 
     std::unique_ptr<juce::FileChooser> chooser;
     bool choosing = false;
-    DroppedFile dropped;
+
+    // What the page's events do. Before the web view, whose listeners call it.
+    PageMessages messages;
 
     /** The interface's web view. It shows only the interface's own page (webView::navigationFor):
-        the page takes files dropped on it itself (see onDropIr), and one that gets past it is
-        handed to onFile instead of opening in place of the interface. A web page opens in the
+        the page takes files dropped on it itself (PageMessages, dropIr), and one that gets past it
+        is handed to onFile instead of opening in place of the interface. A web page opens in the
         person's browser, never in the window, where it would get the native bridge. */
     struct Page final : juce::WebBrowserComponent
     {

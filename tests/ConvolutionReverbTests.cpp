@@ -197,7 +197,9 @@ TEST_CASE ("Swapping kernels mid-sound keeps the old tail ringing", "[reverb]")
 
     ConvolutionReverb swapped;
     swapped.prepare (sr);
-    swapped.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (request)));
+    auto first = std::make_unique<ReverbKernel> (synthesiseImpulseResponse (request));
+    const auto* const firstKernel = first.get();
+    swapped.submit (std::move (first));
 
     std::vector<float> sl (24000, 0.0f), sr2 (24000, 0.0f);
     for (std::size_t n = 0; n < 2400; ++n)
@@ -216,17 +218,22 @@ TEST_CASE ("Swapping kernels mid-sound keeps the old tail ringing", "[reverb]")
     for (std::size_t n = 0; n < sl.size(); ++n)
         REQUIRE (std::abs (sl[n] - reference[n]) < 1.0e-5f);
 
-    // Retired kernels come back for freeing once their tail is done.
+    // The old kernel comes back for freeing once its tail is done, and only it: the new
+    // one plays on.
     std::vector<float> silenceL (48000, 0.0f), silenceR (48000, 0.0f);
     run (swapped, silenceL, silenceR, c);
-    REQUIRE (swapped.takeRetired() != nullptr);
+    const auto retired = swapped.takeRetired();
+    REQUIRE (retired.get() == firstKernel);
+    REQUIRE (swapped.takeRetired() == nullptr);
 }
 
 TEST_CASE ("A kernel for the wrong sample rate is never played", "[reverb]")
 {
     ConvolutionReverb reverb;
     reverb.prepare (48000.0);
-    reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (44100.0))));
+    auto wrongRate = std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (44100.0)));
+    const auto* const wrongKernel = wrongRate.get();
+    reverb.submit (std::move (wrongRate));
 
     std::vector<float> l (4800, 0.0f), r (4800, 0.0f);
     l[0] = 1.0f;
@@ -236,7 +243,11 @@ TEST_CASE ("A kernel for the wrong sample rate is never played", "[reverb]")
 
     REQUIRE_FALSE (reverb.isReady());
     REQUIRE (energy (l) < 1.0e-12); // only the (numerically tiny) dry share at full wet
-    REQUIRE (reverb.takeRetired() != nullptr);
+
+    // Handed straight back to be freed.
+    const auto retired = reverb.takeRetired();
+    REQUIRE (retired.get() == wrongKernel);
+    REQUIRE (reverb.takeRetired() == nullptr);
 }
 
 TEST_CASE ("Width zero makes the wet signal mono", "[reverb]")
@@ -1495,4 +1506,279 @@ TEST_CASE ("Forty swaps while nothing frees kernels neither allocate nor lose a 
         INFO ("kernel " << k << " of " << submitted << ": came back " << returned << " times, freed by submit " << replaced);
         CHECK (returned + replaced == (k + 1 < submitted ? 1 : 0));
     }
+}
+
+TEST_CASE ("A stereo room longer than the sample budget is shortened to fit, fading out", "[reverb][builder]")
+{
+    // Four paths of 12,000 samples: a quarter of a second at 48 kHz, less than the room.
+    constexpr double sr = 48000.0;
+    constexpr std::size_t length = 12000, budget = 4 * length;
+    const auto request = hall (sr);
+
+    ConvolutionReverb whole, shortened;
+    whole.prepare (sr);
+    shortened.prepare (sr);
+    KernelBuilder unlimited (whole, std::chrono::milliseconds (30), 0);
+    KernelBuilder limited (shortened, std::chrono::milliseconds (30), budget);
+    unlimited.buildNow (request);
+    limited.buildNow (request);
+
+    const auto full = unlimited.lastResponses();
+    const auto cut = limited.lastResponses();
+    REQUIRE (full->length() > length);
+    CHECK (unlimited.shortenedTo() == 0.0);
+    CHECK (limited.shortenedTo() == Catch::Approx (static_cast<double> (length) / sr));
+
+    // Every path is the room as it was up to its last quarter, which fades to nothing.
+    const auto fade = length / 4;
+
+    for (std::size_t p = 0; p < 4; ++p)
+    {
+        INFO ("path " << p);
+        const auto& kept = cut->paths[p];
+        const auto& room = full->paths[p];
+        REQUIRE (kept.size() == length);
+        CHECK (std::equal (kept.begin(), kept.end() - static_cast<std::ptrdiff_t> (fade), room.begin()));
+
+        auto fading = true;
+        auto gain = 1.0f;
+
+        for (auto n = length - fade; n < length; ++n)
+        {
+            if (std::abs (room[n]) < 1.0e-6f)
+                continue;
+
+            const auto now = kept[n] / room[n];
+            fading = fading && now >= 0.0f && now <= gain + 1.0e-5f;
+            gain = now;
+        }
+
+        CHECK (fading);
+        CHECK (gain < 1.0e-3f);
+    }
+
+    // The reverb plays the shortened room: nothing rings past its end.
+    std::vector<float> l (length + 9600, 0.0f), r (l.size(), 0.0f);
+    l[0] = 1.0f;
+    ReverbControls c;
+    c.mix = 1.0f;
+    run (shortened, l, r, c);
+
+    CHECK (energy (l, 0, length) > 1.0e-3);
+    CHECK (energy (l, length + 64) < 1.0e-12);
+    CHECK (energy (r, length + 64) < 1.0e-12);
+
+    // A budget the room fits in leaves it whole.
+    ConvolutionReverb roomy;
+    roomy.prepare (sr);
+    KernelBuilder ample (roomy, std::chrono::milliseconds (30), 4 * full->length());
+    ample.buildNow (request);
+    CHECK (ample.shortenedTo() == 0.0);
+    CHECK (ample.lastResponses()->paths == full->paths);
+}
+
+TEST_CASE ("One block far larger than a chunk plays as small blocks do", "[reverb]")
+{
+    constexpr double sr = 48000.0;
+    const auto set = synthesiseImpulseResponse (hall (sr));
+    const auto stereo = GENERATE (true, false);
+    INFO ((stereo ? "stereo" : "mono (left and right the same buffer)"));
+
+    ReverbControls c;
+    c.mix = 0.5f;
+
+    const auto played = [&] (std::size_t block)
+    {
+        ConvolutionReverb reverb;
+        reverb.prepare (sr);
+        reverb.submit (std::make_unique<ReverbKernel> (set));
+
+        // A quarter of a second of noise, then the room rings out.
+        auto l = testing::noise (static_cast<std::size_t> (sr), 41), r = testing::noise (l.size(), 42);
+        std::fill (l.begin() + static_cast<std::ptrdiff_t> (l.size() / 4), l.end(), 0.0f);
+        std::fill (r.begin() + static_cast<std::ptrdiff_t> (r.size() / 4), r.end(), 0.0f);
+
+        for (std::size_t pos = 0; pos < l.size(); pos += block)
+        {
+            const auto n = std::min (block, l.size() - pos);
+            reverb.process (l.data() + pos, stereo ? r.data() + pos : l.data() + pos, n, c);
+        }
+
+        return std::make_pair (l, r);
+    };
+
+    const auto [smallL, smallR] = played (480);
+    const auto [oneL, oneR] = played (48000);
+    REQUIRE (energy (smallL, smallL.size() / 2) > 1.0e-3);
+
+    float worst = 0.0f, loudest = 0.0f;
+
+    for (std::size_t n = 0; n < smallL.size(); ++n)
+    {
+        worst = std::max (worst, std::abs (oneL[n] - smallL[n]));
+        loudest = std::max (loudest, std::abs (smallL[n]));
+
+        if (stereo)
+            worst = std::max (worst, std::abs (oneR[n] - smallR[n]));
+    }
+
+    INFO ("loudest " << loudest << ", differs by up to " << worst);
+    CHECK (worst <= 1.0e-5f * loudest);
+}
+
+namespace
+{
+    /** An impulse into the left input, then a burst of noise into the right, through the
+        reverb in 480-sample blocks. */
+    std::pair<std::vector<float>, std::vector<float>> impulseAndBurst (ConvolutionReverb& reverb, const ReverbControls& c)
+    {
+        std::vector<float> l (24000, 0.0f), r (24000, 0.0f);
+        l[0] = 1.0f;
+        const auto burst = testing::noise (2400, 51);
+        std::copy (burst.begin(), burst.end(), r.begin() + 4800);
+        run (reverb, l, r, c);
+        return { l, r };
+    }
+
+    float worstDifference (const std::vector<float>& a, const std::vector<float>& b)
+    {
+        float worst = 0.0f;
+
+        for (std::size_t n = 0; n < std::min (a.size(), b.size()); ++n)
+            worst = std::max (worst, std::abs (a[n] - b[n]));
+
+        return worst;
+    }
+}
+
+TEST_CASE ("Prepared again at the same rate, the reverb keeps its room and forgets what it heard", "[reverb]")
+{
+    constexpr double sr = 48000.0;
+    const auto set = synthesiseImpulseResponse (hall (sr));
+    ReverbControls c;
+    c.mix = 0.7f;
+    c.predelayMs = 12.0f;
+
+    ConvolutionReverb fresh;
+    fresh.prepare (sr);
+    fresh.submit (std::make_unique<ReverbKernel> (set));
+    const auto [wantedL, wantedR] = impulseAndBurst (fresh, c);
+    const auto loudest = peakOf (wantedR);
+    REQUIRE (loudest > 0.0f);
+
+    ConvolutionReverb reverb;
+    reverb.prepare (sr);
+    reverb.submit (std::make_unique<ReverbKernel> (set));
+
+    // Played loud with the reverb ducked, and stopped with the room still ringing.
+    auto ducked = c;
+    ducked.ducking = 1.0f;
+    auto l = testing::noise (12000, 52), r = testing::noise (12000, 53);
+    run (reverb, l, r, ducked);
+    REQUIRE (reverb.isReady());
+
+    reverb.prepare (sr);
+    CHECK (reverb.isReady());
+    CHECK (reverb.tailSeconds() == Catch::Approx (static_cast<double> (set.length()) / sr));
+
+    // No room is sent again: the one it had plays from silence, as in a reverb that never played.
+    const auto [againL, againR] = impulseAndBurst (reverb, c);
+    INFO ("loudest " << loudest << ", differs by up to " << std::max (worstDifference (againL, wantedL), worstDifference (againR, wantedR)));
+    CHECK (worstDifference (againL, wantedL) <= 1.0e-6f * loudest);
+    CHECK (worstDifference (againR, wantedR) <= 1.0e-6f * loudest);
+    CHECK (reverb.takeRetired() == nullptr);
+}
+
+TEST_CASE ("Prepared at another rate, the reverb drops its room until one for the new rate comes", "[reverb]")
+{
+    ConvolutionReverb reverb;
+    reverb.prepare (48000.0);
+    reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (48000.0))));
+
+    ReverbControls c;
+    c.mix = 1.0f;
+    auto l = testing::noise (9600, 54), r = testing::noise (9600, 55);
+    run (reverb, l, r, c);
+    REQUIRE (reverb.isReady());
+
+    reverb.prepare (44100.0);
+    CHECK_FALSE (reverb.isReady());
+    CHECK (reverb.tailSeconds() == 0.0);
+    CHECK (reverb.takeRetired() == nullptr); // freed in prepare(), with audio stopped
+
+    // Nothing of the 48 kHz room plays at 44.1 kHz: fully wet is silent.
+    std::vector<float> silentL (8820, 0.0f), silentR (8820, 0.0f);
+    silentL[0] = silentR[0] = 1.0f;
+    run (reverb, silentL, silentR, c);
+    CHECK (energy (silentL) < 1.0e-12);
+    CHECK (energy (silentR) < 1.0e-12);
+
+    // A room for the new rate plays as in a reverb prepared for it from the start.
+    const auto set = synthesiseImpulseResponse (hall (44100.0));
+    reverb.submit (std::make_unique<ReverbKernel> (set));
+    const auto [gotL, gotR] = impulseAndBurst (reverb, c);
+    CHECK (reverb.isReady());
+
+    ConvolutionReverb fresh;
+    fresh.prepare (44100.0);
+    fresh.submit (std::make_unique<ReverbKernel> (set));
+    const auto [wantedL, wantedR] = impulseAndBurst (fresh, c);
+    const auto loudest = peakOf (wantedR);
+    REQUIRE (loudest > 0.0f);
+    CHECK (worstDifference (gotL, wantedL) <= 1.0e-6f * loudest);
+    CHECK (worstDifference (gotR, wantedR) <= 1.0e-6f * loudest);
+}
+
+TEST_CASE ("reset() keeps the room and forgets what it heard, even part way through a swap", "[reverb]")
+{
+    constexpr double sr = 48000.0;
+    auto request = hall (sr);
+    const auto before = synthesiseImpulseResponse (request);
+    request.decaySeconds[4] = 0.3f; // a different room
+    const auto after = synthesiseImpulseResponse (request);
+
+    ReverbControls c;
+    c.mix = 0.6f;
+
+    ConvolutionReverb fresh;
+    fresh.prepare (sr);
+    fresh.submit (std::make_unique<ReverbKernel> (after));
+    const auto [wantedL, wantedR] = impulseAndBurst (fresh, c);
+    const auto loudest = peakOf (wantedR);
+    REQUIRE (loudest > 0.0f);
+
+    ConvolutionReverb reverb;
+    reverb.prepare (sr);
+    auto first = std::make_unique<ReverbKernel> (before);
+    const auto* const firstKernel = first.get();
+    reverb.submit (std::move (first));
+
+    auto l = testing::noise (9600, 56), r = testing::noise (9600, 57);
+    run (reverb, l, r, c);
+
+    // The new room arrives and takes the input over from the old one for 40 ms; one block in, reset().
+    reverb.submit (std::make_unique<ReverbKernel> (after));
+    std::vector<float> blockL (480, 0.5f), blockR (480, 0.5f);
+    reverb.process (blockL.data(), blockR.data(), blockL.size(), c);
+    CHECK (reverb.takeRetired() == nullptr); // the old room still rings
+    reverb.reset();
+
+    // The old room is done with, and goes back to be freed.
+    const auto retired = reverb.takeRetired();
+    CHECK (retired.get() == firstKernel);
+    CHECK (reverb.takeRetired() == nullptr);
+    CHECK (reverb.isReady());
+
+    // Silence in is silence out: nothing that was ringing carries on.
+    std::vector<float> quietL (9600, 0.0f), quietR (9600, 0.0f);
+    run (reverb, quietL, quietR, c);
+    CHECK (energy (quietL) == 0.0);
+    CHECK (energy (quietR) == 0.0);
+
+    // And the new room plays as in a reverb that never played anything else.
+    reverb.reset();
+    const auto [gotL, gotR] = impulseAndBurst (reverb, c);
+    INFO ("loudest " << loudest << ", differs by up to " << std::max (worstDifference (gotL, wantedL), worstDifference (gotR, wantedR)));
+    CHECK (worstDifference (gotL, wantedL) <= 1.0e-6f * loudest);
+    CHECK (worstDifference (gotR, wantedR) <= 1.0e-6f * loudest);
 }

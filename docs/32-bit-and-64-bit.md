@@ -47,7 +47,9 @@ say which one you used when you report a bug.
   Drenched reverbs take 20 to 200 MB; the longest stereo spaces at 192 kHz
   take about 600 MB. Long surround reverbs at high sample rates would need
   several GB, so the 32-bit version shortens them to stay near half a
-  gigabyte, and says so in the footer. Stereo and mono are never shortened.
+  gigabyte, and says so in the footer. Stereo keeps 41.7 s at 192 kHz and mono
+  twice that, which only a long file stretched by Size, or a long reverb above
+  192 kHz, goes past.
   The longest each layout plays in 32-bit:
 
   | Layout | 48 kHz | 96 kHz | 192 kHz |
