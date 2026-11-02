@@ -314,14 +314,14 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - *linux-dependencies
 
       # The Linux (x64) build's fetched dependencies, only read: they don't depend on
       # DRENCHED_BETA, and that job keeps the cache up to date.
       - name: Restore dependencies
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: build/_deps
           key: deps-Drenched-Linux-x64-${{ hashFiles('cmake/Dependencies.cmake') }}

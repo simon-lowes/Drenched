@@ -111,7 +111,10 @@ void LicenceManager::refresh()
     activation = readCode (file.getValue ("code"));
     trialFirstDay = file.getValue ("trialStart").getLargeIntValue();
 
-    if (trialFirstDay <= 0)
+    // A start further ahead than a whole trial is no clock slip but an edited file (a
+    // far-future start never counts down), so the trial starts over from today: no more
+    // than deleting the value gives. A clock set back by less keeps its days.
+    if (trialFirstDay <= 0 || trialFirstDay > environment.today() + licence::trialDays)
     {
         trialFirstDay = environment.today();
         file.setValue ("trialStart", juce::String (trialFirstDay));
