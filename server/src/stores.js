@@ -45,6 +45,25 @@ export function d1Store (db)
             return (await all ('SELECT * FROM licences WHERE order_ref = ?1 ORDER BY copy, created, key', orderRef)).map (fromRow);
         },
 
+        /** Keeps an order's adjustment; a withdrawal is never replaced by a flag. */
+        async recordAdjustment (orderRef, { outcome, note })
+        {
+            await run (`INSERT INTO order_adjustments (order_ref, outcome, note) VALUES (?1, ?2, ?3)
+                        ON CONFLICT (order_ref) DO UPDATE SET outcome = excluded.outcome, note = excluded.note
+                        WHERE NOT (order_adjustments.outcome = 'withdrawn' AND excluded.outcome = 'flagged')`, orderRef, outcome, note);
+        },
+
+        async getAdjustment (orderRef)
+        {
+            const row = await one ('SELECT outcome, note FROM order_adjustments WHERE order_ref = ?1', orderRef);
+            return row ? { outcome: row.outcome, note: row.note } : null;
+        },
+
+        async clearAdjustment (orderRef)
+        {
+            await run ('DELETE FROM order_adjustments WHERE order_ref = ?1', orderRef);
+        },
+
         async markEmailed (key, date)
         {
             await run ('UPDATE licences SET emailed = ?2 WHERE key = ?1', key, date);
@@ -100,6 +119,7 @@ export function memoryStore()
     const licences = new Map();
     const activations = new Map(); // key -> Map(machine -> activated)
     const moves = [];
+    const adjustments = new Map(); // order_ref -> { outcome, note }
 
     const placesOf = (key) => activations.get (key) ?? activations.set (key, new Map()).get (key);
 
@@ -119,6 +139,23 @@ export function memoryStore()
         {
             return [...licences.values()].filter ((l) => l.orderRef === orderRef).sort ((a, b) => (a.copy ?? -1) - (b.copy ?? -1) || a.order - b.order)
                                          .map (({ order, ...copy }) => copy);
+        },
+
+        async recordAdjustment (orderRef, { outcome, note })
+        {
+            if (! (adjustments.get (orderRef)?.outcome === 'withdrawn' && outcome === 'flagged'))
+                adjustments.set (orderRef, { outcome, note });
+        },
+
+        async getAdjustment (orderRef)
+        {
+            const a = adjustments.get (orderRef);
+            return a ? { ...a } : null;
+        },
+
+        async clearAdjustment (orderRef)
+        {
+            adjustments.delete (orderRef);
         },
 
         async markEmailed (key, date)

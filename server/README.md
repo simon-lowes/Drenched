@@ -28,11 +28,14 @@ and it has no dependencies.
    amount may be a goodwill discount. The order's numbers are noted
    `partial refund <adjustment id>`, and support withdraws any refunded copies
    with `POST /v1/admin/licences/{key}` `{"revoked": true}`. The `/thanks` page then says the numbers were withdrawn.
+   A refund can arrive before its sale, when the sale is still being retried:
+   the server keeps the order's adjustment (`order_adjustments`), and the sale
+   then issues its numbers already withdrawn (or noted) and emails nothing.
 
 Paddle retries any answer but 200, 4xx included, up to 60 times over about two
 days. So `/v1/paddle` answers 200 to anything it can never act on (a signed
 body that is not a JSON object, a sale with no Drenched items, a refund for a
-transaction it never saw), and an error only when a retry can succeed: a
+transaction it hasn't seen yet), and an error only when a retry can succeed: a
 failed customer lookup or email, or `PADDLE_PRODUCT_ID` not yet set. A failed
 lookup issues nothing, so the retry issues the numbers with the buyer's name
 and email.

@@ -346,6 +346,64 @@ storeTest ('a refund or chargeback for a transaction never seen is acknowledged 
     assert.equal ((await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422nnnn'))[0].revoked, false, 'another order was withdrawn');
 });
 
+storeTest ('a refund or chargeback that arrives before its sale withdraws the numbers the sale then makes', async (setup) =>
+{
+    // Paddle retries a sale the server failed to take for about two days
+    // (developer.paddle.com, "Handle webhook delivery"), so its refund can come first.
+    const { store, mail, send, thanks } = await setup();
+
+    assert.deepEqual ((await send (refund ('adj_8', 'txn_01h04vsc0qhwtsbsxh3422pppp'))).body, { ok: true, revoked: 0 });
+    assert.deepEqual (await send (sale ('txn_01h04vsc0qhwtsbsxh3422pppp', [drenched (2)])), { status: 200, body: { ok: true, licences: 2, withdrawn: 2 } });
+
+    const licences = await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422pppp');
+    assert.deepEqual (licences.map ((l) => [l.revoked, l.note]), [[true, 'refund adj_8'], [true, 'refund adj_8']]);
+    assert.equal (mail.length, 0, 'withdrawn numbers were emailed');
+    assert.match (await thanks ('txn_01h04vsc0qhwtsbsxh3422pppp'), /withdrawn/);
+
+    // Paddle delivering the sale again issues and sends nothing more.
+    assert.deepEqual ((await send (sale ('txn_01h04vsc0qhwtsbsxh3422pppp', [drenched (2)]))).body, { ok: true, licences: 2, withdrawn: 2 });
+    assert.equal ((await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422pppp')).length, 2);
+    assert.equal (mail.length, 0);
+
+    // A later partial refund of the same order doesn't undo the withdrawal.
+    await send (refund ('adj_9', 'txn_01h04vsc0qhwtsbsxh3422pppp', { type: 'partial' }));
+    await send (sale ('txn_01h04vsc0qhwtsbsxh3422pppp', [drenched (2)]));
+    assert.ok ((await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422pppp')).every ((l) => l.revoked));
+
+    // A chargeback the bank then reverses, both before the sale: the sale issues as normal.
+    await send (refund ('adj_10', 'txn_01h04vsc0qhwtsbsxh3422qqqq', { action: 'chargeback' }));
+    await send (refund ('adj_11', 'txn_01h04vsc0qhwtsbsxh3422qqqq', { action: 'chargeback_reverse' }));
+    assert.deepEqual ((await send (sale ('txn_01h04vsc0qhwtsbsxh3422qqqq', [drenched()]))).body, { ok: true, licences: 1 });
+    assert.equal ((await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422qqqq'))[0].revoked, false);
+    assert.equal (mail.length, 1);
+});
+
+storeTest ('a partial refund that arrives before its sale marks the numbers the sale makes', async (setup) =>
+{
+    const { store, mail, send } = await setup();
+
+    assert.deepEqual ((await send (refund ('adj_12', 'txn_01h04vsc0qhwtsbsxh3422rrrr', { type: 'partial' }))).body, { ok: true, revoked: 0, flagged: 0 });
+    assert.deepEqual ((await send (sale ('txn_01h04vsc0qhwtsbsxh3422rrrr', [drenched (2)]))).body, { ok: true, licences: 2 });
+
+    const licences = await store.listByOrder ('txn_01h04vsc0qhwtsbsxh3422rrrr');
+    assert.deepEqual (licences.map ((l) => [l.revoked, l.note]), [[false, 'partial refund adj_12'], [false, 'partial refund adj_12']]);
+    assert.equal (mail.length, 1);
+});
+
+storeTest ('a refund delivered alongside its sale always leaves the numbers withdrawn', async (setup) =>
+{
+    for (let i = 0; i < 20; ++i)
+    {
+        const { store, send } = await setup();
+        const order = `txn_01h04vsc0qhwtsbsxh3422s${String (i).padStart (3, '0')}`;
+
+        await Promise.all ([send (sale (order, [drenched (2)])), send (refund (`adj_${i}`, order))]);
+        const licences = await store.listByOrder (order);
+        assert.equal (licences.length, 2);
+        assert.ok (licences.every ((l) => l.revoked), `order ${i} kept a working number`);
+    }
+});
+
 storeTest ('unsigned, wrongly signed or other events issue nothing', async (setup) =>
 {
     const { store, send } = await setup();

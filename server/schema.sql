@@ -33,3 +33,12 @@ CREATE INDEX IF NOT EXISTS licences_by_order ON licences (order_ref);
 
 -- Paddle can deliver one sale twice at once; this keeps it to one licence per copy.
 CREATE UNIQUE INDEX IF NOT EXISTS licences_by_order_copy ON licences (order_ref, copy);
+
+-- A refund or chargeback can arrive before its sale does (Paddle retries a sale the
+-- server failed to take, for about two days). Each order's standing adjustment is
+-- kept here so the sale, when it comes, issues its numbers already withdrawn.
+CREATE TABLE IF NOT EXISTS order_adjustments (
+    order_ref TEXT PRIMARY KEY,           -- the shop's transaction
+    outcome   TEXT NOT NULL,              -- 'withdrawn' (full refund, chargeback) or 'flagged' (partial refund)
+    note      TEXT NOT NULL               -- copied to the order's licences, e.g. "refund adj_..."
+);
