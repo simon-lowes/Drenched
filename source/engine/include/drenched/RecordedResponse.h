@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -95,10 +96,28 @@ ImpulseResponseSet resampleResponses (const ImpulseResponseSet& responses, doubl
     put back; each band's decay is then stretched or shortened to the
     requested RT60, and early reflections are balanced against the tail. With the measured decay and the default balance the response
     comes back unchanged. `sides` says where each path plays (see decayFor()),
-    so the left and right outputs can decay differently. */
+    so the left and right outputs can decay differently.
+
+    The result has `energy`, or, without it, shapedEnergy (recorded, atRate,
+    request): right for the recording's own stereo paths. A surround
+    recording's channels, shaped four at a time, all take the energy of its
+    stereo paths. */
 ImpulseResponseSet shapeRecordedResponse (ImpulseResponseSet atRate, const RecordedResponse& recorded,
                                           const ImpulseResponseRequest& request,
-                                          const std::array<double, 4>& sides = stereoPathSides);
+                                          const std::array<double, 4>& sides = stereoPathSides,
+                                          std::optional<double> energy = std::nullopt);
+
+/** The energy a recorded response is shaped to at the request's rate, given its
+    stereo paths resampled to that rate (resampleResponses()). LoadedLevel::sessionRate
+    gives 1. LoadedLevel::fileRate gives the resampled paths' energy times (file rate /
+    session rate)^2, relative to the paths' energy at the file's rate (1, as loading
+    leaves it). Resampling keeps the waveform, which at n times the rate has n times
+    the samples, so n times the energy and n times the gain; this takes the gain back
+    to what it was, so every band below both rates' Nyquist plays at the level it has
+    at the file's rate: about fileRate / sessionRate going up a rate, while going down
+    one what is above the new Nyquist is lost rather than made up for. At the file's
+    own rate both give exactly 1. */
+double shapedEnergy (const RecordedResponse& recorded, const ImpulseResponseSet& resampled, const ImpulseResponseRequest& request);
 
 /** The response a request asks for: the recorded one if it carries one,
     otherwise a synthesised bundled space. */

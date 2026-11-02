@@ -380,3 +380,57 @@ TEST_CASE ("A surround recording's left, right and centre channels take their si
         CHECK (std::abs (rt / wanted - 1.0) < 0.15);
     }
 }
+
+TEST_CASE ("A surround recording plays at its file's level at any session rate", "[surround][builder][rates]")
+{
+    // The 1 kHz band of every speaker for an impulse into the left input, per second
+    // (see "A loaded response plays at its file's level at any session rate").
+    const auto layout = layouts::fivePointOne();
+    const auto recorded = prepareRecordedResponse (surroundFile (layout), rate, "5.1 room", layout);
+
+    const auto playedDb = [&] (double sessionRate, LoadedLevel level)
+    {
+        ConvolutionReverb reverb;
+        reverb.prepare (sessionRate, layout, layout);
+        KernelBuilder builder (reverb);
+        auto request = requestFor (recorded, layout);
+        request.sampleRate = sessionRate;
+        request.loadedLevel = level;
+        builder.buildNow (request);
+
+        std::vector<std::vector<float>> channels (layout.size(), std::vector<float> (static_cast<std::size_t> (0.8 * sessionRate), 0.0f));
+        channels[0][0] = 1.0f;
+        ReverbControls c;
+        c.mix = 1.0f;
+        c.predelayMs = 0.0f;
+
+        for (std::size_t pos = 0; pos < channels[0].size(); pos += 256)
+        {
+            std::vector<float*> block;
+
+            for (auto& ch : channels)
+                block.push_back (ch.data() + pos);
+
+            reverb.process (block.data(), block.size(), std::min<std::size_t> (256, channels[0].size() - pos), c);
+        }
+
+        double e = 0.0;
+
+        for (const auto& ch : channels)
+            e += energyOf (testing::octaveBand (ch, sessionRate, 1000.0));
+
+        return 10.0 * std::log10 (e * sessionRate);
+    };
+
+    const auto atFileRate = playedDb (rate, LoadedLevel::fileRate);
+    CHECK (std::abs (playedDb (rate, LoadedLevel::sessionRate) - atFileRate) < 0.01);
+
+    for (const auto sessionRate : { 96000.0, 192000.0 })
+    {
+        const auto kept = playedDb (sessionRate, LoadedLevel::fileRate) - atFileRate;
+        const auto raised = playedDb (sessionRate, LoadedLevel::sessionRate) - atFileRate;
+        INFO (sessionRate << " Hz: " << kept << " dB at the file's level, " << raised << " dB at the session rate's");
+        CHECK (std::abs (kept) < 0.1);
+        CHECK (std::abs (raised - 10.0 * std::log10 (sessionRate / rate)) < 0.2);
+    }
+}

@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <map>
+#include <numbers>
 #include <optional>
 #include <vector>
 
@@ -27,8 +28,42 @@ namespace
 {
     constexpr double rate = 48000.0;
     constexpr int blockSize = 512;
+
+    // The first fingerprint: an impulse into both inputs at once, four octaves, 1.5 s. Kept
+    // as it was, so every session still sounds the same by it as it always has.
     constexpr std::array<double, 4> bands { 125.0, 500.0, 2000.0, 8000.0 };
     constexpr std::array<double, 6> windows { 0.0, 0.05, 0.2, 0.5, 1.0, 1.5 }; // seconds
+
+    // With both inputs at once, each output is the sum of two paths, so two paths swapped,
+    // or one turned upside down, could sound the same by it. So each input is also played
+    // on its own and each of the four paths (left input to left output, left to right,
+    // right to left, right to right) checked by itself, from the lowest octave to the
+    // highest and on well past the longest decay a saved session has (2.9 s at 63 Hz).
+    constexpr std::array<double, 6> pathBands { 63.0, 125.0, 500.0, 2000.0, 8000.0, 16000.0 };
+    constexpr std::array<double, 10> pathWindows { 0.0, 0.05, 0.2, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0 };
+
+    // And the waveform of each path's first half second, sign and all, which energy can't
+    // show, in three stretches: the first 50 ms, and after it, since where the pre-delay
+    // is long the first 50 ms is only the dry sound or nothing.
+    constexpr std::array<double, 4> waveStretches { 0.0, 0.05, 0.2, 0.5 }; // seconds after the latency
+    constexpr int waveSums = 16;
+
+    /*  How close is the same: within half a decibel in every band and window. Rounding
+        differs between platforms and processors, and it matters most where the sound is
+        quietest: a window silent on one machine can hold a little noise on another. So
+        rather than skip quiet windows, both energies (now and as expected) have -110 dB of
+        noise added, as powers, before they are compared. A loud window compares as before,
+        two far below -110 dB compare as equal, and a window that should be silent but now
+        sounds at -100 dB, or should sound at -100 dB but has gone silent, still fails. */
+    constexpr double toleranceDb = 0.5;
+    constexpr double noiseFloorDb = -110.0;
+
+    double asHeard (double db)
+    {
+        return 10.0 * std::log10 (std::pow (10.0, db / 10.0) + std::pow (10.0, noiseFloorDb / 10.0));
+    }
+
+    const char* sideName (int side) { return side == 0 ? "left" : "right"; }
 
     juce::File sessionsDir() { return juce::File (DRENCHED_SESSIONS_DIR); }
 
@@ -117,14 +152,16 @@ namespace
         testing::onMessageThread ([&] { p.setStateInformation (session.getData(), static_cast<int> (session.getSize())); });
     }
 
-    /** Prepares the plugin (which builds the response for the loaded session there and
-        then) and plays an impulse through both inputs. */
-    std::array<std::vector<float>, 2> render (DrenchedProcessor& p)
-    {
-        testing::onMessageThread ([&] { p.prepareToPlay (rate, blockSize); });
+    using Sound = std::array<std::vector<float>, 2>;
 
-        const auto length = static_cast<int> (windows.back() * rate);
-        std::array<std::vector<float>, 2> out;
+    /** Prepares the plugin (which builds the response for the loaded session there and
+        then) and plays a unit impulse into the inputs asked for, for `seconds`, at sampleRate. */
+    Sound render (DrenchedProcessor& p, bool intoLeft, bool intoRight, double seconds, double sampleRate = rate)
+    {
+        testing::onMessageThread ([&] { p.prepareToPlay (sampleRate, blockSize); });
+
+        const auto length = static_cast<int> (seconds * sampleRate);
+        Sound out;
         juce::AudioBuffer<float> buffer (2, blockSize);
         juce::MidiBuffer midi;
 
@@ -134,8 +171,8 @@ namespace
 
             if (pos == 0)
             {
-                buffer.setSample (0, 0, 1.0f);
-                buffer.setSample (1, 0, 1.0f);
+                buffer.setSample (0, 0, intoLeft ? 1.0f : 0.0f);
+                buffer.setSample (1, 0, intoRight ? 1.0f : 0.0f);
             }
 
             p.processBlock (buffer, midi);
@@ -148,8 +185,8 @@ namespace
         return out;
     }
 
-    /** Energy in dB per channel, octave band and time window. */
-    std::vector<double> fingerprint (const std::array<std::vector<float>, 2>& sound)
+    /** The first fingerprint: energy in dB per channel, octave band and time window. */
+    std::vector<double> fingerprint (const Sound& sound)
     {
         std::vector<double> print;
 
@@ -183,11 +220,123 @@ namespace
         return print;
     }
 
+    /** Biquad's Butterworth high- or low-pass, worked in double precision, so that the
+        test's own rounding (at 63 Hz a float filter's is far from small) is the same on
+        every platform. */
+    void filter (std::vector<double>& x, double frequency, bool highPass)
+    {
+        const auto w = 2.0 * std::numbers::pi * frequency / rate;
+        const auto cosw = std::cos (w), alpha = std::sin (w) / std::numbers::sqrt2;
+        const auto a0 = 1.0 + alpha;
+        const auto b1 = (highPass ? -(1.0 + cosw) : 1.0 - cosw) / a0, b0 = b1 * (highPass ? -0.5 : 0.5), b2 = b0;
+        const auto a1 = -2.0 * cosw / a0, a2 = (1.0 - alpha) / a0;
+        double z1 = 0.0, z2 = 0.0;
+
+        for (auto& sample : x)
+        {
+            const auto in = sample;
+            sample = b0 * in + z1;
+            z1 = b1 * in - a1 * sample + z2;
+            z2 = b2 * in - a2 * sample;
+        }
+    }
+
+    /** Energy in dB of one path in each time window, in the octave band around `centre`. */
+    std::vector<double> bandEnergies (const std::vector<float>& path, double centre)
+    {
+        std::vector<double> band (path.begin(), path.end());
+
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            filter (band, centre / std::numbers::sqrt2, true);
+            filter (band, std::min (centre * std::numbers::sqrt2, 0.45 * rate), false);
+        }
+
+        std::vector<double> energies;
+
+        for (size_t w = 0; w + 1 < pathWindows.size(); ++w)
+        {
+            double energy = 0.0;
+
+            for (auto n = static_cast<size_t> (pathWindows[w] * rate); n < static_cast<size_t> (pathWindows[w + 1] * rate) && n < band.size(); ++n)
+                energy += band[n] * band[n];
+
+            energies.push_back (std::max (-150.0, 10.0 * std::log10 (energy + 1.0e-30)));
+        }
+
+        return energies;
+    }
+
+    /** A sketch of the waveform of one stretch of a path as the host hears it (counted from
+        the latency on): sixteen sums of its samples, each sum with them signed by a fixed
+        random pattern of its own. Turn the path upside down and every sum turns too; put
+        another path in its place and the sums are different ones. */
+    std::vector<double> waveSketch (const std::vector<float>& path, int latency, size_t stretch)
+    {
+        const auto from = static_cast<size_t> (latency) + static_cast<size_t> (waveStretches[stretch] * rate);
+        const auto to = static_cast<size_t> (latency) + static_cast<size_t> (waveStretches[stretch + 1] * rate);
+        juce::Random signs (20261101);
+        std::vector<double> sums;
+
+        for (int k = 0; k < waveSums; ++k)
+        {
+            double sum = 0.0;
+
+            for (auto i = from; i < to; ++i)
+            {
+                const auto x = i < path.size() ? static_cast<double> (path[i]) : 0.0;
+                sum += signs.nextBool() ? x : -x;
+            }
+
+            sums.push_back (sum);
+        }
+
+        return sums;
+    }
+
+    /** How far a sketch is from the one expected, in dB of the expected (with the same
+        noise floor as the energies, so two silent paths match). A path turned upside down
+        is +6 dB off, another path in its place about +3 dB. */
+    double sketchErrorDb (const std::vector<double>& now, const std::vector<double>& expected)
+    {
+        double error = 0.0, level = 0.0;
+
+        for (size_t k = 0; k < now.size(); ++k)
+        {
+            error += (now[k] - expected[k]) * (now[k] - expected[k]);
+            level += expected[k] * expected[k];
+        }
+
+        // Each sum's square is about the energy of the stretch, so all of them waveSums times it.
+        const auto floor = static_cast<double> (waveSums) * std::pow (10.0, noiseFloorDb / 10.0);
+        return 10.0 * std::log10 ((error + 1.0e-30) / (level + floor));
+    }
+
+    /** One line of an .expected file after the first fingerprint: its key ("path left right
+        63" for the 63 Hz band from the left input to the right output, "wave left right 50"
+        for the sketch of that path from 50 ms on) and its values. */
+    struct Line
+    {
+        juce::String key;
+        std::vector<double> values;
+    };
+
     struct Expected
     {
         juce::String space;
         int latency = 0;
+        double tail = 0.0;
         std::vector<double> print;
+        std::vector<Line> lines;
+
+        const Line* find (const juce::String& key) const
+        {
+            for (const auto& line : lines)
+                if (line.key == key)
+                    return &line;
+
+            return nullptr;
+        }
     };
 
     juce::File expectedFile (const juce::File& session) { return session.withFileExtension ("expected"); }
@@ -203,16 +352,45 @@ namespace
 
         for (const auto& line : juce::StringArray::fromLines (file.loadFileAsString()))
         {
-            const auto key = line.upToFirstOccurrenceOf (" ", false, false);
+            const auto tokens = juce::StringArray::fromTokens (line, " ", "");
+
+            if (tokens.isEmpty())
+                continue;
+
+            const auto& key = tokens[0];
             const auto rest = line.fromFirstOccurrenceOf (" ", false, false).trim();
 
             if (key == "space")
+            {
                 e.space = rest;
+            }
             else if (key == "latency")
+            {
                 e.latency = rest.getIntValue();
+            }
+            else if (key == "tail")
+            {
+                e.tail = rest.getDoubleValue();
+            }
             else if (key == "energy")
-                for (const auto& value : juce::StringArray::fromTokens (rest, " ", ""))
-                    e.print.push_back (value.getDoubleValue());
+            {
+                for (int i = 1; i < tokens.size(); ++i)
+                    e.print.push_back (tokens[i].getDoubleValue());
+            }
+            else if (key == "path" || key == "wave")
+            {
+                Line read;
+
+                for (int i = 0; i < tokens.size(); ++i)
+                {
+                    if (i < 4)
+                        read.key << (i > 0 ? " " : "") << tokens[i];
+                    else
+                        read.values.push_back (tokens[i].getDoubleValue());
+                }
+
+                e.lines.push_back (read);
+            }
         }
 
         return e;
@@ -221,9 +399,9 @@ namespace
     void writeExpected (const juce::File& session, const Expected& e)
     {
         juce::String text;
-        text << "space " << e.space << "\n" << "latency " << e.latency << "\n";
+        text << "space " << e.space << "\n" << "latency " << e.latency << "\n" << "tail " << juce::String (e.tail, 4) << "\n";
 
-        // One line per channel and band, one value per time window.
+        // The first fingerprint: one line per channel and band, one value per time window.
         const auto perLine = windows.size() - 1;
 
         for (size_t i = 0; i < e.print.size(); i += perLine)
@@ -232,6 +410,17 @@ namespace
 
             for (size_t k = i; k < i + perLine; ++k)
                 text << " " << juce::String (e.print[k], 2);
+
+            text << "\n";
+        }
+
+        // Then for each path a line per band, one value per time window, and its sketch.
+        for (const auto& line : e.lines)
+        {
+            text << line.key;
+
+            for (const auto value : line.values)
+                text << " " << (line.key.startsWith ("wave") ? juce::String::formatted ("%.6g", value) : juce::String (value, 2));
 
             text << "\n";
         }
@@ -310,13 +499,38 @@ TEST_CASE ("Sessions from every released version play the same sound", "[session
     for (const auto& file : savedSessions())
     {
         INFO (file.getFileName());
-        testing::Plugin plugin;
-        load (*plugin, bytesOf (file));
-
+        const auto session = bytesOf (file);
         Expected now;
-        now.print = fingerprint (render (*plugin));
-        now.space = testing::onMessageThread ([&] { return plugin->chosenSpaceId(); });
-        now.latency = plugin->getLatencySamples();
+
+        {
+            testing::Plugin plugin;
+            load (*plugin, session);
+            now.print = fingerprint (render (*plugin, true, true, windows.back()));
+            now.space = testing::onMessageThread ([&] { return plugin->chosenSpaceId(); });
+            now.latency = plugin->getLatencySamples();
+            now.tail = plugin->getTailLengthSeconds();
+        }
+
+        // Each input on its own, in an instance of its own so that nothing else is ringing.
+        for (int input = 0; input < 2; ++input)
+        {
+            testing::Plugin plugin;
+            load (*plugin, session);
+            const auto sound = render (*plugin, input == 0, input == 1, pathWindows.back());
+
+            for (int output = 0; output < 2; ++output)
+            {
+                const auto& path = sound[static_cast<size_t> (output)];
+                const auto name = juce::String (sideName (input)) + " " + sideName (output);
+
+                for (const auto centre : pathBands)
+                    now.lines.push_back ({ "path " + name + " " + juce::String (juce::roundToInt (centre)), bandEnergies (path, centre) });
+
+                for (size_t s = 0; s + 1 < waveStretches.size(); ++s)
+                    now.lines.push_back ({ "wave " + name + " " + juce::String (juce::roundToInt (waveStretches[s] * 1000.0)),
+                                           waveSketch (path, now.latency, s) });
+            }
+        }
 
         if (updating())
         {
@@ -328,20 +542,59 @@ TEST_CASE ("Sessions from every released version play the same sound", "[session
         REQUIRE (expected.has_value());
         CHECK (now.space == expected->space);
         CHECK (now.latency == expected->latency);
+
+        // How long a host lets it ring on after the input stops.
+        {
+            INFO ("tail " << now.tail << " s, expected " << expected->tail << " s");
+            CHECK (std::abs (now.tail - expected->tail) < 0.01);
+        }
+
+        // Within half a decibel in every band and stretch of time, quiet ones included.
         REQUIRE (now.print.size() == expected->print.size());
 
-        // Within half a decibel in every band and stretch of time that is audible at all.
         for (size_t i = 0; i < now.print.size(); ++i)
         {
             const auto perChannel = bands.size() * (windows.size() - 1);
             const auto band = (i % perChannel) / (windows.size() - 1);
             const auto window = i % (windows.size() - 1);
-            INFO ((i < perChannel ? "left" : "right") << ", " << bands[band] << " Hz, " << windows[window] << " to "
-                                                       << windows[window + 1] << " s: " << now.print[i] << " dB, expected "
-                                                       << expected->print[i] << " dB");
+            INFO ("both inputs, " << (i < perChannel ? "left" : "right") << " output, " << bands[band] << " Hz, "
+                                  << windows[window] << " to " << windows[window + 1] << " s: " << now.print[i]
+                                  << " dB, expected " << expected->print[i] << " dB");
+            CHECK (std::abs (asHeard (now.print[i]) - asHeard (expected->print[i])) < toleranceDb);
+        }
 
-            if (expected->print[i] > -100.0 || now.print[i] > -100.0)
-                CHECK (std::abs (now.print[i] - expected->print[i]) < 0.5);
+        {
+            INFO ("A path or band not in " << expectedFile (file).getFileName() << " is added with DRENCHED_UPDATE_SESSIONS=1, "
+                  "from a build that plays the session as it was released");
+            REQUIRE (now.lines.size() == expected->lines.size());
+        }
+
+        for (const auto& line : now.lines)
+        {
+            const auto words = juce::StringArray::fromTokens (line.key, " ", "");
+            const auto* wanted = expected->find (line.key);
+            INFO (words[1] << " input to " << words[2] << " output");
+            REQUIRE (wanted != nullptr);
+            REQUIRE (wanted->values.size() == line.values.size());
+
+            if (words[0] == "wave")
+            {
+                // The waveform itself: its polarity, and which path it is.
+                const auto off = sketchErrorDb (line.values, wanted->values);
+                INFO ("waveform from " << words[3] << " ms after the latency: " << off
+                                       << " dB off what it was (upside down is +6 dB, another path about +3 dB)");
+                CHECK (off < -20.0);
+                continue;
+            }
+
+            INFO (words[3] << " Hz");
+
+            for (size_t w = 0; w < line.values.size(); ++w)
+            {
+                INFO (pathWindows[w] << " to " << pathWindows[w + 1] << " s: " << line.values[w] << " dB, expected "
+                                     << wanted->values[w] << " dB");
+                CHECK (std::abs (asHeard (line.values[w]) - asHeard (wanted->values[w])) < toleranceDb);
+            }
         }
     }
 }
@@ -432,6 +685,158 @@ TEST_CASE ("A session saved now loads back exactly", "[sessions]")
     REQUIRE (xml != nullptr);
     CHECK (xml->getIntAttribute ("version") == DrenchedProcessor::stateVersion);
     file.deleteFile();
+}
+
+namespace
+{
+    /** The 1 kHz octave of what both outputs played, in dB per second: an impulse of one
+        sample holds less of each band the higher the rate. */
+    double kilohertzDb (const std::array<std::vector<float>, 2>& sound, double sampleRate)
+    {
+        double energy = 0.0;
+
+        for (auto band : sound)
+        {
+            for (int pass = 0; pass < 2; ++pass)
+            {
+                Biquad hp, lp;
+                hp.setCoefficients (Biquad::highPass (sampleRate, 1000.0 / std::sqrt (2.0)));
+                lp.setCoefficients (Biquad::lowPass (sampleRate, 1000.0 * std::sqrt (2.0)));
+                hp.process (band.data(), band.size());
+                lp.process (band.data(), band.size());
+            }
+
+            for (const auto v : band)
+                energy += static_cast<double> (v) * v;
+        }
+
+        return 10.0 * std::log10 (energy * sampleRate + 1.0e-30);
+    }
+
+    /** Whether a session says how loud its loaded responses play (sessions saved before
+        that was written don't). */
+    bool hasLoadedLevel (const juce::MemoryBlock& session)
+    {
+        const auto xml = juce::AudioProcessor::getXmlFromBinary (session.getData(), static_cast<int> (session.getSize()));
+        return xml != nullptr && xml->hasAttribute ("loadedLevel");
+    }
+
+    /** The session as a version before the marker would have saved it. */
+    juce::MemoryBlock withoutLoadedLevel (const juce::MemoryBlock& session)
+    {
+        auto xml = juce::AudioProcessor::getXmlFromBinary (session.getData(), static_cast<int> (session.getSize()));
+        REQUIRE (xml != nullptr);
+        xml->removeAttribute ("loadedLevel");
+
+        juce::MemoryBlock older;
+        juce::AudioProcessor::copyXmlToBinary (*xml, older);
+        return older;
+    }
+}
+
+TEST_CASE ("A new session plays a loaded file at its own level at any rate, an older one as it always did", "[sessions][level]")
+{
+    // A 96 kHz file of the person's own, fully wet.
+    const auto file = sessionsDir().getChildFile ("v0.2-file-level.wav");
+    REQUIRE (file.existsAsFile());
+
+    juce::MemoryBlock fresh;
+    {
+        testing::Plugin first;
+        testing::onMessageThread ([&]
+        {
+            auto* mix = first->getState().getParameter (ParamIDs::mix);
+            mix->setValueNotifyingHost (mix->convertTo0to1 (100.0f));
+
+            auto ui = first->getUiState();
+            ui.setProperty (UiIDs::irPath, file.getFullPathName(), nullptr);
+            ui.setProperty (UiIDs::irName, "Level", nullptr);
+            ui.setProperty (UiIDs::spaceId, "user", nullptr);
+            first->getStateInformation (fresh);
+        });
+    }
+
+    // A new instance says so in what it saves. An older session doesn't, and saved again
+    // still doesn't.
+    REQUIRE (hasLoadedLevel (fresh));
+    const auto older = withoutLoadedLevel (fresh);
+    REQUIRE_FALSE (hasLoadedLevel (older));
+
+    for (const auto& session : { fresh, older })
+    {
+        testing::Plugin plugin;
+        load (*plugin, session);
+        juce::MemoryBlock again;
+        testing::onMessageThread ([&] { plugin->getStateInformation (again); });
+        CHECK (hasLoadedLevel (again) == hasLoadedLevel (session));
+        CHECK (again == session);
+    }
+
+    const auto played = [] (const juce::MemoryBlock& session, double sampleRate)
+    {
+        testing::Plugin plugin;
+        load (*plugin, session);
+        return kilohertzDb (render (*plugin, true, true, windows.back(), sampleRate), sampleRate);
+    };
+
+    // At the file's own rate both play the same.
+    const auto newAtFileRate = played (fresh, 96000.0), oldAtFileRate = played (older, 96000.0);
+    CHECK (std::abs (newAtFileRate - oldAtFileRate) < 0.01);
+
+    for (const auto sessionRate : { 48000.0, 192000.0 })
+    {
+        // A new session keeps the file's level. An older one is quieter at 48 kHz (what the
+        // file has above 24 kHz, next to nothing, made up across the whole band) and louder
+        // at 192 kHz (the band above 48 kHz the file doesn't have, made up), as it was.
+        const auto kept = played (fresh, sessionRate) - newAtFileRate;
+        const auto asBefore = played (older, sessionRate) - oldAtFileRate;
+        INFO (sessionRate << " Hz: " << kept << " dB in a new session, " << asBefore << " dB in an older one");
+        CHECK (std::abs (kept) < 0.2);
+        CHECK (std::abs (asBefore - 10.0 * std::log10 (sessionRate / 96000.0)) < 0.3);
+    }
+
+    // A scene recalled in an older session plays at that session's level too.
+    testing::Plugin plugin;
+    load (*plugin, older);
+    testing::onMessageThread ([&]
+    {
+        REQUIRE (plugin->storeScene (0, "File") == 1);
+        plugin->getUiState().setProperty (UiIDs::spaceId, bundledSpaces[0].id, nullptr);
+        plugin->recallScene (1, true);
+        CHECK (plugin->chosenSpaceId() == "user");
+    });
+
+    CHECK (std::abs (kilohertzDb (render (*plugin, true, true, windows.back(), 192000.0), 192000.0) - played (older, 192000.0)) < 0.01);
+}
+
+TEST_CASE ("The session saved with loaded files at their own level would sound different by the old rule", "[sessions][level]")
+{
+    // tests/sessions/v0.2-file-level.session plays a 96 kHz file at 48 kHz: by the rule
+    // of the sessions before it, 3 dB quieter. So its .expected sound holds the new rule.
+    const auto session = bytesOf (sessionsDir().getChildFile ("v0.2-file-level.session"));
+    REQUIRE (hasLoadedLevel (session));
+
+    // The reverb alone, without the dry sound the session mixes in.
+    const auto played = [] (const juce::MemoryBlock& s)
+    {
+        testing::Plugin plugin;
+        load (*plugin, s);
+        testing::onMessageThread ([&]
+        {
+            auto* mix = plugin->getState().getParameter (ParamIDs::mix);
+            mix->setValueNotifyingHost (mix->convertTo0to1 (100.0f));
+        });
+        return kilohertzDb (render (*plugin, true, true, windows.back()), rate);
+    };
+
+    const auto change = played (withoutLoadedLevel (session)) - played (session);
+    INFO ("by the old rule: " << change << " dB");
+    CHECK ((change < -2.5 && change > -3.5));
+
+    // Every session saved before it plays by the old rule.
+    for (const auto& file : savedSessions())
+        if (file.getFileName() != "v0.2-file-level.session")
+            CHECK_FALSE (hasLoadedLevel (bytesOf (file)));
 }
 
 TEST_CASE ("Scenes in saved sessions bring back what they stored", "[sessions][scenes]")
@@ -688,3 +1093,4 @@ TEST_CASE ("Every space a session or scene can name is still there, the same", "
         CHECK (unlisted.isEmpty());
     }
 }
+

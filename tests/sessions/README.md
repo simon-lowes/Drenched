@@ -3,8 +3,33 @@
 Sessions saved by released versions of Drenched, exactly as a host stores them
 (`getStateInformation` bytes). `tests/plugin/SessionTests.cpp` loads each one in the
 current build and checks that it comes back with the same settings and plays the same
-sound as its `.expected` file records (the space, the latency, and the energy of an
-impulse response in octave bands over time, within 0.5 dB).
+sound as its `.expected` file records.
+
+What an `.expected` file records:
+- `space`, `latency` (samples) and `tail` (seconds, what the host is told; within 10 ms).
+- `energy`: the first fingerprint, of an impulse into both inputs at once. One line per
+  output (left, then right) and octave band (125 Hz to 8 kHz), one value per time
+  window (0, 50 ms, 0.2, 0.5, 1 and 1.5 s), in dB.
+- `path <input> <output> <band>`: each input played on its own, so each of the four
+  paths (left input to left output, left to right, right to left, right to right) is
+  checked by itself; with both inputs at once two paths swapped, a broken cross-feed or
+  one path upside down can sound the same. Octave bands from 63 Hz to 16 kHz, windows
+  at 0, 50 ms, 0.2, 0.5, 1, 1.5, 2, 3, 4 and 6 s, past the longest decay a session here
+  has (2.9 s at 63 Hz). Bands are filtered in double precision.
+- `wave <input> <output> <from ms>`: the waveform of that path, counted from the
+  latency on, in three stretches: the first 50 ms, 50 to 200 ms and 200 to 500 ms (where
+  the pre-delay is long, as in `v0.2-everything`, the first 50 ms holds only the dry
+  sound or nothing). Each stretch is sketched as sixteen sums of its samples, each sum
+  with them signed by a fixed random pattern, so the sign of the waveform shows, which
+  energy can't. It must match to within -20 dB of the stretch's level: a path upside
+  down is +6 dB off, another path in its place about +3 dB.
+
+Every energy must be within 0.5 dB of what it was, in every band and window. Rounding
+differs between platforms and processors in the last digits, which shows in windows
+quieter than about -110 dB, so these are not skipped but compared as heard over -110 dB
+of noise: both values have -110 dB added (as powers) before they are compared. A loud
+window compares exactly as before, two windows far below -110 dB compare as equal, and a
+window that should be silent but sounds at -100 dB (or the other way round) still fails.
 
 | Session | Saved by | What it covers |
 | --- | --- | --- |
@@ -13,11 +38,21 @@ impulse response in octave bands over time, within 0.5 dB).
 | `v0.1-recorded-living.session` | 0.1 (session version 1) | A recorded library space, living tail, direct sound, cross-feed, Low CPU, a speaker trim |
 | `v0.1-modelled-gated.session` | 0.1 (session version 1) | A modelled space by id, Reverse, Gate, direct colour, cross-feed |
 | `v0.2-everything.session` | 0.2 before release (session version 2) | Every parameter off its default but Freeze (which would leave the impulse dry), the right decays unlinked, the wet EQ, cloud size, listener and source positions, playing a file of the person's own (`v0.2-everything.wav`) with speaker trims and locks; three scenes: a modelled space, a library space and that file, scene 3 playing and changed since |
+| `v0.2-file-level.session` | 0.2 before release (session version 2, with `loadedLevel`) | The first session to say a loaded response plays at the level it has at its own rate (`loadedLevel="fileRate"`): a 96 kHz file of the person's own (`v0.2-file-level.wav`), heard here at 48 kHz, where the sessions before it play 3 dB quieter; Size, early/late balance, mix and pre-delay moved |
 
 The beta 1 sessions were made by building the beta 1 source and saving from it; their
 `.expected` sound matched what beta 1 itself rendered to 0.00 dB in every band. The 0.2
 session was saved from main at `02f0639`, the build that first wrote session version 2
-in full (scenes, the wet EQ, unlinked decays), before 0.2 was released.
+in full (scenes, the wet EQ, unlinked decays), before 0.2 was released. The file-level
+session was saved by the build that first wrote `loadedLevel` (branch
+`claude/loaded-room-level`), before 0.2 was released.
+
+Sessions without `loadedLevel` (every one before it) play a loaded file or library
+recording at unit energy at the session's rate, which differs from its level at its own
+rate whenever the rates differ: louder above it (a 44.1 kHz file 3.4 dB at 96 kHz), and
+quieter below it by about as much as the file has little above the lower Nyquist (a
+96 kHz room recording about 3 dB at 48 kHz); loaded and saved again they keep that, and
+`tests/plugin/SessionTests.cpp` checks both rules.
 
 A session that plays a file of the person's own names it by the path it had on the
 computer that saved it. That file is kept here next to the session, and the tests point
@@ -42,7 +77,14 @@ Rules:
   replaced on purpose gets a new fingerprint, both with `DRENCHED_UPDATE_SESSIONS=1`.
 - If a change is meant to alter the sound of old sessions, run the plugin tests with
   `DRENCHED_UPDATE_SESSIONS=1` and commit the rewritten `.expected` files with it,
-  saying why.
+  saying why. To rewrite only the `.expected` files, run just the sound test:
+  `DRENCHED_UPDATE_SESSIONS=1 drenched_plugin_tests "[sound]"`.
+- When the fingerprint itself gains a check, write the new `.expected` files from a
+  build whose sound is unchanged, in the same commit, and check that the lines already
+  there came out the same. The `tail`, `path` and `wave` lines were added this way
+  (audit H3, November 2026); the `energy` lines came out the same but for one value
+  that moved by 0.01 dB in its last digit (`beta1-grand-hall`, right, 500 Hz, 0.2 to
+  0.5 s).
 - When a setting moves (session version 2 made the listener's place across the room a
   parameter instead of interface state), `DrenchedProcessor::migrateState()` converts
   older sessions, and `savedValues()` in `tests/plugin/SessionTests.cpp` reads the
