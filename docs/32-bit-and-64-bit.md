@@ -32,6 +32,8 @@ say which one you used when you report a bug.
 
 - A processor with SSE2: any x86 processor from the last twenty years
   (Pentium 4, Athlon 64 or later).
+- On Linux: Ubuntu 22.04, Debian 12, Fedora 36, Mint 21 or anything newer
+  (glibc 2.35 or later), with WebKitGTK 4.1 for the interface.
 - Windows 10 or 11. The interface runs in Microsoft's WebView2, which comes
   with Windows 10 and 11. Microsoft stopped updating it for Windows 7 and 8.1
   in 2023, so those are untested.

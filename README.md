@@ -127,7 +127,10 @@ cmake -S . -B build -DJUCE_WEBVIEW2_PACKAGE_LOCATION=%cd%/packages
 ```
 
 For 32-bit Windows, configure with `-A Win32`. 32-bit Linux builds inside
-an i386 Debian container; see `.github/scripts/linux-i686.sh`.
+an i386 Debian container; see `.github/scripts/linux-i686.sh`. CI builds the
+64-bit Linux downloads in Debian 12 too, so they run on Ubuntu 22.04 and
+later: a build on a newer system needs that system's C library, and
+`.github/scripts/check-glibc.sh` fails one that does.
 
 AAX (Pro Tools) is off until Avid's AAX SDK licence is signed; see
 [docs/aax.md](docs/aax.md).

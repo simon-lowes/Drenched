@@ -59,6 +59,8 @@ jobs:
     name: ${{ matrix.name }}
     if: github.event_name != 'schedule'
     runs-on: ${{ matrix.os }}
+    # Only the Linux build runs in a container (empty elsewhere): see its matrix entry.
+    container: ${{ matrix.container }}
     strategy:
       fail-fast: false
       matrix:
@@ -88,8 +90,12 @@ jobs:
             pluginval_bin: pluginval-build/pluginval_artefacts/Release/pluginval.exe
             pluginval_cmake_args: -G "Visual Studio 17 2022" -A Win32
             cmake_args: -G "Visual Studio 17 2022" -A Win32
+          # Built on Debian 12, not on the runner's Ubuntu 24.04: a binary needs the C and
+          # C++ runtimes of the system it was built on or newer, and 24.04's (glibc 2.38)
+          # would shut out Ubuntu 22.04, Debian 12 and Mint 21. check-glibc.sh holds it there.
           - name: Linux (x64)
             os: ubuntu-24.04
+            container: debian:bookworm
             artifact: Drenched-Linux-x64
             pluginval: source
             pluginval_bin: pluginval-build/pluginval_artefacts/Release/pluginval
@@ -97,18 +103,30 @@ jobs:
             cmake_args: -G Ninja
 
     steps:
-      - uses: actions/checkout@v7
-
-      # Shared with the licence job below (YAML aliases), so the two stay the same.
+      # Before the checkout: the Debian container has no git, without which the checkout
+      # leaves out .git (the build reads its commit from it). Shared with the licence and
+      # checks jobs below (YAML aliases), so they stay the same.
       - &linux-dependencies
         name: Install Linux dependencies
         if: runner.os == 'Linux'
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ninja-build libasound2-dev \
+          SUDO=sudo
+          BASE=""
+          # In a container: root, no sudo, and none of the runner's tools.
+          if [ "$(id -u)" = 0 ]; then
+            SUDO=""
+            BASE="build-essential cmake git python3 ca-certificates curl pkg-config file xauth"
+          fi
+          $SUDO apt-get update
+          $SUDO apt-get install -y --no-install-recommends $BASE ninja-build libasound2-dev \
             libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxcomposite-dev \
             libfreetype-dev libfontconfig1-dev libcurl4-openssl-dev libgtk-3-dev \
             libwebkit2gtk-4.1-dev ladspa-sdk xvfb
+          # The checkout belongs to the runner's user, not to the container's root.
+          [ -n "$SUDO" ] || git config --global --add safe.directory '*'
+
+      - uses: actions/checkout@v7
 
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
@@ -127,7 +145,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: build/_deps
-          key: deps-${{ matrix.artifact }}-${{ matrix.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+          key: deps-${{ matrix.artifact }}-${{ matrix.container || matrix.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
 
       - name: Configure
         shell: bash
@@ -150,6 +168,11 @@ jobs:
         shell: bash
         run: cmake --build build --config Release --parallel
 
+      - name: Check the Linux build runs on Ubuntu 22.04 and Debian 12
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash .github/scripts/check-glibc.sh build/source/plugin/Drenched_artefacts/Release
+
       - name: Unit tests
         shell: bash
         run: ctest --test-dir build -C Release --label-exclude "^timing$" --output-on-failure
@@ -165,7 +188,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: pluginval-build/pluginval_artefacts
-          key: pluginval-v1.0.4-${{ matrix.artifact }}-${{ hashFiles('.github/scripts/patch-pluginval.py') }}
+          key: pluginval-v1.0.4-${{ matrix.artifact }}-${{ matrix.container || matrix.os }}-${{ hashFiles('.github/scripts/patch-pluginval.py') }}
 
       - name: Build pluginval
         if: matrix.pluginval == 'source'
@@ -366,13 +389,13 @@ jobs:
 
       - *linux-dependencies
 
-      # The Linux (x64) build's fetched dependencies, only read: they don't depend on
-      # DRENCHED_BETA, and that job keeps the cache up to date.
-      - name: Restore dependencies
-        uses: actions/cache/restore@v6
+      # Fetched dependencies for builds on the runner itself (the Linux x64 build runs in
+      # Debian, so its cache is its own). This job keeps them; the checks jobs only read.
+      - name: Cache dependencies
+        uses: actions/cache@v6
         with:
           path: build/_deps
-          key: deps-Drenched-Linux-x64-ubuntu-24.04-${{ hashFiles('cmake/Dependencies.cmake') }}
+          key: deps-Linux-host-ubuntu-24.04-${{ hashFiles('cmake/Dependencies.cmake') }}
 
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DDRENCHED_BETA=OFF -DDRENCHED_ALLOW_TEST_LICENCE=ON
@@ -435,12 +458,12 @@ jobs:
           echo "CC=clang-20" >> "$GITHUB_ENV"
           echo "CXX=clang++-20" >> "$GITHUB_ENV"
 
-      # The Linux (x64) build's fetched dependencies, only read, as in the licence job.
+      # The licence job's fetched dependencies, only read.
       - name: Restore dependencies
         uses: actions/cache/restore@v6
         with:
           path: build/_deps
-          key: deps-Drenched-Linux-x64-ubuntu-24.04-${{ hashFiles('cmake/Dependencies.cmake') }}
+          key: deps-Linux-host-ubuntu-24.04-${{ hashFiles('cmake/Dependencies.cmake') }}
 
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DDRENCHED_SANITIZE=${{ matrix.sanitize }}
