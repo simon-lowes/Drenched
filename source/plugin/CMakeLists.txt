@@ -75,6 +75,7 @@ target_sources(Drenched PRIVATE
     PageMessages.cpp
     PluginProcessor.cpp
     PluginEditor.cpp
+    RecordingCache.cpp
     WebView.cpp)
 
 target_compile_definitions(Drenched PUBLIC

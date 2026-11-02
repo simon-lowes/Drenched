@@ -77,3 +77,45 @@ TEST_CASE ("A changed file isn't taken for the one kept", "[cache]")
     CHECK (RecordingCache::keyOf (file) != RecordingCache::keyOf ("hall"));
     dir.deleteRecursively();
 }
+
+TEST_CASE ("A file exported again at the same length within the second isn't taken for the one kept", "[cache]")
+{
+    // A DAW bouncing an IR over the last one: same name, same length, and (with whole-second
+    // file times) the same time. The modification time is even put back here, as some tools do.
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("drenched-cache-stamp");
+    dir.deleteRecursively();
+    REQUIRE (dir.createDirectory());
+    const auto file = dir.getChildFile ("hall.wav");
+
+    REQUIRE (file.replaceWithText ("take 1"));
+    const auto when = file.getLastModificationTime();
+    const auto first = RecordingCache::keyOf (file);
+
+    SECTION ("saved beside it and renamed over it")
+    {
+        REQUIRE (file.replaceWithText ("take 2"));
+        REQUIRE (file.setLastModificationTime (when));
+        CHECK (RecordingCache::keyOf (file) != first);
+    }
+
+    SECTION ("written over in place")
+    {
+        {
+            juce::FileOutputStream out (file);
+            REQUIRE (out.openedOk());
+            REQUIRE (out.setPosition (0));
+            REQUIRE (out.writeText ("take 2", false, false, nullptr));
+        }
+
+        REQUIRE (file.getSize() == 6);
+        REQUIRE (file.setLastModificationTime (when));
+        CHECK (RecordingCache::keyOf (file) != first);
+    }
+
+    SECTION ("left alone, it keeps its key")
+    {
+        CHECK (RecordingCache::keyOf (file) == first);
+    }
+
+    dir.deleteRecursively();
+}
