@@ -188,6 +188,9 @@ function knobSVG(v01,size,sysId){var c=size/2,r=size/2-4,a0=135,a1=135+270*clamp
  var i0=sysId==='catalogue'?0.78:0.32,i1=sysId==='catalogue'?0.8:0.64;
  s+='<line class="k-ptr" x1="'+(c+Math.cos(pa)*rv*i0).toFixed(1)+'" y1="'+(c+Math.sin(pa)*rv*i0).toFixed(1)+'" x2="'+(c+Math.cos(pa)*rv*i1).toFixed(1)+'" y2="'+(c+Math.sin(pa)*rv*i1).toFixed(1)+'"/>';return s+'</svg>';}
 function ariaFor(s,k){var p=P[k];return 'role="slider" tabindex="0" aria-label="'+p.l+'" aria-valuemin="'+p.min+'" aria-valuemax="'+p.max+'" aria-valuenow="'+(+clamp(getV(s,k),p.min,p.max).toFixed(2))+'" aria-valuetext="'+esc(fmt(s,k))+'"';}
+/* the slider of a block that also holds the value field and a lock: a slider's children are
+   presentational, so it lies over the block as a sibling of them, and the block takes the drag */
+function knobHit(s,k){return '<div class="kn-hit" data-knob="'+k+'" data-fid="kn-'+k+'" '+ariaFor(s,k)+'></div>';}
 function knobEl(s,k,size,sysId){return '<div class="kn" data-knob="'+k+'" data-fid="kn-'+k+'" '+ariaFor(s,k)+'>'+knobSVG(to01(k,getV(s,k)),size,sysId)+'</div>';}
 function slideEl(s,k){var n=(to01(k,getV(s,k))*100).toFixed(1);return '<div class="sl" data-knob="'+k+'" data-h="1" data-fid="kn-'+k+'" '+ariaFor(s,k)+'><div class="sl-t"></div><div class="sl-f" style="width:'+n+'%"></div><div class="sl-d" style="left:'+n+'%"></div></div>';}
 function roEl(s,k,cls){return '<input class="ro '+(cls||'')+'" data-type="'+k+'" data-fid="ro-'+k+'" value="'+esc(fmt(s,k))+'" aria-label="'+P[k].l+' value" spellcheck="false">';}
@@ -375,7 +378,7 @@ function pixelRoom(s,w,h){var sp=spOf(s),ss=s.size/100,cell=12,cols=Math.floor((
  return out+'</svg>';}
 
 /* ---- helpers added for the twelve-direction page ---- */
-function numCtl(s,k,cls,lab){return '<div class="nc '+(cls||'')+'" data-knob="'+k+'" data-h="1" data-fid="kn-'+k+'" '+ariaFor(s,k)+'>'+roEl(s,k)+'<span class="nc-l">'+(lab||P[k].l)+ovrEl(s,k)+(k==='mix'?lockBtn(s,'mix','Mix'):'')+'</span></div>';}
+function numCtl(s,k,cls,lab){return '<div class="nc '+(cls||'')+'" data-knob="'+k+'" data-h="1">'+knobHit(s,k)+roEl(s,k)+'<span class="nc-l">'+(lab||P[k].l)+ovrEl(s,k)+(k==='mix'?lockBtn(s,'mix','Mix'):'')+'</span></div>';}
 /* a typed value for one band of the side being edited */
 function bandInput(s,sp,i,cls){var v=curBands(s)[i],ed=Math.abs(v-sp.bands[i])>0.004;return '<input class="ro'+(ed?' ed':'')+(cls?' '+cls:'')+'" data-type="band" data-i="'+i+'" data-fid="bi-'+i+'" value="'+v.toFixed(2)+'" aria-label="'+bandLabel(s,i)+', seconds" spellcheck="false">';}
 function bandInputs(s,sp,hz){var out='';for(var i=0;i<8;i++)out+='<div>'+bandInput(s,sp,i)+'<span>'+FREQ[i]+(i===7&&hz!==false?' Hz':'')+'</span></div>';return out;}
@@ -580,7 +583,7 @@ var COMPOSE={
  signal:function(s){var sp=spOf(s),ss=s.size/100,e=eqp(s.el),CP=positionsOf(s);
   /* the captured positions as blocks under the pixel room: a position, then its microphones */
   var pos=CP?'<div class="cp si-cp" role="group" aria-label="Captured positions in this room">'+CP.groups.map(function(g,k){return '<div class="cp-p" aria-current="'+g.cur+'">'+posBtn(s,g,k,'cp-b','<i class="cp-mk"></i>'+esc(g.label)+(g.atM!=null?'<small>'+posM(g)+'</small>':''))+micBtns(s,g,'cp-m')+'</div>';}).join('')+'</div>':'';
-  var blk=function(k,cls){var ed=isOver(s,k);return '<div class="blk'+(ed?' ed':'')+(k==='mix'?' wet mix':'')+' '+(cls||'')+'" data-knob="'+k+'" data-fid="kn-'+k+'" '+ariaFor(s,k)+'><div class="blk-l"><span>'+P[k].l+(ed?' *':'')+'</span>'+(k==='mix'?lockBtn(s,'mix','Mix'):'')+'</div>'+roEl(s,k)+'<div class="blk-bar"><i style="width:'+(to01(k,getV(s,k))*100).toFixed(1)+'%"></i></div></div>';};
+  var blk=function(k,cls){var ed=isOver(s,k);return '<div class="blk'+(ed?' ed':'')+(k==='mix'?' wet mix':'')+' '+(cls||'')+'" data-knob="'+k+'">'+knobHit(s,k)+'<div class="blk-l"><span>'+P[k].l+(ed?' *':'')+'</span>'+(k==='mix'?lockBtn(s,'mix','Mix'):'')+'</div>'+roEl(s,k)+'<div class="blk-bar"><i style="width:'+(to01(k,getV(s,k))*100).toFixed(1)+'%"></i></div></div>';};
   var vb=function(l,v,u){return '<div class="blk ro-only"><div class="blk-l"><span>'+l+'</span></div><div class="vbig">'+v+'<small>'+u+'</small></div><div class="blk-bar" style="background:transparent"></div></div>';};
   var rail=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="si-rail">'+blk('mix','mix')+blk('decay')+blk('pre')+'<div class="si-acts"><button class="si-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="si-btn" data-act="match">'+ICON.match+'Match a room</button><button class="si-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'All parameters</button>'+eqBtn(s,'si-btn',null,true)+wfBtn(s,'si-btn',null,true)+'</div></div>';
   return '<div class="si-grid"></div><div class="si-top">'+wordmark(s,'si-wm','<i></i>DRENCHED')+segMode(s)+segAB(s)+'</div>'+

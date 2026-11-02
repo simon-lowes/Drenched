@@ -1109,3 +1109,53 @@ test ('Only the interface\'s own scripts run: markup that gets into the page run
     await page.waitForFunction (was => st.adv !== was, before);
     assert.deepEqual (errors.filter (e => ! /Content Security Policy/.test (e)), []);
 });
+
+test ('No control sits inside another, so a screen reader reaches each one, in every look', async () =>
+{
+    // A slider's or a button's children are presentational: a value field or a lock inside one
+    // can be hidden from assistive technology (WCAG 4.1.2).
+    await open ('anodised');
+    const looks = await page.evaluate (() => SKINS.map (s => s.id));
+    const nested = new Set();
+
+    for (const look of looks)
+    {
+        for (const where of ['studio', 'stage', 'adv', 'eq', 'capture'])
+        {
+            await page.goto ('about:blank');
+            await open (look);
+            await page.evaluate ((w) =>
+            {
+                if (w === 'stage')
+                    st.mode = 'stage';
+                else if (w !== 'studio')
+                    st[w] = true;
+                window.schedule();
+            }, where);
+            await drawn();
+
+            const found = await page.evaluate (() =>
+            {
+                const control = 'button, input, select, textarea, a[href], [tabindex], [role="slider"], [role="button"], [role="checkbox"], [role="switch"], [role="radio"]';
+                const out = [];
+
+                document.querySelectorAll ('[role="slider"], button, [role="button"]').forEach (el =>
+                {
+                    if (el.closest ('[inert]'))
+                        return;
+
+                    for (const inner of el.querySelectorAll (control))
+                        if (! inner.closest ('[inert]'))
+                            out.push ((el.getAttribute ('data-fid') || el.className) + ' holds ' + (inner.getAttribute ('data-fid') || inner.tagName));
+                });
+
+                return out;
+            });
+
+            found.forEach (f => nested.add (look + ' ' + where + ': ' + f));
+        }
+    }
+
+    assert.deepEqual ([...nested], []);
+    assert.deepEqual (errors, []);
+});

@@ -646,7 +646,8 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .ap-nums .ro.ed{color:var(--ac)}
 .ap-nums span{font:11px var(--fui);letter-spacing:.1em;color:#8F8B82}
 .ap-bar{position:absolute;left:40px;right:40px;top:612px;height:92px;border-top:1px solid rgba(255,255,255,.16);display:flex;align-items:center;gap:0;padding-top:8px}
-.nc{display:flex;flex-direction:column;gap:2px;cursor:ew-resize;touch-action:none;min-width:0;border-radius:var(--rad)}
+.nc{display:flex;flex-direction:column;gap:2px;cursor:ew-resize;touch-action:none;min-width:0;border-radius:var(--rad);position:relative}
+.kn-hit{position:absolute;inset:0;pointer-events:none;border-radius:inherit}
 .nc .ro{text-align:left;width:100%;padding:0 2px}
 .nc .nc-l{font-size:11px;color:var(--tx2);display:flex;align-items:center;gap:6px;letter-spacing:.06em;text-transform:uppercase;padding-left:3px;white-space:nowrap}
 .ap-bar .nc{width:126px}.ap-bar .nc .ro{font-size:30px;height:40px}
