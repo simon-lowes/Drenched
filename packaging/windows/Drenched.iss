@@ -50,6 +50,8 @@ UninstallDisplayIcon={app}\Drenched.exe
 ; Several components' licences ask for their notices in documentation shipped with the
 ; binaries; the licence page shows them all (tools/third_party_licences.py builds the file).
 LicenseFile=..\third-party-licences.txt
+; Windows 10 or later: the guide supports nothing older, and current WebView2 needs it.
+MinVersion=10.0
 
 [Types]
 Name: "full"; Description: "Everything"
@@ -60,10 +62,22 @@ Name: "vst3"; Description: "VST3 plug-in (Cubase, Studio One, Ableton Live, Reap
 Name: "clap"; Description: "CLAP plug-in (Bitwig, Reaper and others)"; Types: full custom
 Name: "app"; Description: "Standalone app"; Types: full custom
 
+; A reinstall starts from clean folders: files an earlier build had but this one doesn't
+; would otherwise stay inside the bundle, and a format left unticked this time would keep
+; its old copy, which hosts would go on loading.
+[InstallDelete]
+Type: filesandordirs; Name: "{commoncf64}\VST3\Drenched.vst3"; Check: Is64BitInstallMode
+Type: filesandordirs; Name: "{commoncf32}\VST3\Drenched.vst3"
+Type: files; Name: "{commoncf64}\CLAP\Drenched.clap"; Check: Is64BitInstallMode
+Type: files; Name: "{commoncf32}\CLAP\Drenched.clap"
+Type: files; Name: "{app}\Drenched.exe"
+
 [Files]
-; VST3: one bundle holding both builds; the 32-bit Common Files folder only exists on 64-bit Windows.
+; VST3: the 64-bit folder gets the bundle with both builds (a 64-bit host picks its own);
+; the 32-bit folder, which 64-bit hosts may scan too, gets only the 32-bit build, so no
+; host lists Drenched twice. On 32-bit Windows only the 32-bit folder exists.
 Source: "{#Source}\Drenched.vst3\*"; DestDir: "{commoncf64}\VST3\Drenched.vst3"; Components: vst3; Flags: ignoreversion recursesubdirs createallsubdirs; Check: Is64BitInstallMode
-Source: "{#Source}\Drenched.vst3\*"; DestDir: "{commoncf32}\VST3\Drenched.vst3"; Components: vst3; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#Source}\Drenched.vst3\*"; Excludes: "\Contents\x86_64-win"; DestDir: "{commoncf32}\VST3\Drenched.vst3"; Components: vst3; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; CLAP: each folder gets the build its hosts can load.
 Source: "{#Source}\CLAP\64-bit\Drenched.clap"; DestDir: "{commoncf64}\CLAP"; Components: clap; Flags: ignoreversion; Check: Is64BitInstallMode

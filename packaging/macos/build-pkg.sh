@@ -26,7 +26,14 @@ component()
     # Bundles must not be relocated to wherever an older copy happens to be.
     pkgbuild --analyze --root "$WORK/root-$id" "$WORK/$id.plist"
     plutil -replace 0.BundleIsRelocatable -bool NO "$WORK/$id.plist" 2>/dev/null || true
+    # The installer merges a payload into what is already there, so a file an older build
+    # had but this one doesn't would stay inside the bundle and break its signature. The
+    # old copy goes first ($3 is the volume being installed to).
+    mkdir -p "$WORK/scripts-$id"
+    printf '#!/bin/sh\nrm -rf "${3%%/}%s/%s"\nexit 0\n' "$dest" "$bundle" > "$WORK/scripts-$id/preinstall"
+    chmod +x "$WORK/scripts-$id/preinstall"
     pkgbuild --root "$WORK/root-$id" --component-plist "$WORK/$id.plist" \
+             --scripts "$WORK/scripts-$id" \
              --identifier "com.drenched.drenched.$id" --version "$VERSION" \
              --install-location "$dest" "$WORK/$id.pkg"
 }

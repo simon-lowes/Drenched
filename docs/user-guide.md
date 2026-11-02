@@ -37,6 +37,28 @@ Drenched's window runs in Microsoft's WebView2 runtime, which most Windows 10 an
 
 On 64-bit Windows it installs both the 64-bit and 32-bit plug-ins, each where its kind of host looks (`C:\Program Files\Common Files` and `C:\Program Files (x86)\Common Files`). The app and this guide go in `C:\Program Files\Drenched`, and the Start menu has a shortcut to the guide.
 
+On Windows on Arm, Drenched works in hosts running as x64 (emulated), but hosts built for Arm can't load it yet.
+
+Installing a newer build over an older one replaces it. A format you leave unticked that time is taken away.
+
+### Removing Drenched
+
+On Windows, use Settings > Apps > Drenched > Uninstall.
+
+On macOS, drag these to the Bin (macOS asks for your password), then run `sudo pkgutil --forget` for each part so the installer forgets them:
+
+- `/Library/Audio/Plug-Ins/Components/Drenched.component`
+- `/Library/Audio/Plug-Ins/VST3/Drenched.vst3`
+- `/Library/Audio/Plug-Ins/CLAP/Drenched.clap`
+- `/Applications/Drenched.app`
+- `/Library/Application Support/Drenched`
+
+```sh
+for p in au vst3 clap app docs; do sudo pkgutil --forget com.drenched.drenched.$p; done
+```
+
+Either way, your own files stay: captures and dropped impulse responses in Documents/Drenched, and your settings in `~/Library/Application Support/Drenched` (macOS) or `%APPDATA%\Drenched` (Windows). Delete those folders too to remove everything.
+
 ### Finding it in your host
 
 If Drenched doesn't appear, rescan plug-ins in your host. Logic Pro lists it under Audio Units > Drenched.

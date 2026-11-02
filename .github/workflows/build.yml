@@ -290,6 +290,12 @@ jobs:
           for f in "User guide.html" "Third-party licences.txt"; do
             [ -f "/Library/Application Support/Drenched/$f" ] || { echo "not installed: $f"; exit 1; }
           done
+          # Installing over an older build replaces each bundle instead of merging into it:
+          # a file left behind would break the bundle's signature.
+          sudo touch /Library/Audio/Plug-Ins/VST3/Drenched.vst3/Contents/stray.txt
+          sudo installer -pkg Drenched-*-macOS.pkg -target /
+          [ ! -e /Library/Audio/Plug-Ins/VST3/Drenched.vst3/Contents/stray.txt ] || { echo "reinstall kept a file the build doesn't have"; exit 1; }
+          codesign --verify --verbose /Library/Audio/Plug-Ins/VST3/Drenched.vst3
           killall -9 AudioComponentRegistrar 2>/dev/null || true
           auval -strict -v aufx Drn1 Drnc
 
@@ -554,6 +560,22 @@ jobs:
 
           foreach ($f in @('User guide.html', 'Third-party licences.txt')) {
             if (-not (Test-Path "${env:ProgramFiles}\Drenched\$f")) { Write-Error "not installed: $f"; exit 1 }
+          }
+
+          # The 32-bit folder gets only the 32-bit build, or 64-bit hosts that scan both list Drenched twice.
+          if (Test-Path "$cf32\VST3\Drenched.vst3\Contents\x86_64-win") { Write-Error "64-bit build in $cf32\VST3"; exit 1 }
+
+          # A reinstall replaces the bundle instead of merging into it, and takes away the formats left unticked.
+          $stray = "$cf64\VST3\Drenched.vst3\Contents\x86_64-win\stray.txt"
+          Set-Content $stray 'left by an older build'
+          $run = Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/COMPONENTS=vst3', '/LOG=reinstall.log' -Wait -PassThru
+          if ($run.ExitCode -ne 0) { Get-Content reinstall.log; exit 1 }
+          if (Test-Path $stray) { Write-Error "reinstall kept a file the build doesn't have"; exit 1 }
+          foreach ($kept in @($expected[0][0], $expected[2][0])) {
+            if (-not (Test-Path $kept)) { Write-Error "reinstall lost $kept"; exit 1 }
+          }
+          foreach ($gone in @("$cf64\CLAP\Drenched.clap", "$cf32\CLAP\Drenched.clap", "${env:ProgramFiles}\Drenched\Drenched.exe")) {
+            if (Test-Path $gone) { Write-Error "unticked but still installed: $gone"; exit 1 }
           }
 
           # The uninstaller hands over to a copy of itself, so wait for the files to go.
