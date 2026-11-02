@@ -211,6 +211,34 @@ TEST_CASE ("The trial starts once, and refreshing never restarts it", "[licence]
     CHECK (computer.saved ("trialStart") == juce::String (firstDay));
 }
 
+TEST_CASE ("A trial start edited into the far future starts the trial over instead of never ending", "[licence]")
+{
+    Computer computer;
+    computer.write ("trialStart", "99999999");
+    Manager m (computer);
+
+    CHECK (computer.saved ("trialStart") == juce::String (firstDay));
+    CHECK (static_cast<int> (m.status()["daysLeft"]) == licence::trialDays);
+
+    *computer.day = firstDay + licence::trialDays;
+    m.refresh();
+    CHECK (m.state() == "ended");
+    CHECK_FALSE (m.allowed());
+
+    // Edited again while the host runs: the periodic check reads it and starts over once
+    // more, which is no more than deleting the value would give.
+    computer.write ("trialStart", juce::String (*computer.day + 1000));
+    m.refresh();
+    CHECK (computer.saved ("trialStart") == juce::String (*computer.day));
+
+    // A clock set back by days, not months, keeps the start: no trial days are lost.
+    Computer slipped;
+    slipped.write ("trialStart", juce::String (firstDay + 3));
+    Manager s (slipped);
+    CHECK (slipped.saved ("trialStart") == juce::String (firstDay + 3));
+    CHECK (static_cast<int> (s.status()["daysLeft"]) == licence::trialDays);
+}
+
 TEST_CASE ("A saved activation code for another computer is refused", "[licence]")
 {
     Computer computer;
