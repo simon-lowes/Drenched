@@ -27,13 +27,14 @@ namespace
     {
         std::string text;                                  // a string's value
         std::vector<Json> items;                           // an array's
-        std::vector<std::pair<std::string, Json>> members; // an object's
+        std::vector<std::string> names;                    // an object's member names,
+        std::vector<Json> values;                          // and their values (a pair<string, Json> needs Json complete)
 
         const Json& operator[] (std::string_view name) const
         {
-            for (const auto& [key, value] : members)
-                if (key == name)
-                    return value;
+            for (std::size_t i = 0; i < names.size(); ++i)
+                if (names[i] == name)
+                    return values[i];
 
             throw std::runtime_error ("vectors.json has no \"" + std::string (name) + "\"");
         }
@@ -198,7 +199,8 @@ namespace
                     auto name = parseString (s, at);
                     expect (s, at, ':');
                     auto member = parseValue (s, at);
-                    value.members.emplace_back (std::move (name), std::move (member));
+                    value.names.push_back (std::move (name));
+                    value.values.push_back (std::move (member));
                 });
             }
             else if (s[at] == '[')
