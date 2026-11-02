@@ -66,7 +66,7 @@ async function sentWith (name, key)
 }
 
 /** The value shown in the visible field with this data-fid. */
-const shown = (fid) => page.evaluate (f => [...document.querySelectorAll ('[data-fid="' + f + '"]')].find (e => e.getBoundingClientRect().width > 0)?.value, fid);
+const shown = (fid) => page.evaluate (f => [...document.querySelectorAll ('[data-fid="' + f + '"],[data-fid^="' + f + '~"]')].find (e => e.getBoundingClientRect().width > 0)?.value, fid);
 
 // Messages the plugin really sends (PluginEditor.cpp), with awkward but possible contents.
 const NAMES = ['St Paul\'s <Nave> & "Choir"', '', 'x'.repeat (200), 'é日本 room', '<img src=x onerror=window.__ran=1>', 'a\\b\'c'];
@@ -771,6 +771,63 @@ test ('A control clicked or dragged leaves the host its keys, and the keyboard k
     await page.waitForTimeout (50);
     assert.equal (await page.evaluate (() => document.activeElement.getAttribute ('data-fid')), 'ro-mix');
     assert.deepEqual (errors, []);
+});
+
+test ('Every focusable field has its own focus id in every look, so a redraw keeps focus where it was', async () =>
+{
+    await page.goto ('about:blank');
+    await open ('anodised');
+    const looks = await page.evaluate (() => SKINS.map (s => s.id));
+    const repeated = [];
+
+    for (const look of looks)
+    {
+        await page.goto ('about:blank');
+        await open (look);
+
+        for (const [mode, view] of [['studio', 'plan'], ['studio', 'section'], ['stage', 'plan']])
+        {
+            await page.evaluate (([m, v]) => { st.mode = m; st.view = v; window.schedule(); }, [mode, view]);
+            await drawn();
+            const fids = await page.evaluate (() => [...document.querySelectorAll ('#live [data-fid]')].map (e => e.getAttribute ('data-fid')));
+            for (const f of new Set (fids.filter ((f, i) => fids.indexOf (f) !== i)))
+                repeated.push (look + ' ' + mode + ' ' + view + ': ' + f);
+        }
+    }
+
+    assert.deepEqual (repeated, []);
+});
+
+test ('Only the main button drags a control: a right press opens the host\'s menu instead', async () =>
+{
+    await page.goto ('about:blank');
+    await open ('anodised');
+
+    const centre = async (sel) => { const b = await (await page.$ (sel)).boundingBox(); return [b.x + b.width / 2, b.y + b.height / 2]; };
+    const values = () => page.evaluate (() => ({ mix: st.mix, band: st.bands[3], sent: window.__sent.length }));
+    const before = await values();
+
+    for (const [sel, dy] of [['[data-fid="kn-mix"]', -60], ['[data-fid="nd-3"]', -40]])
+        for (const button of ['right', 'middle'])
+        {
+            const [x, y] = await centre (sel);
+            await page.mouse.move (x, y);
+            await page.mouse.down ({ button });
+            await page.mouse.move (x, y + dy, { steps: 4 });
+            await page.mouse.up ({ button });
+            await page.waitForTimeout (50);
+        }
+
+    assert.deepEqual (await values(), before, 'a right or middle drag changed a value');
+
+    // The main button still drags.
+    const [x, y] = await centre ('[data-fid="kn-mix"]');
+    await page.mouse.move (x, y);
+    await page.mouse.down();
+    await page.mouse.move (x, y - 60, { steps: 4 });
+    await page.mouse.up();
+    await page.waitForTimeout (50);
+    assert.ok ((await values()).mix > before.mix, 'a left drag no longer moves Mix');
 });
 
 test ('The Decay knob covers the whole range of the bands, and never moves against the key', async () =>

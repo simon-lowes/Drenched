@@ -322,8 +322,11 @@ function keepFocused(a,fid,html){var tmp=document.createElement('div');tmp.inner
  else if(text&&(a.value!==a.defaultValue||a.value!==v)){a.value=a.defaultValue;if(all)a.select();else a.selectionStart=a.selectionEnd=a.value.length;}
  return true;}
 function renderLive(){if(rendering){renderAgain=true;return;}rendering=true;try{drawLive();}finally{rendering=false;}if(renderAgain){renderAgain=false;renderLive();}}
+// A look can show a value twice (a readout at the top and the field under its knob). Each copy
+// gets its own focus id (ro-decay, ro-decay~2), so a redraw gives focus back to the one being edited.
+function uniqueFids(h){var seen={};return h.replace(/ data-fid="([^"]*)"/g,function(m,f){var n=seen[f]=(seen[f]||0)+1;return n===1?m:' data-fid="'+f+'~'+n+'"';});}
 function drawLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAttribute('data-fid'):null,bl=live.querySelector('.brw-list'),blt=bl?bl.scrollTop:0;
- var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.wf)html=html.slice(0,-6)+wfHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';
+ var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.wf)html=html.slice(0,-6)+wfHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';html=uniqueFids(html);
  var kept=!!fid&&keepFocused(a,fid,html);if(!kept)live.innerHTML=html;fit();syncDisplays();
  if(blt){var bl2=live.querySelector('.brw-list');if(bl2)bl2.scrollTop=blt;}
  var dl=topDialog();modal(dl);
@@ -371,7 +374,9 @@ function changeSpace(i){var old=snap(st),sp=SPACES[i],held=[];st.sp=i;st.bands=s
  ['mix','bright','el','dist'].forEach(function(k){if(st.locks[k])held.push(P[k].l);});
  st.hint=null;st.note='<b>'+esc(sp.name)+'</b> loaded.'+(held.length?' Locked and held: '+held.join(', ')+'.':' Lock a value to hold it when you change space.')+(sp.credit?' Recording: '+esc(sp.credit)+', '+esc(sp.licence)+'.':'');return held;}
 var drag=null,eqTap=null;
-live.addEventListener('pointerdown',function(e){var t=e.target;endDrag();if(t.closest('input,button'))return;
+var MAC=/Mac/.test(navigator.platform||'');
+// Only the main button drags: a right press, or a Control click on a Mac, opens the host's menu for a control.
+live.addEventListener('pointerdown',function(e){var t=e.target;endDrag();if(t.closest('input,button'))return;if(e.button!==0||(MAC&&e.ctrlKey))return;
  var kn=t.closest('[data-knob]'),lis=t.closest('[data-drag]'),dg=t.closest('svg[data-decay]'),en=t.closest('[data-eqn]');
  if(en){var es=en.closest('svg'),ei=+en.getAttribute('data-eqn'),alt=(e.altKey||e.ctrlKey)&&eqBell(ei),now=Date.now();
   // the page is redrawn between the two clicks, so a double click is counted here: it returns the band to 0 dB
