@@ -34,6 +34,7 @@ VST3="$BUILD_DIR/source/plugin/Drenched_artefacts/Release/VST3/Drenched.vst3"
 rm -rf "$VST3/Contents/i686-linux"
 cp -R "$VST3/Contents/i386-linux" "$VST3/Contents/i686-linux"
 file "$VST3/Contents/"*/Drenched.so
+bash "$(dirname "$0")/check-glibc.sh" "$BUILD_DIR/source/plugin/Drenched_artefacts/Release"
 
 if [ ! -x "$PLUGINVAL_DIR"/build/pluginval_artefacts/Release/pluginval ]; then
     rm -rf "$PLUGINVAL_DIR"
