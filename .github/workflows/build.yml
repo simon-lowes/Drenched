@@ -276,6 +276,26 @@ jobs:
             "$CV" validate "$CLAP"
           fi
 
+      # The runner is Apple Silicon, so everything above ran the arm64 half of the
+      # universal build only. Intel Macs run the other half (SSE, not NEON, in PFFFT):
+      # the tests and the three validators again on it, under Rosetta.
+      - name: Test and validate the Intel half (macOS, Rosetta)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          arch -x86_64 /usr/bin/true 2>/dev/null || sudo softwareupdate --install-rosetta --agree-to-license
+          for t in build/tests/drenched_tests build/tests/plugin/drenched_plugin_tests; do
+            echo "$t: $(lipo -archs "$t")"
+            arch -x86_64 "$t" "~[timing]"
+          done
+          VST3=$(find build -type d -name "Drenched.vst3" -path "*Release*" | head -n 1)
+          arch -x86_64 ./${{ matrix.pluginval_bin }} --strictness-level 10 --validate-in-process --validate "$VST3"
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          arch -x86_64 auval -strict -v aufx Drn1 Drnc
+          CV=$(find . -maxdepth 3 -type f -name clap-validator | head -n 1)
+          CLAP=$(find build -name "Drenched.clap" -path "*Release*" -prune | head -n 1)
+          arch -x86_64 "$CV" validate "$CLAP"
+
       - name: Collect plugins
         shell: bash
         run: |
