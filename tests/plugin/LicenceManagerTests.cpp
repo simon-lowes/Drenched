@@ -1,4 +1,5 @@
 #include "LicenceTestHelpers.h"
+#include "PageTestHelpers.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -535,4 +536,63 @@ TEST_CASE ("The plugin's own post() reads the server's status and answer", "[lic
 
     // With nothing listening, the server is unreachable.
     CHECK (post ("/v1/activate", body).status == 0);
+}
+
+TEST_CASE ("The page's licence messages reach the licence manager", "[licence][bridge]")
+{
+    // The window's side of the bridge (PageMessages), with the licence manager of a fake
+    // computer: what the licence window sends is what the manager is asked.
+    Computer computer;
+    *computer.day = firstDay + 30;
+    computer.write ("trialStart", juce::String (firstDay));
+
+    Manager m (computer);
+    testing::Plugin plugin;
+    testing::FakeWindow window;
+
+    auto watch = testing::onMessageThread ([&] { return std::make_unique<ParameterWatch> (plugin->getState()); });
+    auto messages = testing::onMessageThread ([&]
+    {
+        return std::make_unique<PageMessages> (*plugin, *m.manager, *watch, window, testing::isolatedHome().getChildFile ("Imported"));
+    });
+
+    const auto send = [&] (const juce::String& name, const juce::String& json)
+    {
+        return testing::onMessageThread ([&] { return messages->handle (name, testing::fromPage (json)); });
+    };
+
+    REQUIRE (m.state() == "ended");
+
+    // The number as typed, which the manager tidies, goes to the activation server.
+    computer.answer (200, object ({ { "code", testing::codeFor (m.machine()) } }));
+    REQUIRE (send ("licenceActivate", "{\"licence\": \" " + juce::String (testing::testLicence).toLowerCase() + " \"}"));
+    REQUIRE (m.settled());
+    CHECK (computer.requests() == 1);
+    CHECK (computer.lastPath() == "/v1/activate");
+    CHECK (computer.lastBody()["licence"].toString() == testing::testLicence);
+    CHECK (computer.lastBody()["machine"].toString() == juce::String (m.machine()));
+    CHECK (m.state() == "licensed");
+
+    // The licence window opening forgets the last message.
+    REQUIRE (m.status()["message"].toString().isNotEmpty());
+    send ("licenceOpen", "{}");
+    CHECK (m.status()["message"].toString().isEmpty());
+
+    // Deactivating gives this computer's place back.
+    computer.answer (200, object ({ { "ok", true } }));
+    REQUIRE (send ("licenceDeactivate", "{}"));
+    REQUIRE (m.settled());
+    CHECK (computer.lastPath() == "/v1/deactivate");
+    CHECK (m.state() == "ended");
+
+    // A code from the activation page, for a computer with no internet.
+    REQUIRE (send ("licenceCode", "{\"code\": \"" + testing::codeFor (m.machine()) + "\"}"));
+    CHECK (m.state() == "licensed");
+    CHECK (computer.requests() == 2);
+
+    // The offline activation page opens in the browser.
+    send ("licencePage", "{}");
+    CHECK (window.opened == juce::StringArray { m.status()["page"].toString() });
+
+    testing::onMessageThread ([&] { messages.reset(); watch.reset(); });
 }
