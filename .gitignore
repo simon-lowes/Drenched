@@ -9,3 +9,8 @@ dist/
 compile_commands.json
 packages/
 __pycache__/
+
+# Activation server: local Wrangler secrets and state
+server/.dev.vars
+.wrangler/
+node_modules/

@@ -26,7 +26,17 @@ const MESSAGES = {
 
 const json = (status, body) => new Response (JSON.stringify (body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 const failure = (status, error, extra = {}) => json (status, { error, message: MESSAGES[error], ...extra });
-const html = (status, body) => new Response (body, { status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
+// The pages load nothing and post only to this server; their one script is allowed by
+// its hash (pages.js copyScript), and no other site may frame them or see where a
+// visitor came from (the /thanks address holds the order).
+export const PAGE_POLICY = "default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-uBRYkAQKFTJsQWbFOHeQ2dqYMfyNaF5EB5AW/vQhKfY='; "
+                         + "form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
+
+const html = (status, body) => new Response (body, { status, headers: {
+    'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
+    'content-security-policy': PAGE_POLICY, 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer',
+    'x-content-type-options': 'nosniff', 'strict-transport-security': 'max-age=31536000',
+} });
 
 function daysBefore (date, days)
 {
@@ -378,8 +388,11 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
             {
                 const transaction = url.searchParams.get ('transaction') ?? '';
                 const licences = /^txn_[a-z0-9]{10,40}$/.test (transaction) ? await store.listByOrder (transaction) : [];
-                const keys = licences.filter ((l) => ! l.revoked).map ((l) => l.key);
-                return html (200, thanksPage ({ keys, transaction, withdrawn: licences.length > 0 && keys.length === 0 }));
+                const kept = licences.filter ((l) => ! l.revoked);
+                const fresh = kept.filter ((l) => l.created >= daysBefore (today(), 1));
+                return html (200, thanksPage ({ keys: fresh.map ((l) => l.key), transaction,
+                                                withdrawn: licences.length > 0 && kept.length === 0,
+                                                expired: kept.length > 0 && fresh.length === 0 }));
             }
 
             if ((path === '/' || path === '/activate') && request.method === 'GET')
