@@ -14,6 +14,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'schedule' && 'nightly' || 'ci' }}
   cancel-in-progress: true
 
+# No job writes to the repository: uploads go through the artifact actions, which need
+# no token scope, so the token only reads.
+permissions:
+  contents: read
+
 jobs:
   server:
     name: Activation server
@@ -62,12 +67,14 @@ jobs:
             os: macos-15
             artifact: Drenched-macOS
             pluginval: pluginval_macOS.zip
+            pluginval_sha256: 3c4c533bda0c5059eea3ddaea752d757ee2025041f0f47e6bcb0e87f6082b29f
             pluginval_bin: pluginval.app/Contents/MacOS/pluginval
             cmake_args: -G Ninja -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
           - name: Windows (x64)
             os: windows-2022
             artifact: Drenched-Windows-x64
             pluginval: pluginval_Windows.zip
+            pluginval_sha256: c08e61ce3b96db41636f8ec7e76f4c7e2c13ebdac7fa1b5a1f52b4f32ec715ab
             pluginval_bin: pluginval.exe
             cmake_args: -G "Visual Studio 17 2022" -A x64
           # 32-bit, for older hosts and 32-bit installs of Windows. pluginval only ships
@@ -173,8 +180,11 @@ jobs:
       - name: Validate plugin (pluginval)
         shell: bash
         run: |
+          # A fixed release, checked against its SHA-256 before it runs: this job builds
+          # the testers' downloads, so a changed binary must stop it, not run in it.
           if [ "${{ matrix.pluginval }}" != "source" ]; then
-            curl -fsSL -o pluginval.zip "https://github.com/Tracktion/pluginval/releases/latest/download/${{ matrix.pluginval }}"
+            curl -fsSL -o pluginval.zip "https://github.com/Tracktion/pluginval/releases/download/v1.0.4/${{ matrix.pluginval }}"
+            echo "${{ matrix.pluginval_sha256 }}  pluginval.zip" | { if command -v sha256sum >/dev/null; then sha256sum -c -; else shasum -a 256 -c -; fi; }
             unzip -q pluginval.zip
           fi
           file "${{ matrix.pluginval_bin }}" 2>/dev/null || true
@@ -215,10 +225,13 @@ jobs:
         run: |
           V=0.3.2
           case "$RUNNER_OS" in
-            Linux)   curl -fsSL -o cv.tgz "https://github.com/free-audio/clap-validator/releases/download/$V/clap-validator-$V-ubuntu-18.04.tar.gz"; tar xzf cv.tgz ;;
-            macOS)   curl -fsSL -o cv.tgz "https://github.com/free-audio/clap-validator/releases/download/$V/clap-validator-$V-macos-universal.tar.gz"; tar xzf cv.tgz ;;
-            Windows) curl -fsSL -o cv.zip "https://github.com/free-audio/clap-validator/releases/download/$V/clap-validator-$V-windows.zip"; unzip -q cv.zip ;;
+            Linux)   F=clap-validator-$V-ubuntu-18.04.tar.gz;   SUM=1476ed68f5657e76050e0c4f19790c02d819ecc62c35fd465059d21f05169cb1 ;;
+            macOS)   F=clap-validator-$V-macos-universal.tar.gz; SUM=3750f3729adfd8489f2b29019f7f2ed65ba71bf9d5049735f6a2ca0fccb18ffd ;;
+            Windows) F=clap-validator-$V-windows.zip;           SUM=68cdbe51c05489542b5420a870b7159b4cb352b5ce5c486f9bd8a9b49b75bdda ;;
           esac
+          curl -fsSL -o "$F" "https://github.com/free-audio/clap-validator/releases/download/$V/$F"
+          echo "$SUM  $F" | { if command -v sha256sum >/dev/null; then sha256sum -c -; else shasum -a 256 -c -; fi; }
+          case "$F" in *.zip) unzip -q "$F" ;; *) tar xzf "$F" ;; esac
           CV=$(find . -maxdepth 3 -type f \( -name clap-validator -o -name clap-validator.exe \) | head -n 1)
           CLAP=$(find build -name "Drenched.clap" -path "*Release*" -prune | head -n 1)
           echo "Validating $CLAP with $CV"
