@@ -1068,3 +1068,44 @@ test ('A space this version doesn\'t have stays the session\'s space', async () 
     assert.deepEqual ((await sentWith ('ui', 'spaceId')).map (p => p.spaceId), [chosen]);
     assert.deepEqual (errors, []);
 });
+
+test ('Only the interface\'s own scripts run: markup that gets into the page runs nothing', async () =>
+{
+    // JUCE gives the page the native bridge (clipboard, dropped files, parameters, the licence),
+    // so a name or note that ever escaped esc() must not be able to call it. The page's
+    // Content-Security-Policy refuses inline handlers and scripts, javascript: links, scripts
+    // from anywhere else, frames, forms and requests.
+    await open ('anodised');
+    const refused = await page.evaluate (async () =>
+    {
+        const seen = [];
+        document.addEventListener ('securitypolicyviolation', e => seen.push (e.violatedDirective));
+        window.__ran = 0;
+        const box = document.createElement ('div');
+        box.innerHTML = '<img src="data:," onerror="window.__ran++">'
+                      + '<svg><animate onbegin="window.__ran++" attributeName="x" dur="1s"/></svg>'
+                      + '<a id="xss-link" href="javascript:window.__ran++">x</a>';
+        document.body.appendChild (box);
+        const script = document.createElement ('script');
+        script.textContent = 'window.__ran++';
+        document.body.appendChild (script);
+        const remote = document.createElement ('script');
+        remote.src = 'https://example.com/x.js';
+        document.body.appendChild (remote);
+        document.getElementById ('xss-link').click();
+        try { await fetch ('https://example.com/'); } catch (e) {}
+        await new Promise (r => setTimeout (r, 300));
+        box.remove(); script.remove(); remote.remove();
+        return { ran: window.__ran, seen };
+    });
+
+    assert.equal (refused.ran, 0);
+    for (const directive of ['script-src', 'connect-src'])
+        assert.ok (refused.seen.some (d => d.startsWith (directive)), directive + ' refused: ' + refused.seen.join (', '));
+
+    // The page itself still works: its own scripts still answer a click.
+    const before = await page.evaluate (() => st.adv);
+    await page.click ('[data-act="adv"]');
+    await page.waitForFunction (was => st.adv !== was, before);
+    assert.deepEqual (errors.filter (e => ! /Content Security Policy/.test (e)), []);
+});

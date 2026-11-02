@@ -3,6 +3,7 @@
 #include "PageMessages.h"
 #include "ParameterWatch.h"
 #include "PluginProcessor.h"
+#include "WebView.h"
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
@@ -101,20 +102,33 @@ private:
     // What the page's events do. Before the web view, whose listeners call it.
     PageMessages messages;
 
-    /** The interface's web view. The page takes files dropped on it itself (PageMessages, dropIr);
-        one that gets past it would otherwise open in place of the interface, so the view
-        refuses to open any file and hands it to onFile instead. */
+    /** The interface's web view. It shows only the interface's own page (webView::navigationFor):
+        the page takes files dropped on it itself (PageMessages, dropIr), and one that gets past it
+        is handed to onFile instead of opening in place of the interface. A web page opens in the
+        person's browser, never in the window, where it would get the native bridge. */
     struct Page final : juce::WebBrowserComponent
     {
         using juce::WebBrowserComponent::WebBrowserComponent;
 
         bool pageAboutToLoad (const juce::String& url) override
         {
-            if (! url.startsWithIgnoreCase ("file:"))
-                return true;
+            switch (webView::navigationFor (url, getResourceProviderRoot()))
+            {
+                case webView::Navigation::load:
+                    return true;
 
-            if (onFile != nullptr)
-                onFile (juce::URL (url).getLocalFile());
+                case webView::Navigation::openFile:
+                    if (onFile != nullptr)
+                        onFile (juce::URL (url).getLocalFile());
+                    return false;
+
+                case webView::Navigation::openInBrowser:
+                    juce::URL (url).launchInDefaultBrowser();
+                    return false;
+
+                case webView::Navigation::refuse:
+                    break;
+            }
 
             return false;
         }
