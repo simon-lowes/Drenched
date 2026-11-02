@@ -1,7 +1,8 @@
 #!/bin/bash
 # Builds packaging/user-guide.html, the user guide the installers ship, from
 # docs/user-guide.md: one self-contained page (styles inlined). Needs pandoc.
-# Run it after editing the guide, and commit the result.
+# Run it after editing the guide, and commit the result (CI checks it matches,
+# with Ubuntu 24.04's pandoc 3.1.3).
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 pandoc "$ROOT/docs/user-guide.md" --standalone --embed-resources \

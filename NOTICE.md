@@ -62,7 +62,10 @@ use), whose setup program ships inside it.
 
 The interface embeds these typefaces, all under the
 [SIL Open Font Licence 1.1](source/ui/fonts/LICENSE-OFL.txt), as Latin
-subsets from the [Fontsource](https://fontsource.org) packages.
+subsets from the [Fontsource](https://fontsource.org) packages. IBM Plex is the
+exception: "Plex" is a Reserved Font Name, which a modified copy (such as another
+party's subset) may not use, so it is IBM's own unmodified Latin-1 web subsets
+(`@ibm/plex-sans` 1.1.0, `@ibm/plex-mono` 2.5.0). Keep it that way if they are updated.
 
 | Typeface | Author |
 | --- | --- |
