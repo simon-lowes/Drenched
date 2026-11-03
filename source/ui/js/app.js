@@ -327,7 +327,7 @@ function renderLive(){if(rendering){renderAgain=true;return;}rendering=true;try{
 function uniqueFids(h){var seen={};return h.replace(/ data-fid="([^"]*)"/g,function(m,f){var n=seen[f]=(seen[f]||0)+1;return n===1?m:' data-fid="'+f+'~'+n+'"';});}
 function drawLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAttribute('data-fid'):null,bl=live.querySelector('.brw-list'),blt=bl?bl.scrollTop:0;
  var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.wf)html=html.slice(0,-6)+wfHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';html=uniqueFids(html);
- var kept=!!fid&&keepFocused(a,fid,html);if(!kept)live.innerHTML=html;fit();syncDisplays();
+ var kept=!!fid&&keepFocused(a,fid,html);if(!kept)live.innerHTML=html;fit();syncDisplays();cutNote();
  if(blt){var bl2=live.querySelector('.brw-list');if(bl2)bl2.scrollTop=blt;}
  var dl=topDialog();modal(dl);
  if(fid&&!kept){var n=live.querySelector('[data-fid="'+fid+'"]');if(n&&!n.closest('[inert]')){n.focus({preventScroll:true});if(n.matches('input,textarea'))n.selectionStart=n.selectionEnd=n.value.length;}}
@@ -342,6 +342,8 @@ function drawLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAt
    closing it, however it closes, gives the keyboard back to the control that opened it (kept
    as a selector and its place among the matches, as the page is redrawn in between). ---- */
 var opener=null;
+/* More shows only when the note doesn't fit its strip */
+function cutNote(){var m=live.firstElementChild&&live.firstElementChild.querySelector('.hint-more');if(!m||!m.hidden)return;var h=m.previousElementSibling;if(h&&(h.scrollWidth>h.clientWidth+1||h.scrollHeight>h.clientHeight+1))m.hidden=false;}
 function dialogOpen(){return !!(st.skins||st.browse||st.capture||st.lic||st.credits||st.spk||st.scn||st.eq||st.wf);}
 function topDialog(){var sc=live.firstElementChild,d=null;if(sc)for(var c=sc.firstElementChild;c;c=c.nextElementSibling)if(c.getAttribute('role')==='dialog')d=c;return d;}
 function modal(d){var sc=live.firstElementChild;if(sc)for(var c=sc.firstElementChild;c;c=c.nextElementSibling){var bg=!!d&&c!==d;if(bg!==c.hasAttribute('inert')){if(bg)c.setAttribute('inert','');else c.removeAttribute('inert');}}}
@@ -431,6 +433,7 @@ document.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,A
   if(!ts.length){e.preventDefault();dw.focus({preventScroll:true});return;}
   // from the window itself, or past either end, round to the other end
   if(ti<0||(e.shiftKey?ti===0:ti===ts.length-1)){e.preventDefault();ts[e.shiftKey?ts.length-1:0].focus({preventScroll:true});}return;}
+ if(e.key==='Escape'&&st.noteOpen&&!dialogOpen()){st.noteOpen=null;e.preventDefault();renderLive();return;}
  if(e.key==='Escape'&&dialogOpen()){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.wf)st.wf=false;else if(st.eq)st.eq=false;else if(st.scn)st.scn=false;else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
  if(e.ctrlKey||e.metaKey||e.altKey||!t.matches)return;
  var bw=st.browse&&t.closest&&t.closest('.brw');
@@ -495,6 +498,7 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'slot':if(v!==st.slot){st.slots[st.slot]=snap(st);var nx=st.slots[v]||snap(st);Object.keys(nx).forEach(function(k){st[k]=Array.isArray(nx[k])?nx[k].slice():nx[k];});st.slot=v;st.hint=null;st.note='<b>Snapshot '+v+'.</b> Changes now go to '+v+'. Switch back to compare.';}break;
   case 'freeze':st.freeze=!st.freeze;st.hint=null;st.note=null;break;
   case 'toggle':var tk=b.getAttribute('data-k');st[tk]=st[tk]>=0.5?0:1;st.hint=tk;st.note=null;break;
+  case 'note':st.noteOpen=st.noteOpen===v?null:v;break;
   case 'adv':st.adv=!st.adv;st.hint=null;st.note=st.adv?'<b>All parameters</b> opens in place, so the space and graph stay in view.':null;break;
   case 'match':st.hint=null;if(JUCE){JUCE.emitEvent('match',{});st.note='<b>Match a room.</b> Choose a recording made in the room you want to match: a voice, a band or a drum kit, with pauses where the sound stops and the room rings on.';}else st.note='<b>Match a room</b> listens to a recording made in a room and sets the decay to match it.';break;
   /* unlinking first gives the right the curve it already plays, so nothing changes at that moment */

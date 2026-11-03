@@ -1167,6 +1167,55 @@ test ('Only the interface\'s own scripts run: markup that gets into the page run
     assert.deepEqual (errors.filter (e => ! /Content Security Policy/.test (e)), []);
 });
 
+test ('A note too long for its strip can be read whole from the keyboard or by touch, in every look', async () =>
+{
+    // The strip under the controls holds one line (two in Strata). Notes carry errors and what
+    // to do next, so when one is cut short, More opens all of it; Less or Escape closes it.
+    await open ('anodised');
+    const looks = await page.evaluate (() => SKINS.map (s => s.id));
+    const long = 'Shortened to 10.9 s, the longest this 32-bit version holds in memory at this rate. The 64-bit version plays it in full. Choose a shorter recording to hear all of it.';
+
+    for (const look of looks)
+    {
+        await page.goto ('about:blank');
+        await open (look);
+
+        if (! await page.$ ('.hint'))
+            continue; // Catalogue sets its notes as wrapping text on the plate
+
+        await page.evaluate (() => { st.note = 'Saved.'; window.schedule(); });
+        await drawn();
+        assert.equal (await page.isVisible ('.hint-more'), false, look + ': More beside a note that fits');
+
+        await page.evaluate ((t) => { st.note = t; window.schedule(); }, long);
+        await drawn();
+        assert.equal (await page.isVisible ('.hint-more'), true, look + ': no More beside a cut note');
+
+        await page.focus ('.hint-more');
+        await page.keyboard.press ('Enter');
+        await drawn();
+        const opened = await page.evaluate (() =>
+        {
+            const h = document.querySelector ('.hint'), m = document.querySelector ('.hint-more');
+            return { open: h.classList.contains ('open'), whole: h.scrollWidth <= h.clientWidth + 1 && h.scrollHeight <= h.clientHeight + 1,
+                     expanded: m.getAttribute ('aria-expanded'), focused: document.activeElement === m };
+        });
+        assert.deepEqual (opened, { open: true, whole: true, expanded: 'true', focused: true }, look);
+
+        await page.keyboard.press ('Escape');
+        await drawn();
+        assert.equal (await page.evaluate (() => document.querySelector ('.hint').classList.contains ('open')), false, look + ': Escape left it open');
+
+        // A new note starts closed.
+        await page.click ('.hint-more');
+        await page.evaluate ((t) => { st.note = t + ' Again.'; window.schedule(); }, long);
+        await drawn();
+        assert.equal (await page.evaluate (() => document.querySelector ('.hint').classList.contains ('open')), false, look + ': a new note opened by itself');
+    }
+
+    assert.deepEqual (errors, []);
+});
+
 test ('Every button\'s name starts from the words it shows, so speaking them reaches it, in every look', async () =>
 {
     // Voice control finds a button by the words on it, so a button's accessible name has to

@@ -280,6 +280,9 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 @media (prefers-reduced-motion: reduce){.phi{transition:none}}
 .hint{font-size:12px;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .hint b{color:var(--tx);font-weight:600}
+.hint-more{flex:none;background:none;border:0;padding:0 2px;font:inherit;font-size:12px;color:var(--tx);text-decoration:underline;text-underline-offset:2px}
+.hint-more[hidden]{display:none}
+.sys .hint.open{position:absolute;left:0;right:0;bottom:calc(100% + 6px);z-index:6;display:block;white-space:normal;overflow:visible;text-overflow:clip;-webkit-line-clamp:unset;max-height:none;height:auto;background:var(--g);color:var(--tx);padding:8px 12px;border:1px solid var(--tx2);border-radius:4px;line-height:1.45;text-shadow:none;box-shadow:0 6px 24px rgba(0,0,0,.35)}
 .mm{display:inline-flex;align-items:center;gap:6px;font:11px var(--fnum);color:var(--tx2)}
 .mm .bar{width:64px;height:5px;background:var(--r);border-radius:3px;overflow:hidden}.mm .bar i{display:block;height:100%;background:var(--mtr)}
 /* stage view, shared by every system */

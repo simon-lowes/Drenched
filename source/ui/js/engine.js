@@ -432,7 +432,11 @@ function segMode(s){return '<div class="seg" role="group" aria-label="View"><but
 function segAB(s){return '<div class="seg" role="group" aria-label="Compare"><button data-act="slot" data-v="A" aria-pressed="'+(s.slot==='A')+'" aria-label="Snapshot A">A</button><button data-act="slot" data-v="B" aria-pressed="'+(s.slot==='B')+'" aria-label="Snapshot B">B</button></div>';}
 function hintText(s){var t;if(s.note)t=s.note;else if(s.hint){var k=s.hint,ov=isOver(s,k),nv=natV(s,k),lb=k==='decay'&&!s.link?sideName(s)+' decay':P[k].l;t='<b>'+lb+' '+esc(fmt(s,k))+'</b>, '+(nv==null?'':ov?'captured '+esc(fmt(s,k,nv))+'. ':'as captured. ')+P[k].l+' '+P[k].help+(k==='decay'&&!s.link?' The other side shows faintly.':'');}
  else t='Drag any control or a point on the graph. Click a value to type it. Shift gives fine steps, and the arrow keys work everywhere.';
- if(s.freeze)t='<b>Frozen.</b> The tail holds until you release Freeze. '+t;return '<div class="hint" title="'+t.replace(/<[^>]*>/g,'').replace(/"/g,'&quot;')+'">'+t+'</div>'+licChip(s);}
+ if(s.freeze)t='<b>Frozen.</b> The tail holds until you release Freeze. '+t;var key=textKey(t),open=s.noteOpen===key;
+ /* the strip has room for a line; when the note is longer, More (shown once the page is drawn
+    and the note measured) opens all of it above the strip, for the keyboard and touch too */
+ return '<div class="hint'+(open?' open':'')+'" title="'+t.replace(/<[^>]*>/g,'').replace(/"/g,'&quot;')+'">'+t+'</div><button class="hint-more" data-act="note" data-v="'+key+'" data-fid="hint-more" aria-expanded="'+open+'"'+(open?'':' hidden')+'>'+(open?'Less':'More')+'<span class="vh"> of the note</span></button>'+licChip(s);}
+function textKey(t){var h=5381;for(var i=0;i<t.length;i++)h=((h*33)^t.charCodeAt(i))>>>0;return h.toString(36);}
 function days(n){return n+' day'+(n===1?'':'s');}
 /* the trial, in the strip beside the hint until Drenched is activated */
 function licChip(s){var L=s.licence;if(!L||L.state==='licensed')return '';
