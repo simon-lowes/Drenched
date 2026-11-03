@@ -45,6 +45,8 @@ namespace
             return "This licence number has been withdrawn. Contact support if that's a mistake.";
         if (error == "too-many-moves")
             return "This licence has moved between computers too often this year. Contact support and we'll sort it out.";
+        if (error == "wrong-code")
+            return "The activation server didn't accept this computer's activation code. Contact support and we'll free its place.";
 
         return serverMessage.isNotEmpty() ? serverMessage : "The activation server couldn't help with that. Try again in a minute.";
     }
@@ -266,9 +268,13 @@ void LicenceManager::deactivate()
     messageIsError = false;
     sendChangeMessage();
 
+    // The server frees the place only for the computer holding the code it signed.
+    juce::PropertiesFile file (environment.file, fileOptions());
+
     auto* object = new juce::DynamicObject();
     object->setProperty ("licence", juce::String (activation->key));
     object->setProperty ("machine", juce::String (machineCode));
+    object->setProperty ("code", file.getValue ("code"));
     const juce::var body (object);
 
     network.addJob ([weak = juce::WeakReference<LicenceManager> (this), post = environment.post, body]
