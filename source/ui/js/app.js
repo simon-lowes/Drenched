@@ -456,8 +456,8 @@ document.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,A
   else return;st.note=null;e.preventDefault();schedule();}
  else if(t.matches('[data-node]')){var i=+t.getAttribute('data-node');if(e.key==='ArrowLeft'||e.key==='ArrowRight'){var ni=clamp(i+(e.key==='ArrowRight'?1:-1),0,7);st.lastBand=ni;e.preventDefault();renderLive();var n2=live.querySelector('[data-fid="nd-'+ni+'"]');if(n2)n2.focus({preventScroll:true});return;}
   if(e.key==='ArrowUp'||e.key==='ArrowDown'){var cb=curBands(st);cb[i]=clamp(Math.round((cb[i]+(e.key==='ArrowUp'?1:-1)*(e.shiftKey?0.01:0.1))*100)/100,0.1,20);st.lastBand=i;st.hint='decay';st.note=null;e.preventDefault();schedule();}}
- else if(t.matches('[data-drag="src"]')){if(e.key==='ArrowLeft'||e.key==='ArrowRight')st.sx=clamp(st.sx+(e.key==='ArrowRight'?3:-3),6,94);else return;st.hint='sx';st.note=null;e.preventDefault();schedule();}
- else if(t.matches('[data-drag]')){if(e.key==='ArrowUp'||e.key==='ArrowDown')st.dist=clamp(st.dist+(e.key==='ArrowDown'?2:-2),0,100);else if(e.key==='ArrowLeft'||e.key==='ArrowRight')st.lx=clamp(st.lx+(e.key==='ArrowRight'?3:-3),6,94);else return;st.hint='dist';st.note=null;e.preventDefault();schedule();}});
+ else if(t.matches('[data-drag="src"]')){if(e.key==='ArrowLeft'||e.key==='ArrowRight')st.sx=clamp(st.sx+(e.key==='ArrowRight'?3:-3),6,94);else if(e.key==='Home'||e.key==='End')st.sx=e.key==='Home'?6:94;else return;st.hint='sx';st.note=null;e.preventDefault();schedule();}
+ else if(t.matches('[data-drag]')){if(e.key==='ArrowUp'||e.key==='ArrowDown')st.dist=clamp(st.dist+(e.key==='ArrowDown'?2:-2),0,100);else if(e.key==='ArrowLeft'||e.key==='ArrowRight')st.lx=clamp(st.lx+(e.key==='ArrowRight'?3:-3),6,94);else if(e.key==='Home'||e.key==='End')st.dist=e.key==='Home'?0:100;else return;st.hint='dist';st.note=null;e.preventDefault();schedule();}});
 /* The numbers in what someone typed, however they write them: "1,5" or "1.5", ".5", a minus
    or dash for negative and, where a value can reach thousands, "12,000" or "12 000". */
 function typedNumbers(raw,thousands){var t=raw.replace(/[\u2212\u2013]/g,'-');
