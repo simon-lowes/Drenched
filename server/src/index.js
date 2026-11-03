@@ -2,7 +2,8 @@
 // number sold, gives each one up to three computers, and signs the activation
 // codes the plugin checks offline. See README.md for the API and deployment.
 
-import { COMPUTERS_PER_LICENCE, activationCode, cleanName, importSigningKey, makeKey, parseKey, parseMachineCode } from './licence.js';
+import { COMPUTERS_PER_LICENCE, activationCode, cleanName, importSigningKey, importVerifyKey, makeKey, parseKey, parseMachineCode,
+         readActivationCode } from './licence.js';
 import { licenceEmail, resendMailer } from './mail.js';
 import { copiesIn, fetchCustomer, verifySignature } from './paddle.js';
 import { activationPage, thanksPage } from './pages.js';
@@ -20,6 +21,7 @@ const MESSAGES = {
     'revoked': 'This licence number has been withdrawn. Contact support if you think that is a mistake.',
     'computer-limit': `This licence is already active on ${COMPUTERS_PER_LICENCE} computers. Deactivate one of them in Drenched first.`,
     'too-many-moves': 'This licence has moved between computers too often this year. Contact support and we will sort it out.',
+    'wrong-code': 'Only the computer holding this licence can deactivate it. Deactivate it in Drenched on that computer.',
     'bad-request': 'The request was not understood.',
     'not-found': 'Not found.',
 };
@@ -79,7 +81,7 @@ async function readBody (request)
 }
 
 /** The app, with everything it depends on passed in so the tests can run it. */
-export function createApp ({ store, signingKey, adminToken = null, paddle = null, mailer = null,
+export function createApp ({ store, signingKey, verifyKey, adminToken = null, paddle = null, mailer = null,
                              today = () => new Date().toISOString().slice (0, 10),
                              now = () => Date.now() / 1000,
                              randomBytes = (n) => crypto.getRandomValues (new Uint8Array (n)) })
@@ -289,6 +291,14 @@ export function createApp ({ store, signingKey, adminToken = null, paddle = null
         if (! await store.getLicence (key))
             return failure (404, 'unknown-licence');
 
+        // The computer's own activation code, so the licence number and a computer code,
+        // which can be seen on screen or in a support email, aren't enough to use up the
+        // buyer's moves.
+        const held = await readActivationCode (typeof body.code === 'string' ? body.code : '', await verifyKey);
+
+        if (! held || held.key !== key || held.machine !== machine)
+            return failure (403, 'wrong-code');
+
         const places = await store.listActivations (key);
 
         if (! places.some ((p) => p.machine === machine))
@@ -430,6 +440,7 @@ export default {
                 app: createApp ({
                     store: d1Store (env.DB),
                     signingKey: importSigningKey (env.SIGNING_KEY),
+                    verifyKey: importVerifyKey (env.SIGNING_KEY),
                     adminToken: env.ADMIN_TOKEN || null,
                     paddle: env.PADDLE_WEBHOOK_SECRET ? {
                         webhookSecret: env.PADDLE_WEBHOOK_SECRET,

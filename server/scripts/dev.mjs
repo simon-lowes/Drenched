@@ -32,7 +32,8 @@ const d1 = {
     },
 };
 
-const app = createApp ({ store: d1Store (d1), signingKey: (await testKeys()).privateKey, adminToken: 'dev' });
+const { privateKey, publicKey } = await testKeys();
+const app = createApp ({ store: d1Store (d1), signingKey: privateKey, verifyKey: publicKey, adminToken: 'dev' });
 
 const created = await (await app (new Request ('http://dev/v1/admin/licences', {
     method: 'POST', headers: { authorization: 'Bearer dev', 'content-type': 'application/json' },
