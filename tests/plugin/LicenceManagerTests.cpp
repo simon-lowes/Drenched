@@ -425,6 +425,7 @@ TEST_CASE ("deactivate() forgets the saved code only when the server agrees", "[
     const std::vector<std::pair<int, const char*>> refusals {
         { 0, "needs the internet" },
         { 404, "isn't one we sold" },
+        { 403, "didn't accept this computer's activation code" },
         { 429, "moved between computers too often" },
         { 500, "couldn't help with that" },
     };
@@ -433,6 +434,8 @@ TEST_CASE ("deactivate() forgets the saved code only when the server agrees", "[
     {
         INFO ("status " << status);
         computer.answer (status, status == 404 ? object ({ { "error", "unknown-licence" } })
+                               : status == 403 ? object ({ { "error", "wrong-code" },
+                                                           { "message", "Only the computer holding this licence can deactivate it." } })
                                : status == 429 ? object ({ { "error", "too-many-moves" } })
                                                : juce::var());
 
@@ -442,6 +445,7 @@ TEST_CASE ("deactivate() forgets the saved code only when the server agrees", "[
         CHECK (computer.lastPath() == "/v1/deactivate");
         CHECK (computer.lastBody()["licence"].toString() == testing::testLicence);
         CHECK (computer.lastBody()["machine"].toString() == juce::String (m.machine()));
+        CHECK (computer.lastBody()["code"].toString() == code);
         CHECK_THAT (m.status()["message"].toString().toStdString(), ContainsSubstring (message));
         CHECK (static_cast<bool> (m.status()["error"]));
         CHECK (m.state() == "licensed");

@@ -53,3 +53,16 @@ test ('names are made safe for a code', () =>
     assert.equal (L.cleanName (undefined), '');
     assert.ok (new TextEncoder().encode (L.cleanName ('é'.repeat (300))).length <= L.MAX_NAME_BYTES);
 });
+
+test ('the SIGNING_KEY secret gives a key that checks its own codes, and junk codes read as nothing', async () =>
+{
+    const { privateKey, jwk } = await testKeys();
+    const verifyKey = await L.importVerifyKey (JSON.stringify (jwk));
+    const activation = { key: vectors.keys[0].key, machine: 'AAAAA-AAAAA-AAAAA-AAAA1', name: 'Ada', issued: '2026-11-02' };
+    const code = await L.activationCode (activation, privateKey);
+
+    assert.deepEqual (await L.readActivationCode (code, verifyKey), activation);
+
+    for (const junk of ['', 'DRN1', 'DRN1.%%%.%%%', 'DRN1.' + 'A'.repeat (40), code.slice (0, -4) + 'AAAA', code.replace ('DRN1', 'DRN2')])
+        assert.equal (await L.readActivationCode (junk, verifyKey), null, junk);
+});

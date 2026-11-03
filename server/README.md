@@ -22,8 +22,10 @@ and it has no dependencies.
 3. **No internet in the studio.** The buyer opens `/activate` on any other
    device, types the number and the computer code the plugin shows, and pastes
    the code it gives back into the plugin.
-4. **New computer.** "Deactivate this computer" calls `/v1/deactivate`, which
-   frees the place. Six moves are allowed in any 365 days; after that, support
+4. **New computer.** "Deactivate this computer" calls `/v1/deactivate` with
+   the computer's activation code, which frees the place. The code is needed,
+   so a licence number and computer code seen elsewhere can't use up the
+   buyer's moves. Six moves are allowed in any 365 days; after that, support
    resets the licence. (A computer that was deactivated while offline keeps
    its code, which is why moves are limited.)
 5. **Refund or chargeback.** Paddle's approved `adjustment` withdraws the
@@ -50,7 +52,7 @@ and email.
 | Route | Use |
 | --- | --- |
 | `POST /v1/activate` `{licence, machine}` | `200 {code, name}`; `400 invalid-licence / invalid-machine`, `404 unknown-licence`, `403 revoked`, `409 computer-limit` |
-| `POST /v1/deactivate` `{licence, machine}` | `200 {ok}`; `429 too-many-moves` |
+| `POST /v1/deactivate` `{licence, machine, code}` | `200 {ok}`; `403 wrong-code` (no code, or another computer's), `429 too-many-moves` |
 | `GET, POST /activate` | The offline activation page |
 | `GET /thanks?transaction=txn_…` | The buyer's numbers after checkout (for two days) |
 | `POST /v1/paddle` | Paddle webhooks (signature checked) |
