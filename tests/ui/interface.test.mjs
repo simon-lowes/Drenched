@@ -1271,3 +1271,103 @@ test ('The listener and source handles on the room drawing say every way they mo
     assert.equal (await page.getAttribute (src, 'aria-valuetext'), '88% left');
     assert.deepEqual (errors, []);
 });
+
+test ('Text reads at 4.5:1 or more against what is behind it (3:1 when large), in every look, Studio and Stage', async () =>
+{
+    // WCAG 1.4.3. Each text's own colour is measured against the page drawn with every text
+    // made transparent, so a photo, a graph line or a panel behind it counts. One pixel in ten
+    // may be lower (antialiased edges, a single bright highlight); a halo drawn round SVG text
+    // (paint-order stroke) is what that text sits on. Text inside value fields is not measured.
+    await open ('anodised');
+    const looks = await page.evaluate (() => SKINS.map (s => s.id));
+    const low = [];
+
+    for (const look of looks)
+    {
+        for (const mode of ['studio', 'stage'])
+        {
+            await page.goto ('about:blank');
+            await open (look);
+            await page.evaluate ((m) => { st.mode = m; window.schedule(); }, mode);
+            await page.waitForTimeout (150);
+
+            const texts = await page.evaluate (() =>
+            {
+                const rgb = s => { const m = /rgba?\(([^)]+)\)/.exec (s); return m ? m[1].split (',').map (Number) : null; };
+                const out = [], seen = new Set();
+                const walk = document.createTreeWalker (document.body, NodeFilter.SHOW_TEXT);
+
+                for (let n; (n = walk.nextNode());)
+                {
+                    const el = n.parentElement;
+
+                    if (! n.nodeValue.trim() || seen.has (el) || el.closest ('[inert], [aria-hidden="true"], .vh, #say, #say-err'))
+                        continue;
+
+                    seen.add (el);
+                    const cs = getComputedStyle (el), svg = el instanceof SVGElement, col = rgb (svg ? cs.fill : cs.color);
+                    let alpha = col ? (col[3] ?? 1) : 0;
+
+                    for (let e = el; e && e !== document.body; e = e.parentElement)
+                        alpha *= +getComputedStyle (e).opacity;
+
+                    const range = document.createRange();
+                    range.selectNodeContents (el);
+                    const r = range.getBoundingClientRect();
+
+                    if (! col || alpha === 0 || cs.visibility === 'hidden' || r.width < 2 || r.height < 2 || r.right < 0 || r.bottom < 0 || r.left > 1200 || r.top > 760)
+                        continue;
+
+                    const size = parseFloat (cs.fontSize), weight = +cs.fontWeight || 400;
+                    out.push ({ text: n.nodeValue.trim().slice (0, 30), col: col.slice (0, 3), alpha,
+                                x: r.left, y: r.top, w: r.width, h: r.height,
+                                need: size >= 24 || (size >= 18.66 && weight >= 700) ? 3 : 4.5,
+                                halo: svg && parseFloat (cs.strokeWidth) >= 2 && cs.paintOrder.startsWith ('stroke') ? rgb (cs.stroke) : null });
+                }
+
+                return out;
+            });
+
+            const hide = await page.addStyleTag ({ content: '*{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;caret-color:transparent!important}text,tspan{fill:transparent!important;stroke:transparent!important}' });
+            await page.waitForTimeout (50);
+            const shot = (await page.screenshot()).toString ('base64');
+            await hide.evaluate (n => n.remove());
+
+            const found = await page.evaluate (async ([png, list]) =>
+            {
+                const bitmap = await createImageBitmap (new Blob ([Uint8Array.from (atob (png), c => c.charCodeAt (0))], { type: 'image/png' }));
+                const ctx = new OffscreenCanvas (bitmap.width, bitmap.height).getContext ('2d');
+                ctx.drawImage (bitmap, 0, 0);
+                const px = ctx.getImageData (0, 0, bitmap.width, bitmap.height).data;
+                const lum = (c) => c.map (v => (v /= 255) <= 0.03928 ? v / 12.92 : Math.pow ((v + 0.055) / 1.055, 2.4)).reduce ((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+                const out = [];
+
+                for (const t of list)
+                {
+                    const ratios = [];
+
+                    for (let y = Math.max (0, Math.floor (t.y)); y <= Math.min (bitmap.height - 1, Math.ceil (t.y + t.h)); ++y)
+                        for (let x = Math.max (0, Math.floor (t.x)); x <= Math.min (bitmap.width - 1, Math.ceil (t.x + t.w)); ++x)
+                        {
+                            const i = (y * bitmap.width + x) * 4, back = t.halo || [px[i], px[i + 1], px[i + 2]];
+                            const a = lum (t.col.map ((v, k) => v * t.alpha + back[k] * (1 - t.alpha))), b = lum (back);
+                            ratios.push ((Math.max (a, b) + 0.05) / (Math.min (a, b) + 0.05));
+                        }
+
+                    ratios.sort ((p, q) => p - q);
+                    const r = ratios[Math.floor (ratios.length / 10)];
+
+                    if (r < t.need)
+                        out.push ('"' + t.text + '" ' + r.toFixed (2) + ':1');
+                }
+
+                return out;
+            }, [shot, texts]);
+
+            found.forEach (f => low.push (look + ' ' + mode + ': ' + f));
+        }
+    }
+
+    assert.deepEqual (low, []);
+    assert.deepEqual (errors, []);
+});

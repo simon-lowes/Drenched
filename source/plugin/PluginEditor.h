@@ -40,7 +40,7 @@ public:
     /** The design size of every skin. The window keeps this aspect ratio at any size. */
     static constexpr int designWidth = 1200;
     static constexpr int designHeight = 760;
-    static constexpr int minWidth = 600;
+    static constexpr int minWidth = 900;
     static constexpr int maxWidth = 2400;
 
 private:
