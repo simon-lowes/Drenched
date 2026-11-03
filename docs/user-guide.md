@@ -74,7 +74,7 @@ The screen has four parts:
 - **The main controls**: Mix, Decay, Pre-delay, Size, Brightness, Early/Late and Distance, plus **Freeze**, **Match a room**, **All parameters**, **Wet EQ** and **Waterfall** (some looks say More, Match or EQ).
 - **The strip along the bottom**: a hint line, the **In** and **Out** meters and a **Beta** label.
 
-The hint line explains whatever you last touched, with its value and the captured space's. A small dot beside a control means it differs from the captured space.
+The hint line explains whatever you last touched, with its value and the captured space's. A small dot beside a control means it differs from the captured space. When a message is too long for the line, **More** beside it opens the whole message; **Less** or Escape closes it.
 
 ### Working the controls
 
