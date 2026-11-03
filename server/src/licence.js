@@ -147,6 +147,13 @@ export function importSigningKey (jwkJson)
     return crypto.subtle.importKey ('jwk', JSON.parse (jwkJson), { name: 'Ed25519' }, false, ['sign']);
 }
 
+/** The public half of the SIGNING_KEY JWK, to check codes the server signed. */
+export function importVerifyKey (jwkJson)
+{
+    const { kty, crv, x } = JSON.parse (jwkJson);
+    return crypto.subtle.importKey ('jwk', { kty, crv, x }, { name: 'Ed25519' }, false, ['verify']);
+}
+
 /** A signed activation code: DRN1.<payload>.<signature>, both base64url. */
 export async function activationCode (activation, signingKey)
 {
@@ -163,9 +170,19 @@ export async function readActivationCode (code, publicKey)
     if (parts.length !== 3 || parts[0] !== 'DRN1')
         return null;
 
-    const payload = fromBase64Url (parts[1]);
+    let payload, signature;
 
-    if (! await crypto.subtle.verify ('Ed25519', publicKey, fromBase64Url (parts[2]), payload))
+    try
+    {
+        payload = fromBase64Url (parts[1]);
+        signature = fromBase64Url (parts[2]);
+    }
+    catch
+    {
+        return null;
+    }
+
+    if (! await crypto.subtle.verify ('Ed25519', publicKey, signature, payload))
         return null;
 
     const lines = new TextDecoder().decode (payload).split ('\n');

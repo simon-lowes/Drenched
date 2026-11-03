@@ -12,7 +12,7 @@ export async function lifeCycle (store)
 {
     const { privateKey, publicKey } = await testKeys();
     let day = '2026-10-20';
-    const app = createApp ({ store, signingKey: privateKey, adminToken: 'secret-token', today: () => day });
+    const app = createApp ({ store, signingKey: privateKey, verifyKey: publicKey, adminToken: 'secret-token', today: () => day });
 
     const call = async (method, path, body, headers = {}) =>
     {
@@ -42,31 +42,45 @@ export async function lifeCycle (store)
     // The same computer again takes no new place.
     assert.equal ((await call ('POST', '/v1/activate', { licence: key, machine: machines[0] })).status, 200);
     assert.equal ((await call ('POST', '/v1/activate', { licence: key, machine: machines[1] })).status, 200);
-    assert.equal ((await call ('POST', '/v1/activate', { licence: key, machine: machines[2] })).status, 200);
+    const third = await call ('POST', '/v1/activate', { licence: key, machine: machines[2] });
+    assert.equal (third.status, 200);
 
     const full = await call ('POST', '/v1/activate', { licence: key, machine: machines[3] });
     assert.equal (full.status, 409);
     assert.equal (full.body.error, 'computer-limit');
     assert.match (full.body.message, /3 computers/);
 
+    // Only the computer's own activation code frees its place: the licence number and a
+    // computer code alone don't, nor does another computer's code or a damaged one.
+    for (const code of [undefined, '', 42, first.body.code, third.body.code.slice (0, -4) + 'AAAA', 'DRN1.%%%.%%%', 'DRN1.' + 'A'.repeat (40)])
+    {
+        const refused = await call ('POST', '/v1/deactivate', { licence: key, machine: machines[2], code });
+        assert.equal (refused.status, 403, String (code));
+        assert.equal (refused.body.error, 'wrong-code');
+        assert.match (refused.body.message, /computer holding this licence/);
+    }
+
+    assert.deepEqual ((await admin ('GET', '/v1/admin/licences/' + key)).body.computers.map ((c) => c.machine), machines.slice (0, 3));
+
     // Moving a computer frees its place.
-    assert.equal ((await call ('POST', '/v1/deactivate', { licence: key, machine: machines[2] })).status, 200);
-    assert.equal ((await call ('POST', '/v1/deactivate', { licence: key, machine: machines[2] })).status, 200); // already gone
-    assert.equal ((await call ('POST', '/v1/activate', { licence: key, machine: machines[3] })).status, 200);
+    assert.equal ((await call ('POST', '/v1/deactivate', { licence: key, machine: machines[2], code: third.body.code })).status, 200);
+    assert.equal ((await call ('POST', '/v1/deactivate', { licence: key, machine: machines[2], code: third.body.code })).status, 200); // already gone
+    const fourth = await call ('POST', '/v1/activate', { licence: key, machine: machines[3] });
+    assert.equal (fourth.status, 200);
 
     // But only so often in a year.
     for (let i = 1; i < MOVES_PER_YEAR; ++i)
     {
-        assert.equal ((await call ('POST', '/v1/deactivate', { licence: key, machine: machines[3] })).status, 200);
+        assert.equal ((await call ('POST', '/v1/deactivate', { licence: key, machine: machines[3], code: fourth.body.code })).status, 200);
         assert.equal ((await call ('POST', '/v1/activate', { licence: key, machine: machines[3] })).status, 200);
     }
 
-    const tooMany = await call ('POST', '/v1/deactivate', { licence: key, machine: machines[3] });
+    const tooMany = await call ('POST', '/v1/deactivate', { licence: key, machine: machines[3], code: fourth.body.code });
     assert.equal (tooMany.status, 429);
     assert.equal (tooMany.body.error, 'too-many-moves');
 
     day = '2027-10-21';
-    assert.equal ((await call ('POST', '/v1/deactivate', { licence: key, machine: machines[3] })).status, 200);
+    assert.equal ((await call ('POST', '/v1/deactivate', { licence: key, machine: machines[3], code: fourth.body.code })).status, 200);
 
     // Support can see and reset a licence, and withdraw it after a refund.
     const record = await admin ('GET', '/v1/admin/licences/' + key);

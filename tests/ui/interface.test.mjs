@@ -66,7 +66,7 @@ async function sentWith (name, key)
 }
 
 /** The value shown in the visible field with this data-fid. */
-const shown = (fid) => page.evaluate (f => [...document.querySelectorAll ('[data-fid="' + f + '"]')].find (e => e.getBoundingClientRect().width > 0)?.value, fid);
+const shown = (fid) => page.evaluate (f => [...document.querySelectorAll ('[data-fid="' + f + '"],[data-fid^="' + f + '~"]')].find (e => e.getBoundingClientRect().width > 0)?.value, fid);
 
 // Messages the plugin really sends (PluginEditor.cpp), with awkward but possible contents.
 const NAMES = ['St Paul\'s <Nave> & "Choir"', '', 'x'.repeat (200), 'é日本 room', '<img src=x onerror=window.__ran=1>', 'a\\b\'c'];
@@ -773,6 +773,63 @@ test ('A control clicked or dragged leaves the host its keys, and the keyboard k
     assert.deepEqual (errors, []);
 });
 
+test ('Every focusable field has its own focus id in every look, so a redraw keeps focus where it was', async () =>
+{
+    await page.goto ('about:blank');
+    await open ('anodised');
+    const looks = await page.evaluate (() => SKINS.map (s => s.id));
+    const repeated = [];
+
+    for (const look of looks)
+    {
+        await page.goto ('about:blank');
+        await open (look);
+
+        for (const [mode, view] of [['studio', 'plan'], ['studio', 'section'], ['stage', 'plan']])
+        {
+            await page.evaluate (([m, v]) => { st.mode = m; st.view = v; window.schedule(); }, [mode, view]);
+            await drawn();
+            const fids = await page.evaluate (() => [...document.querySelectorAll ('#live [data-fid]')].map (e => e.getAttribute ('data-fid')));
+            for (const f of new Set (fids.filter ((f, i) => fids.indexOf (f) !== i)))
+                repeated.push (look + ' ' + mode + ' ' + view + ': ' + f);
+        }
+    }
+
+    assert.deepEqual (repeated, []);
+});
+
+test ('Only the main button drags a control: a right press opens the host\'s menu instead', async () =>
+{
+    await page.goto ('about:blank');
+    await open ('anodised');
+
+    const centre = async (sel) => { const b = await (await page.$ (sel)).boundingBox(); return [b.x + b.width / 2, b.y + b.height / 2]; };
+    const values = () => page.evaluate (() => ({ mix: st.mix, band: st.bands[3], sent: window.__sent.length }));
+    const before = await values();
+
+    for (const [sel, dy] of [['[data-fid="kn-mix"]', -60], ['[data-fid="nd-3"]', -40]])
+        for (const button of ['right', 'middle'])
+        {
+            const [x, y] = await centre (sel);
+            await page.mouse.move (x, y);
+            await page.mouse.down ({ button });
+            await page.mouse.move (x, y + dy, { steps: 4 });
+            await page.mouse.up ({ button });
+            await page.waitForTimeout (50);
+        }
+
+    assert.deepEqual (await values(), before, 'a right or middle drag changed a value');
+
+    // The main button still drags.
+    const [x, y] = await centre ('[data-fid="kn-mix"]');
+    await page.mouse.move (x, y);
+    await page.mouse.down();
+    await page.mouse.move (x, y - 60, { steps: 4 });
+    await page.mouse.up();
+    await page.waitForTimeout (50);
+    assert.ok ((await values()).mix > before.mix, 'a left drag no longer moves Mix');
+});
+
 test ('The Decay knob covers the whole range of the bands, and never moves against the key', async () =>
 {
     await page.goto ('about:blank');
@@ -1156,5 +1213,110 @@ test ('A note too long for its strip can be read whole from the keyboard or by t
         assert.equal (await page.evaluate (() => document.querySelector ('.hint').classList.contains ('open')), false, look + ': a new note opened by itself');
     }
 
+    assert.deepEqual (errors, []);
+});
+
+test ('Every button\'s name starts from the words it shows, so speaking them reaches it, in every look', async () =>
+{
+    // Voice control finds a button by the words on it, so a button's accessible name has to
+    // hold its visible text (WCAG 2.5.3). Thumbnails drawn inert and text hidden from
+    // assistive technology are left out, as a screen reader leaves them out.
+    await open ('anodised');
+    const looks = await page.evaluate (() => SKINS.map (s => s.id));
+    const bad = new Set();
+
+    for (const look of looks)
+    {
+        for (const where of ['plan', 'section', 'stage', 'browse', 'skins', 'adv'])
+        {
+            await page.goto ('about:blank');
+            await open (look);
+            await page.evaluate ((w) =>
+            {
+                if (w === 'stage')
+                    st.mode = 'stage';
+                else if (w === 'plan' || w === 'section')
+                    st.view = w;
+                else
+                    st[w] = true;
+                window.schedule();
+            }, where);
+            await drawn();
+
+            const found = await page.evaluate (() =>
+            {
+                const words = t => t.toLowerCase().replace (/[^a-z0-9]+/g, ' ').trim();
+                const out = [];
+
+                document.querySelectorAll ('button[aria-label], a[aria-label], [role="button"][aria-label], [role="radio"][aria-label], [role="checkbox"][aria-label], [role="switch"][aria-label], [role="tab"][aria-label], [role="option"][aria-label]').forEach (el =>
+                {
+                    if (el.closest ('[inert], [aria-hidden="true"]'))
+                        return;
+
+                    const parts = [];
+                    const walk = document.createTreeWalker (el, NodeFilter.SHOW_TEXT);
+
+                    for (let n; (n = walk.nextNode());)
+                        if (! n.parentElement.closest ('[inert], [aria-hidden="true"], .vh'))
+                            parts.push (n.nodeValue);
+
+                    const shown = words (parts.join (' '));
+
+                    if (shown && ! words (el.getAttribute ('aria-label')).includes (shown))
+                        out.push ('"' + parts.join (' ').replace (/\s+/g, ' ').trim() + '" named "' + el.getAttribute ('aria-label') + '"');
+                });
+
+                return out;
+            });
+
+            found.forEach (f => bad.add (look + ' ' + where + ': ' + f));
+        }
+    }
+
+    assert.deepEqual ([...bad], []);
+    assert.deepEqual (errors, []);
+});
+
+test ('The listener and source handles on the room drawing say every way they move', async () =>
+{
+    for (const view of ['plan', 'section'])
+    {
+        await page.goto ('about:blank');
+        await open ('section');
+        await page.evaluate ((v) => { st.view = v; window.schedule(); }, view);
+        await drawn();
+
+        const lis = '[data-drag="lis"]';
+        const text = () => page.getAttribute (lis, 'aria-valuetext');
+        const before = await text();
+        assert.match (before, /metres from the front, (centre|\d+% (left|right))$/, view);
+        assert.ok (await page.getAttribute (lis, 'aria-valuenow') !== null, view + ': no aria-valuenow');
+
+        // Across the room changes what is said, as distance does.
+        await page.focus (lis);
+        await page.keyboard.press ('ArrowRight');
+        await drawn();
+        assert.notEqual (await text(), before, view + ': moving across says nothing new');
+
+        await page.keyboard.press ('End');
+        await drawn();
+        assert.equal (await page.evaluate (() => st.dist), 100, view);
+        await page.keyboard.press ('Home');
+        await drawn();
+        assert.equal (await page.evaluate (() => st.dist), 0, view);
+    }
+
+    // The source only moves across, between the walls; it is drawn on the plan.
+    await page.evaluate (() => { st.view = 'plan'; window.schedule(); });
+    await drawn();
+    const src = '[data-drag="src"]';
+    await page.focus (src);
+    await page.keyboard.press ('End');
+    await drawn();
+    assert.equal (await page.getAttribute (src, 'aria-valuenow'), '94');
+    await page.keyboard.press ('Home');
+    await drawn();
+    assert.equal (await page.getAttribute (src, 'aria-valuenow'), '6');
+    assert.equal (await page.getAttribute (src, 'aria-valuetext'), '88% left');
     assert.deepEqual (errors, []);
 });
