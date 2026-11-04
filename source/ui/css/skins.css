@@ -580,6 +580,8 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .si-space .nm{font:700 40px/1 var(--fdisp);letter-spacing:-.02em;text-transform:uppercase;display:flex;align-items:center;gap:10px}
 .si-space .nm button{all:unset;cursor:pointer;flex:1}
 .si-space .meta{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--tx2);margin-top:6px;display:flex;gap:14px;align-items:center}
+/* the volume stays on one line, and its unit keeps a small m (capital M would read as mega) */
+.si-space .meta span:last-child{white-space:nowrap;text-transform:none}
 .si-space .meta .ib{width:22px;height:22px;border:1px solid var(--tx);color:var(--tx);border-radius:0}
 .si-room{position:absolute;left:40px;top:150px;width:400px;height:430px;border:1px solid var(--tx);background:var(--p);display:flex;flex-direction:column}
 .si-mh{height:28px;display:flex;justify-content:space-between;align-items:center;padding:0 10px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;border-bottom:1px solid var(--tx)}
@@ -741,6 +743,7 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .st-c{display:flex;flex-direction:column;gap:6px;min-width:0}
 .st-c .ro{width:100%;text-align:left;font-size:19px;height:30px;padding:0 2px;font-weight:300}
 .st-c.mix .ro{color:var(--ac)}
+.st-c .sl{flex:none}
 .st-c .nm{font-size:11px;color:var(--tx2);letter-spacing:.06em;text-transform:uppercase;display:flex;align-items:center;gap:6px;padding-left:2px;white-space:nowrap}
 .st-acts{position:absolute;left:470px;right:40px;top:646px;display:flex;gap:8px}
 .st-btn{height:32px;padding:0 14px;border-radius:999px;border:1px solid var(--ln);background:var(--p);color:var(--tx);font-size:12px;display:inline-flex;align-items:center;gap:7px}
@@ -988,14 +991,14 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .vi-cp .cp-m[aria-pressed="true"]{background:rgba(255,255,255,.16);color:#fff}
 /* Signal: hollow cells in the pixel room, and blocks of type under it */
 .si-px{cursor:pointer}.si-px rect{transition:stroke-width .15s}.si-px:hover rect{stroke-width:2.5}
-.si-cp{flex:1;min-height:0;border-top:1px solid var(--tx);display:flex;flex-wrap:wrap;align-content:flex-start;gap:4px;padding:6px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;overflow:hidden}
-.si-cp .cp-p{gap:4px}
-.si-cp .cp-b{height:24px;border:1px solid var(--tx);padding:0 8px;display:inline-flex;align-items:center;gap:6px;background:var(--g);color:var(--tx);white-space:nowrap}
+.si-cp{flex:1;min-height:0;border-top:1px solid var(--tx);display:flex;flex-wrap:wrap;align-content:flex-start;gap:3px;padding:5px 6px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;overflow:hidden}
+.si-cp .cp-p{gap:3px}
+.si-cp .cp-b{height:22px;border:1px solid var(--tx);padding:0 8px;display:inline-flex;align-items:center;gap:6px;background:var(--g);color:var(--tx);white-space:nowrap}
 .si-cp .cp-b[aria-pressed="true"]{background:var(--tx);color:var(--g)}
 .si-cp .cp-b small{font-size:10px;opacity:.7;margin-left:2px}
 .si-cp .cp-mk{width:7px;height:7px;border:1.5px solid var(--ac)}.si-cp .cp-b[aria-pressed="true"] .cp-mk{background:var(--wet);border-color:var(--wet)}
-.si-cp .cp-mics{gap:4px}
-.si-cp .cp-m{height:24px;border:1px solid var(--tx2);padding:0 7px;color:var(--tx2);background:var(--p);font-size:10px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
+.si-cp .cp-mics{gap:3px}
+.si-cp .cp-m{height:22px;border:1px solid var(--tx2);padding:0 7px;color:var(--tx2);background:var(--p);font-size:10px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
 .si-cp .cp-m[aria-pressed="true"]{background:var(--wet);color:#111;border-color:var(--tx)}
 .s-signal.stage .si-cp .cp-m[aria-pressed="true"]{background:var(--ac);color:#fff}
 /* Aperture: a line of light type under the name */
