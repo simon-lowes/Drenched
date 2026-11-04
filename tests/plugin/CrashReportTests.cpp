@@ -158,6 +158,7 @@ TEST_CASE ("A crash in Drenched leaves a report saying where, and what it last d
         const auto status = inChild (folder, crash == &crashInDrenched ? "raise" : "bad-write");
 
         // The crash still ends the process, as it would have without Drenched's handler.
+        INFO ("wait status " << status);
         CHECK (WIFSIGNALED (status));
 
         const auto report = crashReports::pending (folder);

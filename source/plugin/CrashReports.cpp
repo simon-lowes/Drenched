@@ -383,11 +383,20 @@ namespace
         }
     }
 
-    void putBack (int sig) noexcept
+    /** Puts back what handled sig before; true if that is the default action, which
+        ends the process. */
+    bool putBack (int sig) noexcept
     {
         for (size_t i = 0; i < fatalSignals.size(); ++i)
+        {
             if (fatalSignals[i] == sig && replaced[i])
+            {
                 sigaction (sig, &previous[i], nullptr);
+                return (previous[i].sa_flags & SA_SIGINFO) == 0 && previous[i].sa_handler == SIG_DFL;
+            }
+        }
+
+        return true;
     }
 
     void onSignal (int sig, siginfo_t* info, void*)
@@ -439,17 +448,19 @@ namespace
 
         // Whatever was there before handles it now: a fault happens again when this
         // returns, an abort raises again, and the host's crash reporter sees it.
-        putBack (sig);
+        const bool ends = putBack (sig);
 
-        // A signal sent rather than caused (abort(), raise(), kill) doesn't happen again by
-        // itself, so it is sent again. A fault the processor raised carries one of the
-        // small positive codes (SEGV_MAPERR, BUS_ADRERR, ILL_ILLOPC, FPE_INTDIV...); a
-        // sent signal carries 0 or below on Linux (SI_USER, SI_TKILL) and 0 or 0x10001
-        // and up on macOS.
+        // With nothing else there, the default action ends the process now: sent again,
+        // it does, however the signal came. Otherwise a signal sent rather than caused
+        // (abort(), raise(), kill) doesn't happen again by itself, so it is sent again,
+        // and a fault happens again when this returns, so the handler there sees the real
+        // fault. A fault the processor raised carries one of the small positive codes
+        // (SEGV_MAPERR, BUS_ADRERR, ILL_ILLOPC, FPE_INTDIV...); a sent signal carries 0
+        // or below on Linux (SI_USER, SI_TKILL) and 0 or 0x10001 and up on macOS.
         const auto code = info != nullptr ? info->si_code : 0;
         const bool caused = sig != SIGABRT && code > 0 && code < 0x100;
 
-        if (! caused)
+        if (ends || ! caused)
             std::raise (sig);
     }
 
