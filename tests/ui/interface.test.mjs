@@ -253,7 +253,7 @@ test ('A redraw while a field is being edited completes', async () =>
     // field beside it shows the new value, and the Decay field still holds what was typed.
     await fromPlugin ('state', { ui: { locks: 'mix' }, params: { predelay: 30 } });
     await drawn();
-    assert.equal (await shown ('ro-pre'), '30 ms', 'the page did not redraw');
+    assert.equal (await shown ('ro-pre'), '30\u2009ms', 'the page did not redraw');
     assert.deepEqual (await page.evaluate (() => [document.activeElement.getAttribute ('data-fid'), document.activeElement.value]), ['ro-decay', '12']);
     assert.deepEqual (await page.evaluate (() => window.__sent), [], 'sent before Enter');
 
@@ -262,7 +262,7 @@ test ('A redraw while a field is being edited completes', async () =>
     const sent = await sentWith ('params', 'decay1k');
     assert.equal (sent.length, 1, JSON.stringify (sent));
     assert.ok (Math.abs ((sent[0].decay500 + sent[0].decay1k) / 2 - 12) < 1e-9, 'decay sent: ' + JSON.stringify (sent[0]));
-    assert.equal (await shown ('ro-decay'), '12.0 s');
+    assert.equal (await shown ('ro-decay'), '12.0\u2009s');
     assert.deepEqual (errors, []);
 });
 
@@ -1625,7 +1625,8 @@ test ('Wider text spacing does not push text over its neighbours or controls off
     assert.ok (sig.gap >= 0, 'the name runs ' + -sig.gap + ' px into the room');
     assert.deepEqual (sig.cut, []);
 
-    // Rotunda and Folio: a column that no longer fits scrolls, so every button can still be reached.
+    // Rotunda and Folio: a column that no longer fits scrolls, so every button can still be reached
+    // (at the widened spacing a column may still fit; then it need not scroll).
     for (const [look, column] of [['rotunda', '.rt-side'], ['folio', '.fo-page>.fo-col:last-child']])
     {
         await page.goto ('about:blank');
@@ -1636,9 +1637,9 @@ test ('Wider text spacing does not push text over its neighbours or controls off
             const c = document.querySelector (column), box = c.getBoundingClientRect(), wf = c.querySelector ('[data-act="wf"]');
             wf.scrollIntoView ({ block: 'nearest' });
             const r = wf.getBoundingClientRect();
-            return { scrolls: getComputedStyle (c).overflowY, inside: r.top >= box.top - 1 && r.bottom <= box.bottom + 1 };
+            return { scrolls: getComputedStyle (c).overflowY, over: c.scrollHeight > c.clientHeight + 1, inside: r.top >= box.top - 1 && r.bottom <= box.bottom + 1 };
         }, column);
-        assert.equal (reach.scrolls, 'auto', look);
+        assert.ok (! reach.over || reach.scrolls === 'auto', look + ': the column overflows without scrolling');
         assert.ok (reach.inside, look + ': Waterfall cannot be scrolled into view');
     }
     assert.deepEqual (errors, []);
