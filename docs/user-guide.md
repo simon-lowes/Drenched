@@ -72,9 +72,9 @@ The screen has four parts:
 - **The space**: its name and a picture or drawing. Click its description to open the Spaces browser; the arrows beside it step through spaces.
 - **The decay graph**: decay time in eight octave bands, 63 Hz to 8 kHz.
 - **The main controls**: Mix, Decay, Pre-delay, Size, Brightness, Early/Late and Distance, plus **Freeze**, **Match a room**, **All parameters**, **Wet EQ** and **Waterfall** (some looks say More, Match or EQ).
-- **The strip along the bottom**: a hint line, the **In** and **Out** meters and a **Beta** label.
+- **The strip along the bottom**: a line about the control under the pointer, the **In** and **Out** meters and a **Beta** label.
 
-The hint line explains whatever you last touched, with its value and the captured space's. A small dot beside a control means it differs from the captured space. When a message is too long for the line, **More** beside it opens the whole message; **Less** or Escape closes it.
+The line describes whatever the pointer or the keyboard is on, with its value and the captured space's, and is empty otherwise. A message about what just happened (a space loaded, a value locked) shows there for a few seconds. A small dot beside a control means it differs from the captured space. When a message is too long for the line, **More** beside it opens the whole message; **Less** or Escape closes it. Each meter shows both sides, with a mark that holds the recent peak and a lamp that lights when a side reaches full scale.
 
 ### Working the controls
 
@@ -120,7 +120,7 @@ The new room brings its own decay curve and pre-delay, and Size goes back to 100
 
 ### Captured positions
 
-Three rooms were recorded from several places or with several microphone setups: St Paul's Hall (five recordings), Detmold Konzerthaus (two) and WDR Großer Sendesaal (two). Their positions are listed with the space, with the distance from the stage where known and the microphones used. Click one to move there; the old position rings out as the new one takes over.
+Three rooms were recorded from several places or with several microphone setups: St Paul's Hall (five recordings), Detmold Konzerthaus (two) and WDR Großer Sendesaal (two). One control beside the space names where the current recording was made, the distance from the stage where known, and the microphones used. Click it to see the others and choose one to move there; the old position rings out as the new one takes over.
 
 ### Your own impulse responses
 
@@ -298,7 +298,7 @@ Click the **Drenched** name in any look to open **Choose a look**. Every value s
 
 - **A** and **B** are two snapshots of every setting and the space. B starts as a copy of A; changes go to whichever is selected, so switch back and forth to compare. Freeze is left out. The snapshots are not saved with the session.
 - **Locks** hold a value when you change space (see [What changes when you change space](#what-changes-when-you-change-space)). They are saved with the session.
-- **Freeze** holds the tail indefinitely while it's on; the hint line says "Frozen". Crossover sets the frequency below which a frozen room keeps fading. Freeze is not stored in scenes.
+- **Freeze** holds the tail indefinitely while it's on; a ring breathes around the button while it holds. Crossover sets the frequency below which a frozen room keeps fading. Freeze is not stored in scenes.
 
 ## Low CPU and latency
 

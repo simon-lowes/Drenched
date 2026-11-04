@@ -173,9 +173,9 @@ th, td, h1 { border-color: #3a3e43; } a { color: #8cb8ec; }
 <li><strong>The space</strong>: its name and a picture or drawing. Click its description to open the Spaces browser; the arrows beside it step through spaces.</li>
 <li><strong>The decay graph</strong>: decay time in eight octave bands, 63 Hz to 8 kHz.</li>
 <li><strong>The main controls</strong>: Mix, Decay, Pre-delay, Size, Brightness, Early/Late and Distance, plus <strong>Freeze</strong>, <strong>Match a room</strong>, <strong>All parameters</strong>, <strong>Wet EQ</strong> and <strong>Waterfall</strong> (some looks say More, Match or EQ).</li>
-<li><strong>The strip along the bottom</strong>: a hint line, the <strong>In</strong> and <strong>Out</strong> meters and a <strong>Beta</strong> label.</li>
+<li><strong>The strip along the bottom</strong>: a line about the control under the pointer, the <strong>In</strong> and <strong>Out</strong> meters and a <strong>Beta</strong> label.</li>
 </ul>
-<p>The hint line explains whatever you last touched, with its value and the captured space’s. A small dot beside a control means it differs from the captured space. When a message is too long for the line, <strong>More</strong> beside it opens the whole message; <strong>Less</strong> or Escape closes it.</p>
+<p>The line describes whatever the pointer or the keyboard is on, with its value and the captured space’s, and is empty otherwise. A message about what just happened (a space loaded, a value locked) shows there for a few seconds. A small dot beside a control means it differs from the captured space. When a message is too long for the line, <strong>More</strong> beside it opens the whole message; <strong>Less</strong> or Escape closes it. Each meter shows both sides, with a mark that holds the recent peak and a lamp that lights when a side reaches full scale.</p>
 <h2 id="working-the-controls">Working the controls</h2>
 <ul>
 <li>Drag any control up or down. Hold Shift for fine steps.</li>
@@ -247,7 +247,7 @@ th, td, h1 { border-color: #3a3e43; } a { color: #8cb8ec; }
 <h2 id="what-changes-when-you-change-space">What changes when you change space</h2>
 <p>The new room brings its own decay curve and pre-delay, and Size goes back to 100%. Everything else stays. To keep yours, use the lock buttons beside the controls (Mix has one in every look; Stage view and the Section, Contact and Folio looks show more). A locked Decay keeps the overall length by scaling the new room’s curve to match, and locked Pre-delay and Size keep your values.</p>
 <h2 id="captured-positions">Captured positions</h2>
-<p>Three rooms were recorded from several places or with several microphone setups: St Paul’s Hall (five recordings), Detmold Konzerthaus (two) and WDR Großer Sendesaal (two). Their positions are listed with the space, with the distance from the stage where known and the microphones used. Click one to move there; the old position rings out as the new one takes over.</p>
+<p>Three rooms were recorded from several places or with several microphone setups: St Paul’s Hall (five recordings), Detmold Konzerthaus (two) and WDR Großer Sendesaal (two). One control beside the space names where the current recording was made, the distance from the stage where known, and the microphones used. Click it to see the others and choose one to move there; the old position rings out as the new one takes over.</p>
 <h2 id="your-own-impulse-responses">Your own impulse responses</h2>
 <p>Choose <strong>Load your own IR…</strong> in the browser, or drop a file anywhere on the window. Drenched reads WAV, AIFF, FLAC, SOFA and .amb files: mono, stereo, true stereo (four channels), surround up to 9.1.6, or B-format.</p>
 <ul>
@@ -678,7 +678,7 @@ th, td, h1 { border-color: #3a3e43; } a { color: #8cb8ec; }
 <ul>
 <li><strong>A</strong> and <strong>B</strong> are two snapshots of every setting and the space. B starts as a copy of A; changes go to whichever is selected, so switch back and forth to compare. Freeze is left out. The snapshots are not saved with the session.</li>
 <li><strong>Locks</strong> hold a value when you change space (see <a href="#what-changes-when-you-change-space">What changes when you change space</a>). They are saved with the session.</li>
-<li><strong>Freeze</strong> holds the tail indefinitely while it’s on; the hint line says “Frozen”. Crossover sets the frequency below which a frozen room keeps fading. Freeze is not stored in scenes.</li>
+<li><strong>Freeze</strong> holds the tail indefinitely while it’s on; a ring breathes around the button while it holds. Crossover sets the frequency below which a frozen room keeps fading. Freeze is not stored in scenes.</li>
 </ul>
 <h1 id="low-cpu-and-latency">Low CPU and latency</h1>
 <p>Drenched normally runs with no latency. <strong>Low CPU</strong> runs the reverb on about a third of the processing by playing everything about 21 ms late. Your host makes up the delay, so tracks stay in time, but leave it off when you play live through the reverb. It can’t be automated, and scenes leave it alone. Bypassing Drenched in your host keeps the same delay, so the dry sound stays in time, and the reverb fades out rather than cutting off.</p>

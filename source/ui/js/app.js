@@ -31,21 +31,21 @@ function gesture(ids,begin){if(JUCE)JUCE.emitEvent('gesture',{ids:ids,begin:!!be
 /* state pushed by the plugin: parameter values (host automation, preset recall) and the
    saved interface state (space, locks, view, skin) */
 var irEvent=null,shortened=0,sceneSeen=false;
-function applyFromHost(msg){if(!msg)return;var p=msg.params||{},u=msg.ui||{};
+function applyFromHost(msg){if(!msg)return;var p=msg.params||{},u=msg.ui||{},from=twSnap(),settle=false;
  if(u.shortened!=null){var sh=+u.shortened||0;if(sh>0&&sh!==shortened){st.hint=null;
    st.note='<b>Shortened to '+sh.toFixed(1)+' s.</b> The 32-bit version only has memory for this much of a surround reverb at this sample rate. The 64-bit version plays it in full.';}
   shortened=sh;}
  if('ir' in u)setUserSpace(u.ir);
  if('scenes' in u)setScenes(u.scenes);
- if(p.scene!=null){var sn=Math.round(+p.scene);if(sceneSeen&&sn!==st.scene&&sn>0&&sceneOf(sn)){st.hint=null;st.note='<b>'+esc(sceneOf(sn).name)+'</b> recalled: scene '+sn+', '+esc(sceneOf(sn).space)+'.';}st.scene=isFinite(sn)?sn:0;sceneSeen=true;}
- if(u.irEvent!=null){var ev=+u.irEvent;if(irEvent!==null&&ev!==irEvent){st.hint=null;
+ if(p.scene!=null){var sn=Math.round(+p.scene);if(sceneSeen&&sn!==st.scene&&sn>0&&sceneOf(sn)){st.hint=null;settle=true;st.note='<b>'+esc(sceneOf(sn).name)+'</b> recalled: scene '+sn+', '+esc(sceneOf(sn).space)+'.';}st.scene=isFinite(sn)?sn:0;sceneSeen=true;}
+ if(u.irEvent!=null){var ev=+u.irEvent;if(irEvent!==null&&ev!==irEvent){st.hint=null;settle=true;
    st.note=u.irError?'<b>That file didn\u2019t load.</b> '+esc(u.irError):'<b>'+esc(SPACES[USER]?SPACES[USER].name:'Your IR')+'</b> loaded. The graph shows its measured decay; drag a band to reshape it.';if(u.irError)errNote=st.note;}
   irEvent=ev;}
  // a value that isn't a number arrives as null, which + would read as 0
  for(var id in p){if(p[id]==null)continue;var v=+p[id];if(!isFinite(v))continue;lastSent[id]=v;var bi=BAND_ID.indexOf(id);if(bi>=0){st.bands[bi]=v;continue;}
   var ri=RBAND_ID.indexOf(id);if(ri>=0){st.rbands[ri]=v;continue;}if(id===LINK_ID){st.link=v>=0.5;if(st.link)st.side='L';continue;}
   var k=keyOf(id);if(!k)continue;if(k==='freeze')st.freeze=v>=0.5;else st[k]=v;}
- if(u.spaceId!=null){var si=spaceIndex(String(u.spaceId));if(si>=0){st.sp=si;lastUi.spaceId=String(u.spaceId);}}
+ if(u.spaceId!=null){var si=spaceIndex(String(u.spaceId));if(si>=0){if(si!==st.sp){fadeFrom(st.sp);settle=true;}st.sp=si;lastUi.spaceId=String(u.spaceId);}}
  if(u.locks!=null){st.locks={};String(u.locks).split(',').forEach(function(k){if(k&&P[k])st.locks[k]=true;});lastUi.locks=uiState(st).locks;}
  if(u.mode==='studio'||u.mode==='stage'){st.mode=u.mode;lastUi.mode=u.mode;}
  if(u.view==='plan'||u.view==='section'){st.view=u.view;lastUi.view=u.view;}
@@ -53,21 +53,29 @@ function applyFromHost(msg){if(!msg)return;var p=msg.params||{},u=msg.ui||{};
  if(Array.isArray(u.outputs)&&u.outputs.length)st.outputs=u.outputs.map(function(o){return {name:String(o&&o.name||''),wet:!!(o&&o.wet)};});
  if(u.layout!=null)st.layout=String(u.layout);
  if(u.speakers!=null){st.speakers=parseSpeakers(String(u.speakers));lastUi.speakers=speakersText(st);}
- schedule();}
+ if(settle)twStart(from);schedule();}
 
-/* meters arrive often; they update in place rather than through a full render */
+/* Meters arrive often; they update in place rather than through a full render. Each side's
+   peak mark holds for a moment, then falls; a side that reaches full scale lights its lamp for
+   two seconds. The held peaks and the lamps are kept in the state, so a redraw shows them too. */
+function heldPeak(k,v,now){var h=st.mh[k];if(!h||v>=h.v){st.mh[k]={v:v,t:now};return v;}var over=now-h.t-1200;if(over>0){h.v-=over*0.024;h.t=now-1200;if(h.v<=v){h.v=v;h.t=now;}}return h.v;}
 function onMeters(m){if(!m)return;st.inL=+m.inL;st.inR=+m.inR;st.outL=+m.outL;st.outR=+m.outR;
- var i=Math.max(st.inL,st.inR),o=Math.max(st.outL,st.outR),map={'in':i,'out':o,outL:st.outL,outR:st.outR};
+ var now=Date.now(),map={inL:st.inL,inR:st.inR,outL:st.outL,outR:st.outR},held={};
+ for(var k in map){held[k]=heldPeak(k,map[k],now);if(map[k]>=-0.05)st.clip[k.slice(0,-1)]=now;}
+ map['in']=Math.max(st.inL,st.inR);map.out=Math.max(st.outL,st.outR);held['in']=Math.max(held.inL,held.inR);held.out=Math.max(held.outL,held.outR);
  var bars=live.querySelectorAll('[data-m]');for(var a=0;a<bars.length;a++){var el=bars[a],v=map[el.getAttribute('data-m')];if(v==null)continue;var pct=meterPct(v).toFixed(0)+'%';if(el.hasAttribute('style')&&el.style.height)el.style.height=pct;else el.style.width=pct;if(el.nextElementSibling&&el.nextElementSibling.tagName==='B')el.nextElementSibling.style.bottom=Math.min(98,meterPct(v)+4).toFixed(0)+'%';}
- var txt=live.querySelectorAll('[data-mt]');for(var b=0;b<txt.length;b++){var v2=map[txt[b].getAttribute('data-mt')];if(v2!=null)txt[b].textContent=dbText(v2);}
+ var mp=live.querySelectorAll('[data-mp]');for(var g=0;g<mp.length;g++){var hv=held[mp[g].getAttribute('data-mp')];if(hv!=null)mp[g].style.left=meterPct(hv).toFixed(0)+'%';}
+ var txt=live.querySelectorAll('[data-mt]');for(var b=0;b<txt.length;b++){var v2=held[txt[b].getAttribute('data-mt')];if(v2!=null)txt[b].textContent=dbText(v2);}
+ var ch=live.querySelectorAll('[data-mch]');for(var f=0;f<ch.length;f++)ch[f].classList.toggle('clip',clipLit(ch[f].getAttribute('data-mch'),now));
  if(Array.isArray(m.spk)){st.spkM=m.spk.map(Number);var sb=live.querySelectorAll('[data-spm]');for(var c=0;c<sb.length;c++){var sv=st.spkM[+sb[c].getAttribute('data-spm')];if(sv!=null)sb[c].style.width=meterPct(sv).toFixed(0)+'%';}}
  // Stage's meter per output channel
  var sm=live.querySelectorAll('[data-sm]');for(var d=0;d<sm.length;d++){var p=meterPct(chLevel(st,+sm[d].getAttribute('data-sm')));sm[d].style.height=p.toFixed(0)+'%';if(sm[d].nextElementSibling)sm[d].nextElementSibling.style.bottom=Math.min(98,p+4).toFixed(0)+'%';}
  var smt=live.querySelectorAll('[data-smt]');for(var e=0;e<smt.length;e++)smt[e].textContent=dbText(chLevel(st,+smt[e].getAttribute('data-smt')));}
+function clipLit(n,now){return now-(st.clip[n]||0)<2000;}
 
 /* ---- Match a room: the plugin listens to a recording and reports the decay it heard ---- */
 var BAND_NAMES=['63 Hz','125 Hz','250 Hz','500 Hz','1 kHz','2 kHz','4 kHz','8 kHz'];
-function onMatched(m){if(!m)return;st.hint=null;
+function onMatched(m){if(!m)return;st.hint=null;var from=twSnap();
  if(m.listening)st.note='<b>Listening to '+esc(m.file||'the recording')+'</b> for the room\u2019s decay.';
  else if(m.error)errNote=st.note='<b>No match.</b> '+esc(m.error);
  else if(Array.isArray(m.bands)&&m.bands.length===8){var si=spaceIndex(String(m.spaceId||''));if(si>=0)changeSpace(si);
@@ -76,7 +84,7 @@ function onMatched(m){if(!m)return;st.hint=null;
   st.note='<b>Matched'+(si>=0?' to '+esc(SPACES[si].name):'')+'.</b> '+st.bands[4].toFixed(1)+' s at 1 kHz, as heard in '+esc(m.file||'the recording')+'.'+
    (missed.length?' '+missed.join(', ')+(missed.length>1?' are':' is')+' estimated.':' Drag a band to adjust.');}
  else return;
- renderLive();sync();syncUi();}
+ twStart(from);renderLive();sync();syncUi();}
 
 /* ---- the skin picker ---- */
 function pickerHTML(){var ts=Object.assign({},st,{browse:false,adv:false,skins:false,hint:null,note:null,licence:{state:'licensed'}});
@@ -299,28 +307,26 @@ function fit(){var w=live.clientWidth,h=live.clientHeight,sc=Math.min(w/W,h/H),e
 /* Replacing the page blurs an edited field, whose change handler redraws too: that redraw
    waits for this one to finish, as two at once fail. */
 var rendering=false,renderAgain=false;
-/* The control that has the keyboard is kept, not replaced: replacing it would blur a field
-   being typed in, committing half a value, break an input method's composition and make a
-   screen reader announce a new control. It and its ancestors stay; their attributes and
-   everything around them are brought up to date. What someone has typed and not yet entered
-   stays as typed, with its selection; the field the change handler is committing (committed)
-   takes the new, formatted value. Returns false, changing nothing, if the new page has no
-   such control in the same place. */
+/* The page is brought up to date in place: each element is kept and given its new attributes
+   and text, and only what has no counterpart is added or removed. So the control that has the
+   keyboard keeps it, a field being typed in keeps its text and selection (it would otherwise
+   be blurred, committing half a value, and break an input method's composition), a scrolled
+   list keeps its place, a screen reader hears no new control, and a transition or an animation
+   runs on. The field being typed in (typed) keeps the value it shows; the one the change handler
+   is committing (committed) takes the new, formatted value, as any field not being typed in. */
 var committed=null;
-function keepFocused(a,fid,html){var tmp=document.createElement('div');tmp.innerHTML=html;
- var k=Array.prototype.indexOf.call(live.querySelectorAll('[data-fid="'+fid+'"]'),a),n=tmp.querySelectorAll('[data-fid="'+fid+'"]')[k];if(!n)return false;
- var path=[],o=a,m=n;for(;o!==live;o=o.parentNode,m=m.parentNode){if(!m||m===tmp||o.tagName!==m.tagName)return false;path.push([o,m]);}if(m!==tmp)return false;
- var text=a.matches('input,textarea'),v=a.value,s0=a.selectionStart,s1=a.selectionEnd,all=text&&s0===0&&s1===v.length,typed=text&&a!==committed&&v!==a.defaultValue;
- var attrs=function(o,m){for(var i=o.attributes.length-1;i>=0;i--)if(!m.hasAttribute(o.attributes[i].name))o.removeAttribute(o.attributes[i].name);
-  for(i=0;i<m.attributes.length;i++){var at=m.attributes[i];if(!(typed&&o===a&&at.name==='value')&&o.getAttribute(at.name)!==at.value)o.setAttribute(at.name,at.value);}};
- var around=function(o,m,keep,mk){var c=Array.prototype.slice.call(o.childNodes),nc=Array.prototype.slice.call(m.childNodes),at=nc.indexOf(mk);
-  c.forEach(function(x){if(x!==keep)o.removeChild(x);});for(var i=0;i<nc.length;i++)if(i<at)o.insertBefore(nc[i],keep);else if(i>at)o.appendChild(nc[i]);};
- attrs(a,n);if(!(typed&&a.tagName==='TEXTAREA'))around(a,n,null,null);
- for(var j=1;j<path.length;j++){attrs(path[j][0],path[j][1]);around(path[j][0],path[j][1],path[j-1][0],path[j-1][1]);}
- around(live,tmp,path[path.length-1][0],path[path.length-1][1]);
- if(typed){if(a.value!==v){a.value=v;a.setSelectionRange(s0,s1);}}
- else if(text&&(a.value!==a.defaultValue||a.value!==v)){a.value=a.defaultValue;if(all)a.select();else a.selectionStart=a.selectionEnd=a.value.length;}
- return true;}
+function morph(o,m,typed){
+ if(o.nodeType!==m.nodeType||o.nodeName!==m.nodeName){o.parentNode.replaceChild(m,o);return;}
+ if(o.nodeType===3){if(o.nodeValue!==m.nodeValue)o.nodeValue=m.nodeValue;return;}
+ if(o.nodeType!==1)return;
+ var i,at;for(i=o.attributes.length-1;i>=0;i--){at=o.attributes[i].name;if(!m.hasAttribute(at)&&!(o===typed&&at==='value'))o.removeAttribute(at);}
+ for(i=0;i<m.attributes.length;i++){at=m.attributes[i];if(!(o===typed&&at.name==='value')&&o.getAttribute(at.name)!==at.value)o.setAttribute(at.name,at.value);}
+ if(!(o===typed&&o.tagName==='TEXTAREA'))morphKids(o,m,typed);
+ if((o.tagName==='INPUT'||o.tagName==='TEXTAREA')&&o!==typed&&o!==document.activeElement&&o.value!==o.defaultValue)o.value=o.defaultValue;}
+function morphKids(o,m,typed){var oc=o.childNodes,mc=Array.prototype.slice.call(m.childNodes),n=Math.min(oc.length,mc.length),i;
+ for(i=0;i<n;i++)morph(oc[i],mc[i],typed);
+ while(o.childNodes.length>mc.length)o.removeChild(o.lastChild);
+ for(i=o.childNodes.length;i<mc.length;i++)o.appendChild(mc[i]);}
 function renderLive(){if(rendering){renderAgain=true;return;}rendering=true;try{drawLive();}finally{rendering=false;}if(renderAgain){renderAgain=false;renderLive();}}
 // A look can show a value twice (a readout at the top and the field under its knob). Each copy
 // gets its own focus id (ro-decay, ro-decay~2), so a redraw gives focus back to the one being edited.
@@ -353,10 +359,16 @@ function fitText(){var sc=live.querySelector('.screen');if(!sc)return;
   var fs=parseFloat(getComputedStyle(t).fontSize),min=fs*0.6;while(over(box,f[2])&&fs>min){fs*=0.93;t.style.fontSize=fs.toFixed(2)+'px';t.setAttribute('data-fitted','');}});});
  sc.querySelectorAll(SPILL).forEach(function(c){c.classList.toggle('spill',c.scrollHeight>c.clientHeight+1);});}
 if(document.fonts&&document.fonts.addEventListener)document.fonts.addEventListener('loadingdone',function(){fitText();});
-function drawLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAttribute('data-fid'):null,bl=live.querySelector('.brw-list'),blt=bl?bl.scrollTop:0;
- var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.wf)html=html.slice(0,-6)+wfHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';html=uniqueFids(html);
- var kept=!!fid&&keepFocused(a,fid,html);if(!kept)live.innerHTML=html;landmarks();fitText();fit();syncDisplays();cutNote();
- if(blt){var bl2=live.querySelector('.brw-list');if(bl2)bl2.scrollTop=blt;}
+function drawLive(){var a=document.activeElement,af=a&&live.contains(a)?a:null,fid=af?af.getAttribute('data-fid'):null,bl=live.querySelector('.brw-list'),blt=bl?bl.scrollTop:0;
+ var text=!!af&&af.matches('input,textarea'),v=text?af.value:'',s0=text?af.selectionStart:0,s1=text?af.selectionEnd:0,all=text&&s0===0&&s1===v.length,typed=text&&af!==committed&&v!==af.defaultValue?af:null;
+ resetIds();var html=screenHTML(st.skin,viewState());if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.wf)html=html.slice(0,-6)+wfHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';html=uniqueFids(html);
+ var t=document.createElement('template');t.innerHTML=html;morphKids(live,t.content,typed);
+ var kept=!!af&&live.contains(af);
+ if(kept&&typed){if(af.value!==v){af.value=v;af.setSelectionRange(s0,s1);}}
+ else if(kept&&text&&(af.value!==af.defaultValue||af.value!==v)){af.value=af.defaultValue;if(all)af.select();else af.selectionStart=af.selectionEnd=af.value.length;}
+ var sc=live.firstElementChild;if(sc)sc.classList.toggle('held',!!drag);
+ landmarks();fitText();fit();syncDisplays();cutNote();menuFit();noteTimer();
+ if(blt){var bl2=live.querySelector('.brw-list');if(bl2&&bl2.scrollTop!==blt)bl2.scrollTop=blt;}
  var dl=topDialog();modal(dl);
  if(fid&&!kept){var n=live.querySelector('[data-fid="'+fid+'"]');if(n&&!n.closest('[inert]')){n.focus({preventScroll:true});if(n.matches('input,textarea'))n.selectionStart=n.selectionEnd=n.value.length;}}
  // A dialog keeps the keyboard even when the control that had it is redrawn away.
@@ -371,7 +383,14 @@ function drawLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAt
    as a selector and its place among the matches, as the page is redrawn in between). ---- */
 var opener=null;
 /* More shows only when the note doesn't fit its strip */
-function cutNote(){var m=live.firstElementChild&&live.firstElementChild.querySelector('.hint-more');if(!m||!m.hidden)return;var h=m.previousElementSibling;if(h&&(h.scrollWidth>h.clientWidth+1||h.scrollHeight>h.clientHeight+1))m.hidden=false;}
+function cutNote(){var m=live.firstElementChild&&live.firstElementChild.querySelector('.hint-more');if(!m||!m.hidden)return;var h=m.previousElementSibling;if(h&&!h.classList.contains('empty')&&(h.scrollWidth>h.clientWidth+1||h.scrollHeight>h.clientHeight+1))m.hidden=false;}
+/* the captured positions' menu opens upwards, or to the left, where it would leave the screen */
+function menuFit(){var pm=live.querySelector('.pc-menu');if(!pm)return;var sc=live.firstElementChild.getBoundingClientRect(),r=pm.getBoundingClientRect();if(r.bottom>sc.bottom-6)pm.parentNode.classList.add('up');if(r.right>sc.right-6)pm.parentNode.classList.add('right');}
+/* A note stays for a while, long enough to read, then the strip goes quiet again; one opened
+   with More stays until it is closed. */
+var noteShown=null,noteAt=0,noteT=0;
+function noteTimer(){if(st.note===noteShown)return;noteShown=st.note;noteAt=Date.now();clearTimeout(noteT);
+ if(st.note)noteT=setTimeout(function(){if(st.note===noteShown&&!st.noteOpen){st.note=null;renderLive();}},st.note===errNote?15000:9000);}
 function dialogOpen(){return !!(st.skins||st.browse||st.capture||st.lic||st.credits||st.spk||st.scn||st.eq||st.wf);}
 function topDialog(){var sc=live.firstElementChild,d=null;if(sc)for(var c=sc.firstElementChild;c;c=c.nextElementSibling)if(c.getAttribute('role')==='dialog')d=c;return d;}
 function modal(d){var sc=live.firstElementChild;if(sc)for(var c=sc.firstElementChild;c;c=c.nextElementSibling){var bg=!!d&&c!==d;if(bg!==c.hasAttribute('inert')){if(bg)c.setAttribute('inert','');else c.removeAttribute('inert');}}}
@@ -390,6 +409,19 @@ function announce(){if(st.note!==saidNote){saidNote=st.note;if(st.note)say(plain
  var cs=st.capStatus,c=st.capture?(cs.stage==='working'?'Working out the impulse response.':cs.message):'';if(c!==saidCap){saidCap=c;if(c)say(c,cs.stage==='failed');}
  var L=st.licence,l=st.lic&&L.message||'';if(l!==saidLic){saidLic=l;if(l)say(l,!!L.error);}
  if(!st.wf)saidWf='';}
+/* ---- motion: a change of space, scene or snapshot settles over a moment rather than jumping.
+   The drawing is handed a view of the state whose numbers run from the old values to the new;
+   the state itself, and what the host is told, change at once. A drag cuts it short, and
+   reduced motion skips it. The old photograph lies over the new for a moment and fades. ---- */
+var tw=null,TW_KEYS=['bands','rbands'].concat(Object.keys(P).filter(function(k){return P[k].max>1;}));
+function reduced(){return !!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);}
+function twSnap(){var o={};TW_KEYS.forEach(function(k){var x=st[k];o[k]=Array.isArray(x)?x.slice():x;});return o;}
+function twStart(from){if(reduced()||drag)return;
+ var keys=TW_KEYS.filter(function(k){var a=from[k],b=st[k];if(a==null||b==null)return false;return Array.isArray(b)?b.some(function(x,i){return Math.abs(x-a[i])>1e-6;}):Math.abs(b-a)>1e-6;});
+ if(!keys.length)return;tw={from:from,keys:keys,t0:performance.now(),ms:480,p:0};requestAnimationFrame(twFrame);}
+function twFrame(){if(!tw)return;var p=Math.min(1,(performance.now()-tw.t0)/tw.ms);tw.p=1-Math.pow(1-p,3);if(p>=1)tw=null;renderLive();if(tw)requestAnimationFrame(twFrame);}
+function viewState(){if(!tw)return st;var v=Object.create(st),e=tw.p;tw.keys.forEach(function(k){var a=tw.from[k],b=st[k];v[k]=Array.isArray(b)?b.map(function(x,i){return a[i]+(x-a[i])*e;}):a+(b-a)*e;});return v;}
+var fadeT=0;function fadeFrom(i){var img=SPACES[i]&&SPACES[i].img;if(!img||reduced())return;st.fade={img:img};clearTimeout(fadeT);fadeT=setTimeout(function(){st.fade=null;renderLive();},700);}
 var raf=0;function schedule(){if(!raf)raf=requestAnimationFrame(function(){raf=0;renderLive();sync();syncUi();});}
 window.schedule=schedule;
 window.addEventListener('resize',fit);
@@ -398,7 +430,7 @@ if(window.ResizeObserver)new ResizeObserver(fit).observe(live);
 /* ---- interaction ---- */
 function snap(s){var o={sp:s.sp,bands:s.bands.slice(),rbands:s.rbands.slice(),link:s.link};for(var k in PID)if(k!=='freeze')o[k]=s[k];return o;}
 /* a new space brings its curve to both sides; the link state stays as it was */
-function changeSpace(i){var old=snap(st),sp=SPACES[i],held=[];st.sp=i;st.bands=sp.bands.slice();st.rbands=sp.bands.slice();st.pre=sp.pre;st.size=100;
+function changeSpace(i){var old=snap(st),sp=SPACES[i],held=[];if(i!==st.sp)fadeFrom(st.sp);st.sp=i;st.bands=sp.bands.slice();st.rbands=sp.bands.slice();st.pre=sp.pre;st.size=100;
  if(st.locks.decay){var f=decayOf(old.bands)/decayOf(sp.bands),sc=function(b){return clamp(b*f,0.1,20);};st.bands=st.bands.map(sc);st.rbands=st.rbands.map(sc);held.push('Decay');}
  if(st.locks.pre){st.pre=old.pre;held.push('Pre-delay');}if(st.locks.size){st.size=old.size;held.push('Size');}
  ['mix','bright','el','dist'].forEach(function(k){if(st.locks[k])held.push(P[k].l);});
@@ -406,7 +438,7 @@ function changeSpace(i){var old=snap(st),sp=SPACES[i],held=[];st.sp=i;st.bands=s
 var drag=null,eqTap=null;
 var MAC=/Mac/.test(navigator.platform||'');
 // Only the main button drags: a right press, or a Control click on a Mac, opens the host's menu for a control.
-live.addEventListener('pointerdown',function(e){var t=e.target;endDrag();if(t.closest('input,button'))return;if(e.button!==0||(MAC&&e.ctrlKey))return;
+live.addEventListener('pointerdown',function(e){var t=e.target;endDrag();tw=null;if(t.closest('input,button'))return;if(e.button!==0||(MAC&&e.ctrlKey))return;
  var kn=t.closest('[data-knob]'),lis=t.closest('[data-drag]'),dg=t.closest('svg[data-decay]'),en=t.closest('[data-eqn]');
  if(en){var es=en.closest('svg'),ei=+en.getAttribute('data-eqn'),alt=(e.altKey||e.ctrlKey)&&eqBell(ei),now=Date.now();
   // the page is redrawn between the two clicks, so a double click is counted here: it returns the band to 0 dB
@@ -463,9 +495,11 @@ document.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,A
   if(ti<0||(e.shiftKey?ti===0:ti===ts.length-1)){e.preventDefault();ts[e.shiftKey?ts.length-1:0].focus({preventScroll:true});}return;}
  // Escape in a field that has been edited puts back the value it had; a second Escape goes on to close
  if(e.key==='Escape'&&t.matches&&t.matches('input[data-type],input[data-spk],input[data-scn]')&&t.value!==t.defaultValue){t.value=t.defaultValue;t.select();e.preventDefault();return;}
+ if(e.key==='Escape'&&st.posOpen&&!dialogOpen()){st.posOpen=false;e.preventDefault();renderLive();var pb=live.querySelector('.pc-b');if(pb)pb.focus({preventScroll:true});return;}
  if(e.key==='Escape'&&st.noteOpen&&!dialogOpen()){st.noteOpen=null;e.preventDefault();renderLive();return;}
  if(e.key==='Escape'&&dialogOpen()){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.wf)st.wf=false;else if(st.eq)st.eq=false;else if(st.scn)st.scn=false;else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
  if(e.ctrlKey||e.metaKey||e.altKey||!t.matches)return;
+ var pm=t.closest('.pc-menu');if(pm&&(e.key==='ArrowDown'||e.key==='ArrowUp'||e.key==='Home'||e.key==='End')){var pit=Array.prototype.slice.call(pm.querySelectorAll('.pc-i')),pc=pit.indexOf(t),pn=e.key==='Home'?0:e.key==='End'?pit.length-1:clamp(pc+(e.key==='ArrowDown'?1:-1),0,pit.length-1);if(pit[pn])pit[pn].focus({preventScroll:true});e.preventDefault();return;}
  var bw=st.browse&&t.closest&&t.closest('.brw');
  if(bw){var R=browseResults(st),n=R.rows.length,bc=clamp(st.brwCur||0,0,Math.max(0,n-1)),mv={ArrowDown:1,ArrowUp:-1,PageDown:8,PageUp:-8}[e.key];
   if(mv){if(n){st.brwCur=clamp(bc+mv,0,n-1);renderLive();brwReveal();}e.preventDefault();return;}
@@ -519,10 +553,28 @@ function onChange(e){var t=e.target;
 live.addEventListener('change',function(e){committed=e.target;try{onChange(e);}finally{committed=null;}});
 live.addEventListener('input',function(e){var k=e.target.getAttribute&&e.target.getAttribute('data-in');if(k==='licKey'||k==='licCode')st[k]=e.target.value;
  if(e.target.id==='brw-q'){var ss=e.target.selectionStart;st.brwQ=e.target.value;st.brwCur=0;renderLive();var q=live.querySelector('#brw-q');if(q&&q!==e.target){q.focus({preventScroll:true});q.selectionStart=q.selectionEnd=ss;}brwReveal();}});
-live.addEventListener('focusin',function(e){if(e.target.matches('input.ro'))e.target.select();});
+/* ---- the hint line: the control under the pointer, or the one with the keyboard. A note left
+   by an action shows first; moving on to another control once it has been read puts it away. ---- */
+var peekHov=null,peekFoc=null;
+function peekOf(el){if(!el||!el.closest||!live.contains(el))return null;
+ var n=el.closest('[data-node],[data-knob],input[data-type],[data-drag],[data-eqn],[data-act],svg[data-decay]');if(!n||n.closest('[role="dialog"]'))return null;
+ if(n.hasAttribute('data-node'))return {k:'decay',band:+n.getAttribute('data-node')};
+ if(n.hasAttribute('data-knob'))return {k:n.getAttribute('data-knob')};
+ if(n.hasAttribute('data-type')){var ty=n.getAttribute('data-type');return ty==='band'?{k:'decay',band:+n.getAttribute('data-i')}:P[ty]?{k:ty}:null;}
+ if(n.hasAttribute('data-drag'))return {k:n.getAttribute('data-drag')==='src'?'sx':'dist'};
+ if(n.hasAttribute('data-eqn'))return {eq:+n.getAttribute('data-eqn')};
+ if(n.matches('svg[data-decay]'))return {k:'decay',band:st.lastBand};
+ var a=n.getAttribute('data-act');if(a==='note')return null;return a==='lock'||a==='toggle'?{act:a,k:n.getAttribute('data-k')}:{act:a,v:n.getAttribute('data-v')};}
+function setPeek(){var p=peekHov||peekFoc;if(JSON.stringify(p)===JSON.stringify(st.peek||null))return;st.peek=p;
+ if(p&&st.note&&!st.noteOpen&&Date.now()-noteAt>1500)st.note=null;renderLive();}
+live.addEventListener('pointerover',function(e){if(drag)return;peekHov=peekOf(e.target);setPeek();});
+live.addEventListener('pointerleave',function(){peekHov=null;setPeek();});
+live.addEventListener('focusin',function(e){if(e.target.matches('input.ro'))e.target.select();peekFoc=peekOf(e.target);setPeek();});
+live.addEventListener('focusout',function(e){var to=e.relatedTarget;if(!to||!live.contains(to)){peekFoc=null;setPeek();}
+ if(st.posOpen&&to&&!to.closest('.pc')){st.posOpen=false;renderLive();}});
 live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
- if(!b){if(st.browse&&!e.target.closest('.brw .cbox')){st.browse=false;renderLive();}return;}
- var a=b.getAttribute('data-act'),v=b.getAttribute('data-v'),wasOpen=dialogOpen(),from=refOf(b);if(a!=='browse'&&a!=='pick'&&a.indexOf('brw')!==0)st.browse=false;
+ if(!b){var was=st.posOpen;st.posOpen=false;if(st.browse&&!e.target.closest('.brw .cbox')){st.browse=false;renderLive();}else if(was)renderLive();return;}
+ var a=b.getAttribute('data-act'),v=b.getAttribute('data-v'),wasOpen=dialogOpen(),from=refOf(b),before=twSnap();if(a!=='browse'&&a!=='pick'&&a.indexOf('brw')!==0)st.browse=false;if(a!=='posmenu')st.posOpen=false;
  switch(a){
   case 'mode':st.mode=v;st.note=v==='stage'?'<b>Stage view</b> for post: large numerals, channel meters and locks, on the same tokens.':'<b>Studio view</b>: the space and its decay lead.';st.hint=null;break;
   case 'slot':if(v!==st.slot){st.slots[st.slot]=snap(st);var nx=st.slots[v]||snap(st);Object.keys(nx).forEach(function(k){st[k]=Array.isArray(nx[k])?nx[k].slice():nx[k];});st.slot=v;st.hint=null;st.note='<b>Snapshot '+v+'.</b> Changes now go to '+v+'. Switch back to compare.';}break;
@@ -571,6 +623,7 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'pick':st.browse=false;changeSpace(+v);break;
   /* another captured position of the same room: the engine lets the old one ring out while
      the new one takes the sound; standing still does nothing */
+  case 'posmenu':st.posOpen=!st.posOpen;break;
   case 'pos':if(+v!==st.sp){var ps=SPACES[+v],held=changeSpace(+v);if(ps&&ps.position)st.note='<b>'+esc(ps.position)+(ps.atM!=null?', '+f1(ps.atM)+' m from the stage':'')+'.</b> '+esc(ps.mics)+(ps.mics?', ':'')+esc(ps.name)+'. '+(held.length?'Locked and held: '+held.join(', ')+'.':'The old position rings out while this one takes the sound.');}break;
   case 'prev':changeSpace((st.sp+SPACES.length-1)%SPACES.length);break;
   case 'next':changeSpace((st.sp+1)%SPACES.length);break;
@@ -579,7 +632,7 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
  }
  // the control that opened a window gets the keyboard back when it closes (see drawLive)
  var closed=wasOpen&&!dialogOpen();if(!wasOpen&&dialogOpen())opener=from;
- renderLive();sync();syncUi();
+ twStart(before);renderLive();sync();syncUi();
  if(closed)return;
  if(a==='browse'&&st.browse){brwFocus();brwReveal();}
  else if(a==='brwsim'||a==='brwclear'){brwFocus();brwReveal();}
@@ -589,6 +642,8 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
  else if(a==='eq'&&st.eq){var ef=live.querySelector('.eqd [data-eqn="'+(st.eqCur||0)+'"]');if(ef)ef.focus({preventScroll:true});}
  else if(a==='wf'&&st.wf){var wfc=live.querySelector('.wfd .cx');if(wfc)wfc.focus({preventScroll:true});}
  else if(a==='licence'&&st.lic){var lf=live.querySelector('#lic-key')||live.querySelector('.lic .cgo');if(lf)lf.focus({preventScroll:true});}
+ else if(a==='posmenu'){var pi=st.posOpen?live.querySelector('.pc-menu [aria-checked="true"]')||live.querySelector('.pc-menu .pc-i'):live.querySelector('.pc-b');if(pi)pi.focus({preventScroll:true});}
+ else if(a==='pos'){var pb=live.querySelector('.pc-b');if(pb)pb.focus({preventScroll:true});}
  else if(a==='capstart'||a==='capstop'){var cg=live.querySelector('.cap .cgo:not([disabled])')||live.querySelector('.cap .cx');if(cg)cg.focus({preventScroll:true});}
  else{var same=live.querySelector('[data-act="'+a+'"]'+(v!=null?'[data-v="'+v+'"]':'')+(a==='lock'||a==='toggle'||a==='capopt'?'[data-k="'+b.getAttribute('data-k')+'"]':''));if(same)same.focus({preventScroll:true});}});
 /* the host may hand us a context menu on right click; the interface has none */

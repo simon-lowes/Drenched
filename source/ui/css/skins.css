@@ -59,7 +59,9 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .dg .gr{stroke:var(--ln);stroke-width:1;fill:none}
 .dg .dg-cap{fill:none;stroke:var(--tx2);stroke-width:1.25;stroke-dasharray:4 4}
 .dg .dg-cur{fill:none;stroke:var(--ac);stroke-width:2}
-.dg .nd{fill:var(--g);stroke:var(--ac);stroke-width:2;cursor:ns-resize}
+.dg .dg-fill{pointer-events:none}
+.dg .nd{fill:var(--g);stroke:var(--ac);stroke-width:2;cursor:ns-resize;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45))}
+.dg .nd:hover,.dg .nd.cur{stroke-width:3}
 .dg .nd.ed{fill:var(--ac)}
 .dg .nd:focus{outline:none}.dg .nd:focus-visible{stroke:var(--focus);stroke-width:3}
 .dg .bar{fill:var(--tx);cursor:ns-resize}.dg .bar.ed{fill:var(--ac)}.dg .bar:focus{outline:none}.dg .bar:focus-visible{stroke:var(--focus);stroke-width:3}
@@ -277,14 +279,32 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .seg button[aria-pressed="true"]{background:var(--r);color:var(--tx)}
 .phw{position:relative;overflow:hidden;background:#000}
 .phi{position:absolute;inset:0;background-size:cover;background-position:50% 55%;transform-origin:50% 50%;transition:transform .5s cubic-bezier(.2,.7,.2,1)}
-@media (prefers-reduced-motion: reduce){.phi{transition:none}}
-.hint{font-size:12px;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.screen.held .phi{transition:none}
+.phi.ph-old{animation:ph-out .6s ease-out forwards;pointer-events:none}
+@keyframes ph-out{to{opacity:0}}
+@media (prefers-reduced-motion: reduce){.phi{transition:none}.phi.ph-old{display:none}}
+.hint{font-size:12px;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;line-height:1.4}
 .hint b{color:var(--tx);font-weight:600}
 .hint-more{flex:none;background:none;border:0;padding:0 2px;font:inherit;font-size:12px;color:var(--tx);text-decoration:underline;text-underline-offset:2px}
 .hint-more[hidden]{display:none}
 .sys .hint.open{position:absolute;left:0;right:0;bottom:calc(100% + 6px);z-index:6;display:block;white-space:normal;overflow:visible;text-overflow:clip;-webkit-line-clamp:unset;max-height:none;height:auto;background:var(--g);color:var(--tx);padding:8px 12px;border:1px solid var(--tx2);border-radius:4px;line-height:1.45;text-shadow:none;box-shadow:0 6px 24px rgba(0,0,0,.35)}
-.mm{display:inline-flex;align-items:center;gap:6px;font:11px var(--fnum);color:var(--tx2)}
-.mm .bar{width:64px;height:5px;background:var(--r);border-radius:3px;overflow:hidden}.mm .bar i{display:block;height:100%;background:var(--mtr)}
+/* Meters: a bar per side, the peak mark that holds for a moment, the peak in dBFS and a lamp
+   that lights at full scale. The ticks on the track are at -20, -10, -6 and -3 dB. */
+.mm{display:inline-flex;align-items:center;gap:6px;font:11px var(--fnum);color:var(--tx2);font-variant-numeric:tabular-nums;flex:none}
+.mm-l{min-width:16px}
+.mm-t{display:flex;flex-direction:column;gap:2px;width:72px;padding:1px 0;position:relative;background:linear-gradient(to right,transparent 66.6%,var(--ln) 66.6%,var(--ln) calc(66.6% + 1px),transparent calc(66.6% + 1px),transparent 83.3%,var(--ln) 83.3%,var(--ln) calc(83.3% + 1px),transparent calc(83.3% + 1px),transparent 90%,var(--ln) 90%,var(--ln) calc(90% + 1px),transparent calc(90% + 1px),transparent 95%,var(--ln) 95%,var(--ln) calc(95% + 1px),transparent calc(95% + 1px))}
+.mm-b{position:relative;height:3px;background:var(--r);border-radius:2px;overflow:hidden}
+.mm-b i{display:block;height:100%;background:var(--mtr);border-radius:2px}
+.mm-b b{position:absolute;top:0;bottom:0;width:2px;margin-left:-2px;background:var(--tx);opacity:.9}
+.mm em{font-style:normal;min-width:32px;text-align:right;color:var(--tx2)}
+.mm-c{display:block;width:6px;height:6px;border-radius:50%;background:var(--r);border:1px solid var(--ln);box-sizing:border-box;transition:background-color .1s}
+.mm.clip .mm-c{background:var(--warn,#E5654F);border-color:var(--warn,#E5654F);box-shadow:0 0 6px var(--warn,#E5654F)}
+.mm.clip em{color:var(--warn,#E5654F)}
+/* Freeze: while the tail is held, a ring breathes around the button */
+.sys [data-act="freeze"]{position:relative}
+.sys [data-act="freeze"][aria-pressed="true"]::after{content:'';position:absolute;inset:-3px;border-radius:inherit;border:1px solid var(--ac);pointer-events:none;animation:frz 2.4s ease-in-out infinite}
+@keyframes frz{0%,100%{opacity:.15;transform:scale(1)}50%{opacity:.9;transform:scale(1.03)}}
+@media (prefers-reduced-motion: reduce){.sys [data-act="freeze"][aria-pressed="true"]::after{animation:none;opacity:.7}}
 /* stage view, shared by every system */
 .stg{position:absolute;inset:60px 24px 40px;display:grid;grid-template-rows:112px 190px 1fr;gap:14px}
 .stg-nums{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}
@@ -316,7 +336,7 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 
 /* ========== 1 Anodised: the slab ========== */
 .s-anodised{--g:#151617;--p:#1C1D1F;--r:#26282B;--ln:#34363A;--tx:#E9E5DD;--tx2:#9E9A91;--ac:#FFB547;--ac2:#B89A62;--onac:#1A1206;--warn:#FF5A4E;--focus:#FFD089;--num:#FFB547;--mtr:#B89A62;
-  --fui:'IBM Plex Sans',system-ui,sans-serif;--fnum:'IBM Plex Mono',ui-monospace,monospace;--rad:4px;--rad2:8px;--rosz:13px}
+  --fui:'IBM Plex Sans',system-ui,sans-serif;--fnum:'IBM Plex Sans',system-ui,sans-serif;--rad:4px;--rad2:8px;--rosz:13px}
 .s-anodised.screen{background:radial-gradient(120% 90% at 50% 0%,#1B1C1E 0%,#141516 55%,#0F1011 100%)}
 .s-anodised .k-tr{stroke:#2A2C2F;stroke-width:2.5}.s-anodised .k-body{fill:url(#an-knob);stroke:#3E4044}.s-anodised .k-ptr{stroke:#ECE7DC;stroke-width:2}
 .s-anodised .dg .gr{stroke:rgba(255,255,255,.07)}.s-anodised .dg .dg-cap{stroke:rgba(236,231,220,.45)}.s-anodised .dg .dg-cur{stroke:#FFB547;stroke-width:2;filter:drop-shadow(0 0 5px rgba(255,181,71,.45))}.s-anodised .dg .nd{fill:#0A0B0C;stroke:#FFB547}
@@ -438,10 +458,11 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .ca-photo{position:absolute;left:0;top:0;width:620px;height:760px}
 .ca-photo .phi{filter:url(#duo-cat) contrast(1.02)}
 .s-catalogue.stage .ca-photo .phi{filter:url(#duo-cat-n)}
-.ca-lic{position:absolute;left:24px;bottom:22px;z-index:2}.ca-lic .licchip{margin:0}
 /* The plate has no hint line; notes (a loaded file, a matched room) sit on the photograph like a caption. */
-.ca-note{position:absolute;left:24px;right:24px;bottom:64px;z-index:2;padding:12px 16px;background:rgba(24,14,12,.78);color:#f3ece6;font:13px/1.5 var(--fui);border-radius:2px}
-.ca-note b{font-weight:600;color:#fff}
+.ca-foot{position:absolute;left:0;right:0;bottom:0;min-height:40px;padding:10px 24px 12px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;z-index:2;box-sizing:border-box;background:linear-gradient(to top,rgba(14,8,7,.72),rgba(14,8,7,0));color:#D9D0C6}
+.ca-foot .hint{flex:1 1 calc(100% - 50px);color:#D9D0C6}.ca-foot .licchip{margin-left:0}.ca-foot .hint b{color:#fff}.ca-foot .mm{color:#D9D0C6;--r:rgba(255,255,255,.18);--ln:rgba(255,255,255,.3);--mtr:#F3ECE4;--tx:#fff}.ca-foot .mm em{color:#F3ECE4}
+.ca-foot .licchip{background:rgba(14,8,7,.55);border-color:rgba(255,255,255,.3);color:#E8E0D6}.ca-foot .licchip u{color:#F3C5B8}
+.ca-foot .hint.open{background:rgba(24,14,12,.92);color:#f3ece6}
 .ca-photo::after{content:"";position:absolute;top:0;bottom:0;right:0;width:1px;background:var(--ln)}
 .ca-wall{position:absolute;left:620px;top:0;width:580px;height:760px;padding:30px 44px 26px 48px;display:flex;flex-direction:column}
 .ca-top{display:flex;align-items:center;gap:14px;height:28px}
@@ -478,7 +499,7 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 
 /* ========== 4 Field: the plot is the screen ========== */
 .s-field{--g:#07080B;--p:#101216;--r:#1A1D23;--ln:#262A31;--tx:#D6DBE2;--tx2:#8B929C;--ac:#FB9B06;--ac2:#FB9B06;--onac:#07080B;--warn:#FF4D4D;--focus:#E8F1FF;--num:#D6DBE2;--mtr:#D6DBE2;
-  --fui:'Geist',system-ui,sans-serif;--fnum:'Geist Mono',ui-monospace,monospace;--rad:3px;--rad2:5px;--rosz:12px}
+  --fui:'Geist',system-ui,sans-serif;--fnum:'Geist',system-ui,sans-serif;--rad:3px;--rad2:5px;--rosz:12px}
 .s-field .k-tr{stroke:rgba(255,255,255,.12);stroke-width:2}.s-field .k-body{fill:none;stroke:none}.s-field .k-ptr{stroke:var(--tx);stroke-width:1.5}
 .s-field .dg .gr{stroke:rgba(255,255,255,.08)}.s-field .dg .frm{stroke:rgba(255,255,255,.18);fill:none}.s-field .dg .dg-cur{stroke:#E8F1FF;stroke-width:1.5}.s-field .dg .dg-cap{stroke:rgba(214,219,226,.5);stroke-dasharray:3 3}.s-field .dg .nd{fill:#07080B;stroke:#E8F1FF;stroke-width:1.5}.s-field .dg .nd.ed{fill:#E8F1FF}
 .s-field .dg text{fill:rgba(214,219,226,.6)}
@@ -616,7 +637,7 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .s-signal.stage .si-btn[aria-pressed="true"],.s-signal.stage .si-btn[aria-expanded="true"]{background:var(--ac);color:#fff}
 .si-strip{position:absolute;left:40px;right:40px;bottom:12px;height:18px;display:flex;align-items:center;gap:16px;font-size:11px}
 .si-strip .hint{flex:1}
-.s-signal .mm .bar{border-radius:0}.s-signal .mm .bar i{background:repeating-linear-gradient(to right,var(--tx) 0 4px,transparent 4px 6px)}
+.s-signal .mm-b,.s-signal .mm-b i,.s-signal .mm-c{border-radius:0}.s-signal .mm-b i{background:repeating-linear-gradient(to right,var(--tx) 0 4px,transparent 4px 6px)}
 .s-signal .mt .tr{border-radius:0}.s-signal .mt .tr i{background:repeating-linear-gradient(to top,var(--tx) 0 4px,transparent 4px 6px)}
 .s-signal .adv{position:absolute;left:876px;right:40px;top:56px;height:660px;background:var(--p);border:1px solid var(--tx);padding:12px 14px;display:flex;flex-direction:column;z-index:2;overflow-y:auto}
 .s-signal .adv .row{height:20px;flex:none}
@@ -751,8 +772,7 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .st-btn{height:32px;padding:0 14px;border-radius:999px;border:1px solid var(--ln);background:var(--p);color:var(--tx);font-size:12px;display:inline-flex;align-items:center;gap:7px}
 .st-btn[aria-pressed="true"],.st-btn[aria-expanded="true"]{background:var(--ac);color:var(--onac);border-color:var(--ac)}
 .st-strip{position:absolute;left:470px;right:40px;bottom:14px;height:20px;display:flex;align-items:center;gap:16px}
-.st-strip .hint{flex:1;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:16px}
-.st-strip{height:auto;min-height:20px}
+.st-strip .hint{flex:1}
 .s-strata .adv{position:absolute;left:470px;right:40px;top:492px;height:222px;background:var(--p);border:1px solid var(--ln);border-radius:10px;padding:8px 16px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 24px;align-content:start;z-index:2;overflow-y:auto}
 .s-strata .adv .row{height:18px;font-size:11px}
 
@@ -930,143 +950,133 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .adv .row button.tg{border:1px solid var(--ln);background:transparent;color:var(--num);font:12px var(--fnum);height:20px;padding:0 8px;border-radius:var(--rad);cursor:pointer}
 
 
-/* ===== captured positions: the recordings of one room, chosen from the room view in each
-   look's own language. The markup is shared (.cp, .cp-p a position, .cp-b its button, .cp-mk
-   its mark, .cp-mics the microphones recorded there, .cp-m one of them); the looks differ. */
-.cp .cp-p{display:flex;flex-wrap:wrap;align-items:center}
-.cp button{font-family:inherit;color:inherit;cursor:pointer;background:transparent;border:0;padding:0;transition:color .15s,border-color .15s,background-color .15s}
-.cp .cp-mics{display:inline-flex;flex-wrap:wrap;align-items:center}
-.cp-mk{display:inline-block;flex-shrink:0;transition:background-color .15s,border-color .15s}
-.cp-h{display:block}
-@media (prefers-reduced-motion: reduce){.cp button,.cp-mk,.pl-st,.si-px rect,.co-cp .cp-b svg{transition:none}}
-/* Anodised: a column of lamp buttons on the slab, lit where you are */
-.an-cp{position:absolute;left:26px;top:22px;display:flex;flex-direction:column;gap:6px;max-width:320px}
-.an-cp .cp-h{font:500 11px var(--fui);letter-spacing:.18em;text-transform:uppercase;color:#C9C4B9;text-shadow:0 1px 0 rgba(0,0,0,.8);margin-bottom:2px}
-.an-cp .cp-p{flex-direction:column;align-items:flex-start;gap:4px}
-.an-cp .cp-b{height:30px;border-radius:4px;border:1px solid #34363A;background:linear-gradient(180deg,rgba(35,37,40,.94),rgba(26,27,29,.94));color:#CFC9BD;font-size:12px;display:flex;align-items:center;gap:9px;padding:0 12px;box-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 2px 4px rgba(0,0,0,.5);text-align:left}
-.an-cp .cp-b b{font-weight:400}.an-cp .cp-b small{font:11px var(--fnum);color:#A8A49B}
-.an-cp .cp-b[aria-pressed="true"]{color:var(--tx)}
-.an-cp .cp-mk{width:6px;height:6px;border-radius:3px;background:#3A3C40;box-shadow:inset 0 1px 1px rgba(0,0,0,.8)}
-.an-cp .cp-b[aria-pressed="true"] .cp-mk{background:#FFB547;box-shadow:0 0 6px rgba(255,181,71,.8)}
-.an-cp .cp-mics{gap:4px;padding-left:20px}
-.an-cp .cp-m{height:22px;padding:0 9px;border-radius:3px;border:1px solid #2E3034;background:rgba(18,19,20,.88);color:#9E9A91;font-size:11px}
-.an-cp .cp-m[aria-pressed="true"]{color:#FFB547;border-color:#6A5428}
-/* Section: station marks on the drawing, and a schedule in the sheet's corner */
-.pl-pos{cursor:pointer}.pl-pos:focus{outline:none}.pl-pos:focus-visible .pl-hit{stroke:var(--focus);stroke-width:2}
-.pl-st{fill:var(--g);stroke:var(--ac);stroke-width:1.5;transition:fill .15s}.pl-pos.cur .pl-st{fill:var(--ac)}.pl-st2{fill:none;stroke:var(--ac);stroke-width:1}
-.pl-pos:hover .pl-st{fill:var(--ac)}
-.pl-pos text{paint-order:stroke;stroke:var(--g);stroke-width:3px;stroke-linejoin:round}
-.se-plan .legend i.st{border-radius:0;transform:rotate(45deg);width:6px;height:6px}
-.se-cp{position:absolute;right:0;top:24px;width:176px;border:1px solid var(--line);background:var(--g);font:10px var(--fnum);letter-spacing:.06em}
-.se-cp-h{display:block;padding:3px 8px 2px;border-bottom:1px solid var(--line);color:var(--tx2);font-size:9px;letter-spacing:.12em}
-.se-cp .cp-p{flex-direction:column;align-items:stretch;border-bottom:1px solid var(--ln)}.se-cp .cp-p:last-child{border-bottom:0}
-.se-cp .cp-b{display:flex;align-items:center;gap:7px;height:20px;padding:0 8px;text-align:left;color:var(--tx2);width:100%}
-.se-cp .cp-b b{font-weight:500;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.se-cp .cp-b small{color:var(--tx2);font-size:10px}
-.se-cp .cp-b[aria-pressed="true"]{color:var(--tx)}
-.se-cp .cp-mk{width:6px;height:6px;border:1px solid var(--ac);transform:rotate(45deg)}.se-cp .cp-b[aria-pressed="true"] .cp-mk{background:var(--ac)}
-.se-cp .cp-mics{padding:0 8px 3px 21px;gap:2px}
-.se-cp .cp-m{height:16px;padding:0 6px;border:1px solid var(--line);color:var(--tx2);font-size:9px;letter-spacing:.08em}
-.se-cp .cp-m[aria-pressed="true"]{background:var(--line);color:var(--g)}
-/* Catalogue: a line of the entry, the places as links */
-.ca-cp{display:flex;flex-wrap:wrap;gap:0 14px;line-height:1.5}
-.ca-cp .cp-p{gap:0 4px}.ca-cp .cp-mics{display:inline;color:var(--tx2);font-size:12px}
-.ca-cur{font-weight:600;color:var(--ac)}
-/* Field: a key beside the plot, in the plot's own hand */
-.fi-cp{position:absolute;left:656px;top:28px;width:140px;display:flex;flex-direction:column;gap:3px;font:10.5px var(--fnum)}
-.fi-cp .cp-h{color:var(--tx2);font-size:10px;margin-bottom:2px}
-.fi-cp .cp-p{flex-direction:column;align-items:flex-start;gap:2px}
-.fi-cp .cp-b{display:flex;align-items:center;gap:6px;color:var(--tx2);text-align:left;line-height:1.3}
-.fi-cp .cp-b b{font-weight:400;flex:1}.fi-cp .cp-b small{color:var(--tx2);font-size:10px;white-space:nowrap}
-.fi-cp .cp-b[aria-pressed="true"]{color:var(--tx)}
-.fi-cp .cp-mk{width:6px;height:6px;border:1px solid var(--tx2)}.fi-cp .cp-b[aria-pressed="true"] .cp-mk{background:var(--ac);border-color:var(--ac)}
-.fi-cp .cp-mics{gap:3px;padding:1px 0 2px 12px}
-.fi-cp .cp-m{height:16px;padding:0 5px;border:1px solid rgba(255,255,255,.14);border-radius:2px;background:rgba(7,8,11,.6);color:var(--tx2);font-size:9.5px}
-.fi-cp .cp-m[aria-pressed="true"]{color:var(--ac);border-color:var(--ac)}
-/* Vitrine: glass pills under the name, the microphones inside the pill */
-.vi-cp{position:absolute;left:36px;top:232px;display:flex;flex-wrap:wrap;gap:8px;max-width:720px}
-.vi-cp .cp-p{flex-wrap:nowrap;height:32px;border-radius:999px;border:1px solid rgba(255,255,255,.16);background:rgba(18,19,22,.45);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);color:#EEF1F2;font-size:12px;padding:0 12px;gap:6px}
-.vi-cp .cp-p:has(.cp-mics){padding-right:4px}
-.vi-cp .cp-p[aria-current="true"]{border-color:rgba(143,211,200,.55)}
-.vi-cp .cp-b{display:inline-flex;align-items:center;gap:7px;height:100%;color:#C9D1D4}
-.vi-cp .cp-b[aria-pressed="true"]{color:#fff}.vi-cp .cp-b b{font-weight:500}.vi-cp .cp-b small{color:#9AA3A8;font-size:11px}
-.vi-cp .cp-mk{width:6px;height:6px;border-radius:3px;border:1px solid #C9D1D4}.vi-cp .cp-b[aria-pressed="true"] .cp-mk{background:var(--ac);border-color:var(--ac)}
-.vi-cp .cp-mics{gap:2px;border-left:1px solid rgba(255,255,255,.16);padding-left:4px;margin-left:2px;height:24px;flex-wrap:nowrap}
-.vi-cp .cp-m{height:24px;padding:0 9px;border-radius:999px;font-size:11px;color:#C9D1D4;white-space:nowrap}
-.vi-cp .cp-m[aria-pressed="true"]{background:rgba(255,255,255,.16);color:#fff}
-/* Signal: hollow cells in the pixel room, and blocks of type under it */
-.si-px{cursor:pointer}.si-px rect{transition:stroke-width .15s}.si-px:hover rect{stroke-width:2.5}
-.si-cp{flex:1;min-height:0;border-top:1px solid var(--tx);display:flex;flex-wrap:wrap;align-content:flex-start;gap:3px;padding:5px 6px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;overflow:hidden}
-.si-cp .cp-p{gap:3px}
-.si-cp .cp-b{height:22px;border:1px solid var(--tx);padding:0 8px;display:inline-flex;align-items:center;gap:6px;background:var(--g);color:var(--tx);white-space:nowrap}
-.si-cp .cp-b[aria-pressed="true"]{background:var(--tx);color:var(--g)}
-.si-cp .cp-b small{font-size:10px;opacity:.7;margin-left:2px}
-.si-cp .cp-mk{width:7px;height:7px;border:1.5px solid var(--ac)}.si-cp .cp-b[aria-pressed="true"] .cp-mk{background:var(--wet);border-color:var(--wet)}
-.si-cp .cp-mics{gap:3px}
-.si-cp .cp-m{height:22px;border:1px solid var(--tx2);padding:0 7px;color:var(--tx2);background:var(--p);font-size:10px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
-.si-cp .cp-m[aria-pressed="true"]{background:var(--wet);color:#111;border-color:var(--tx)}
-.s-signal.stage .si-cp .cp-m[aria-pressed="true"]{background:var(--ac);color:#fff}
-/* Aperture: a line of light type under the name */
-.ap-cp{margin-top:8px;display:flex;flex-wrap:wrap;gap:4px 18px;font-size:14px;color:#D9D4C8;max-width:760px;text-shadow:0 2px 24px rgba(0,0,0,.7)}
-.ap-cp .cp-p{gap:0 6px}.ap-cp .cp-mics{display:inline;font-size:13px;color:#D0CBC0}
-.ap-cur{font-weight:500;color:var(--ac)}
-/* Contact: a strip of frames on the mount, one per recording, the chosen one marked */
-.co-cp{display:flex;flex-wrap:wrap;gap:4px 22px;padding-top:2px}
-.co-cp .cp-p{flex-direction:column;align-items:flex-start;gap:4px}
-.co-cp-l{font:11px var(--fnum);letter-spacing:.04em;color:var(--tx2)}
-.co-cp .cp-mics{gap:8px;align-items:flex-start}
-.co-cp .cp-b{display:flex;flex-direction:column;align-items:center;gap:3px;width:72px;color:var(--tx2);font:9.5px/1.2 var(--fnum);letter-spacing:.03em;text-align:center}
-.co-cp .cp-b svg{display:block;border:1px solid var(--ln);background:var(--r);transition:border-color .15s,box-shadow .15s}
-.co-cp .cp-b svg rect{fill:var(--p);stroke:var(--tx);stroke-width:1}.co-cp .cp-b svg line{stroke:var(--tx2);stroke-width:1}.co-cp .cp-b svg circle{fill:var(--ac)}
-.co-cp .cp-b:hover svg{border-color:var(--tx2)}
-.co-cp .cp-b[aria-pressed="true"]{color:var(--tx)}.co-cp .cp-b[aria-pressed="true"] svg{border-color:var(--ac);box-shadow:0 0 0 1px var(--ac)}
-.co-cp .cp-b small{font-size:9.5px}
-/* Strata: a stratum per position, the microphones' place a point on it */
-.st-cp{display:flex;flex-direction:column;gap:2px;margin-bottom:10px;text-shadow:0 1px 8px rgba(0,0,0,.7)}
-.st-cp .cp-p{flex-direction:column;align-items:stretch;gap:3px}
-.st-cp .cp-b{display:grid;grid-template-columns:auto 1fr 44px;align-items:center;gap:10px;height:26px;color:#C9CFC6;font-size:12px;text-align:left;width:100%}
-.st-cp .cp-b b{font-weight:400;white-space:nowrap}.st-cp .cp-b small{font:11px var(--fnum);color:#C9CFC6;text-align:right}
-.st-cp-ln{position:relative;height:1px;background:rgba(239,235,225,.35)}
-.st-cp .cp-mk{position:absolute;top:-4px;width:9px;height:9px;margin-left:-4px;border-radius:50%;border:1.5px solid #EFEBE1;background:var(--g)}
-.st-cp .cp-b[aria-pressed="true"]{color:var(--tx)}.st-cp .cp-b[aria-pressed="true"] .st-cp-ln{background:rgba(221,184,104,.6)}
-.st-cp .cp-b[aria-pressed="true"] .cp-mk{background:var(--ac);border-color:var(--ac)}
-.st-cp .cp-mics{gap:6px;padding-bottom:4px}
-.st-cp .cp-m{height:22px;padding:0 10px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:rgba(17,22,19,.5);color:#C9CFC6;font-size:11px}
-.st-cp .cp-m[aria-pressed="true"]{background:var(--ac);color:var(--onac);border-color:var(--ac)}
-/* Rotunda: rounds, the microphones as segments of the round */
-.rt-cp{display:flex;flex-wrap:wrap;gap:8px}
-.rt-cp .cp-p{flex-wrap:nowrap;height:32px;border-radius:999px;border:1px solid var(--ln);background:var(--p);padding:0 12px;gap:6px}
-.rt-cp .cp-p:has(.cp-mics){padding-right:4px}
-.rt-cp .cp-p[aria-current="true"]{border-color:var(--ac)}
-.rt-cp .cp-b{display:inline-flex;align-items:center;gap:7px;height:100%;font-size:12px;color:var(--tx2)}
-.rt-cp .cp-b[aria-pressed="true"]{color:var(--tx)}.rt-cp .cp-b b{font-weight:500}.rt-cp .cp-b small{font:11px var(--fnum);color:var(--tx2)}
-.rt-cp .cp-mk{width:7px;height:7px;border-radius:50%;border:1px solid var(--tx2)}.rt-cp .cp-b[aria-pressed="true"] .cp-mk{background:var(--ac);border-color:var(--ac)}
-.rt-cp .cp-mics{gap:2px;border-left:1px solid var(--ln);padding-left:4px;margin-left:2px;height:24px;flex-wrap:nowrap}
-.rt-cp .cp-m{height:24px;padding:0 9px;border-radius:999px;font-size:11px;color:var(--tx2);white-space:nowrap}
-.rt-cp .cp-m[aria-pressed="true"]{background:var(--ac);color:var(--onac)}
-/* Material: sample labels pinned to the photograph */
-.ma-cp{position:absolute;left:14px;top:12px;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
-.ma-cp .cp-p{flex-direction:column;align-items:flex-start;gap:4px}
-.ma-cp .cp-b{display:inline-flex;align-items:center;gap:7px;height:24px;padding:0 9px;border-radius:3px;background:rgba(0,0,0,.5);color:#fff;font:11px var(--fnum);letter-spacing:.06em;text-transform:uppercase}
-.ma-cp .cp-b b{font-weight:400}.ma-cp .cp-b small{opacity:.75;font-size:11px}
-.ma-cp .cp-b[aria-pressed="true"]{background:var(--ac);color:var(--onac)}
-.ma-cp .cp-mk{width:7px;height:7px;border-radius:1px;border:1px solid rgba(255,255,255,.7)}.ma-cp .cp-b[aria-pressed="true"] .cp-mk{background:currentColor;border-color:currentColor}
-.ma-cp .cp-mics{gap:4px;padding-left:14px}
-.ma-cp .cp-m{height:20px;padding:0 7px;border-radius:3px;background:rgba(0,0,0,.62);color:#fff;font:10px var(--fnum);letter-spacing:.04em;text-transform:uppercase}
-.ma-cp .cp-m[aria-pressed="true"]{background:var(--ac);color:var(--onac)}
-/* Folio: a column of entries beside the title, like a contents list */
-.fo-side{display:flex;flex-direction:column;align-items:flex-end;gap:12px;flex-shrink:0}
-.fo-cp{display:flex;flex-direction:column;align-items:flex-end;gap:3px;font-size:12px;color:#E5E1D8}
-.fo-cp .cp-p{flex-direction:column;align-items:flex-end;gap:2px}
-.fo-cp .cp-b{display:inline-flex;align-items:baseline;gap:6px;color:#E5E1D8;text-decoration:underline;text-underline-offset:3px;text-decoration-color:rgba(255,255,255,.35)}
-.fo-cp .cp-b b{font-weight:400}.fo-cp .cp-b small{font:11px var(--fnum);color:#C9C4B8}
-.fo-cp .cp-b[aria-pressed="true"]{color:#fff;text-decoration:underline 2px #fff;text-underline-offset:4px}.fo-cp .cp-b[aria-pressed="true"] b{font-weight:600}
-.fo-cp .cp-mics{gap:10px;font-size:11px}
-.fo-cp .cp-m{color:#C9C4B8;text-decoration:underline;text-underline-offset:3px;text-decoration-color:rgba(255,255,255,.3)}
-.fo-cp .cp-m[aria-pressed="true"]{color:#fff;text-decoration:none;font-weight:600}
-/* the stage view, shared: a chip per recording under the room */
-.stg-cp{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
-.stg-cp .cp-b{height:20px;padding:0 8px;border:1px solid var(--ln);border-radius:var(--rad);color:var(--tx2);font-size:11px;white-space:nowrap}
-.stg-cp .cp-b[aria-pressed="true"]{color:var(--ac);border-color:var(--ac)}
+/* ===== captured positions: one control for the room's recordings. Its button names where this
+   one was made and with which microphones; a menu lists the others. The markup is shared (.pc
+   the control, .pc-b the button, .cp-mk its mark, .pc-mic the microphones, .pc-menu the menu,
+   .pc-g a place in it, .pc-gl the place's name, .pc-i a recording); each look dresses it. */
+.pc{position:relative;display:inline-flex;flex-direction:column;align-items:flex-start;z-index:5}
+.pc.open{z-index:9}
+.pc-b{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 9px 0 10px;border:1px solid var(--ln);border-radius:var(--rad);background:var(--p);color:var(--tx);font:12px var(--fui);cursor:pointer;white-space:nowrap;max-width:100%;transition:border-color .15s,background-color .15s,color .15s}
+.pc-b b{font-weight:500;overflow:hidden;text-overflow:ellipsis}
+.pc-b small,.pc-gl small,.pc-gh small{font:11px var(--fnum);color:var(--tx2);font-variant-numeric:tabular-nums}
+.pc-mic{color:var(--tx2);font-size:11px}
+.pc-b .pc-mic{padding-left:8px;border-left:1px solid var(--ln);white-space:nowrap}
+.pc-b svg{width:11px;height:11px;flex:none;opacity:.7;margin-left:-1px}
+.pc-b:hover{border-color:var(--tx2)}
+.pc-b[aria-expanded="true"]{border-color:var(--tx2);color:var(--tx)}
+.cp-mk{display:inline-block;flex:none;width:7px;height:7px;border-radius:50%;background:var(--ac);box-shadow:0 0 6px var(--ac)}
+.pc-menu{position:absolute;left:0;top:calc(100% + 6px);min-width:100%;max-width:380px;padding:6px;box-sizing:border-box;border:1px solid var(--ln);border-radius:var(--rad2);background:var(--p);color:var(--tx);box-shadow:0 14px 36px rgba(0,0,0,.4);display:flex;flex-direction:column;gap:1px;transform-origin:top left;animation:pc-in .16s cubic-bezier(.2,.7,.2,1);text-shadow:none;text-transform:none;letter-spacing:0;font:12px var(--fui)}
+.pc.up .pc-menu{top:auto;bottom:calc(100% + 6px);transform-origin:bottom left}
+.pc.right .pc-menu{left:auto;right:0;transform-origin:top right}
+@keyframes pc-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.pc.up .pc-menu{animation-name:pc-up}@keyframes pc-up{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){.pc-menu{animation:none}}
+.pc-g{display:flex;flex-direction:column}
+.pc-gl{display:flex;align-items:baseline;gap:8px;padding:7px 10px 3px;font:12px var(--fui);color:var(--tx)}.pc-gl b{font-weight:500}
+.pc-i{display:flex;align-items:center;gap:9px;height:28px;padding:0 10px;border-radius:calc(var(--rad) + 1px);border:0;background:transparent;color:var(--tx2);font:12px var(--fui);text-align:left;cursor:pointer;white-space:nowrap}
+.pc-i:hover{background:var(--r);color:var(--tx)}
+.pc-i[aria-checked="true"]{color:var(--tx)}
+.pc-i .cp-mk{background:transparent;box-shadow:none;border:1px solid var(--tx2);box-sizing:border-box}
+.pc-i[aria-checked="true"] .cp-mk{background:var(--ac);border-color:var(--ac)}
+.pc-g .pc-i:not(.pc-gh){padding-left:30px}
+.pc-gh b{font-weight:500;color:var(--tx)}.pc-gh .pc-mic{padding-left:8px;border-left:1px solid var(--ln)}
+.pc-i .pc-mic{font-size:12px;color:inherit}
+
+/* Anodised: a machined chip on the window, top left */
+.an-cp{position:absolute;left:26px;top:22px;max-width:330px}
+.an-cp .pc-b{height:30px;border-color:#34363A;background:linear-gradient(180deg,rgba(35,37,40,.94),rgba(26,27,29,.94));color:#E9E5DD;box-shadow:0 1px 0 rgba(255,255,255,.04),0 2px 8px rgba(0,0,0,.6)}
+.an-cp .pc-b .pc-mic{color:#A8A49B;border-color:#3A3C40}
+.an-cp .pc-menu{background:#1C1D1F;border-color:#34363A}
+
+/* Section: a schedule box in the sheet's corner, in the drawing's small capitals */
+.se-cp{position:absolute;right:0;top:24px;max-width:250px}
+.se-cp .pc-b{height:22px;border-color:var(--line);background:var(--g);color:var(--tx);font:10px var(--fnum);letter-spacing:.06em;text-transform:uppercase;gap:7px;padding:0 7px}
+.se-cp .pc-b small,.se-cp .pc-gl small,.se-cp .pc-gh small{font-size:9px}
+.se-cp .cp-mk{border-radius:0;box-shadow:none;transform:rotate(45deg);width:6px;height:6px}
+.se-cp .pc-menu{border-color:var(--line);background:var(--g);font:10px var(--fnum);letter-spacing:.06em;text-transform:uppercase;box-shadow:0 10px 24px rgba(0,0,0,.5)}
+.se-cp .pc-i,.se-cp .pc-gl{font:10px var(--fnum);letter-spacing:.06em;text-transform:uppercase}
+
+/* Catalogue: a line of the entry, with a small chevron */
+.ca-cp .pc-b{height:auto;padding:0;border:0;background:none;font:13px var(--fui);color:var(--tx);gap:0}
+.ca-cp .pc-b small{margin-left:6px}.ca-cp .pc-b svg{margin-left:4px}
+.ca-cp .pc-b .pc-mic{border:0;padding-left:0;font-size:13px}
+.ca-cp .pc-b .pc-mic::before{content:', '}
+.ca-cp .pc-b:hover{text-decoration:underline;text-underline-offset:3px}
+.ca-cp .pc-b[aria-expanded="true"]{text-decoration:underline;text-underline-offset:3px}
+.ca-cp .cp-mk{display:none}
+.ca-cp .pc-i .cp-mk{display:inline-block}
+.ca-cp .pc-menu{box-shadow:0 10px 30px rgba(0,0,0,.18)}
+
+/* Field: a small readout at the top, in the instrument's face */
+.fi-cp{margin-left:6px;max-width:300px}
+.fi-cp .pc-b{height:26px;border-color:rgba(255,255,255,.14);background:rgba(7,8,11,.7);color:var(--tx);font:11px var(--fui);gap:6px;padding:0 7px 0 8px}
+.fi-cp .pc-menu{background:#101216;border-color:rgba(255,255,255,.16)}
+
+/* Vitrine: a glass pill on the photograph */
+.vi-cp{position:absolute;left:36px;top:232px}
+.vi-cp .pc-b{height:32px;border-radius:999px;border-color:rgba(255,255,255,.16);background:rgba(18,19,22,.45);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);color:#fff;padding:0 12px 0 13px}
+.vi-cp .pc-b .pc-mic{color:#C9D1D4;border-color:rgba(255,255,255,.2)}
+.vi-cp .pc-b:hover,.vi-cp .pc-b[aria-expanded="true"]{border-color:rgba(143,211,200,.6)}
+.vi-cp .pc-menu{border-radius:14px;background:rgba(23,25,29,.92);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-color:rgba(255,255,255,.14)}
+.vi-cp .pc-i{border-radius:999px}
+
+/* Signal: a block under the pixel room, in capitals */
+.si-cp{display:flex;align-items:stretch;border-top:1px solid var(--tx);padding:6px;flex:none}
+.si-cp .pc-b{height:24px;border-color:var(--tx);background:var(--g);color:var(--tx);font:10px var(--fnum);letter-spacing:.08em;text-transform:uppercase;border-radius:0;gap:7px}
+.si-cp .pc-b .pc-mic{border-color:var(--tx2);color:var(--tx2)}
+.si-cp .cp-mk{border-radius:0;box-shadow:none;background:var(--wet,var(--ac))}
+.s-signal.stage .si-cp .cp-mk{background:var(--ac)}
+.si-cp .pc-menu{border-radius:0;border-color:var(--tx);background:var(--g);font:10px var(--fnum);letter-spacing:.08em;text-transform:uppercase;box-shadow:4px 4px 0 var(--tx)}
+.si-cp .pc-i,.si-cp .pc-gl{font:10px var(--fnum);letter-spacing:.08em;text-transform:uppercase;border-radius:0}
+.si-cp .pc-i .cp-mk{border-radius:0}
+
+/* Aperture: light on the photograph, under the name */
+.ap-cp{margin-top:8px;text-shadow:none}
+.ap-cp .pc-b{height:30px;border-color:rgba(255,255,255,.22);background:rgba(10,10,11,.38);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);color:#F4F1EA;font-size:13px;padding:0 11px 0 12px}
+.ap-cp .pc-b .pc-mic{color:#D0CBC0;border-color:rgba(255,255,255,.22);font-size:12px}
+.ap-cp .pc-b:hover,.ap-cp .pc-b[aria-expanded="true"]{border-color:rgba(255,255,255,.5)}
+.ap-cp .pc-menu{background:rgba(20,20,22,.92);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-color:rgba(255,255,255,.16);font-size:13px}
+.ap-cp .pc-i{font-size:13px}
+
+/* Contact: a caption line on the print, in small capitals */
+.co-cp{padding-top:4px}
+.co-cp .pc-b{height:24px;border-color:var(--ln);background:var(--g);color:var(--tx);font:10.5px var(--fnum);letter-spacing:.06em;text-transform:uppercase;gap:7px;padding:0 8px}
+.co-cp .pc-b .pc-mic{font-size:10.5px}
+.co-cp .pc-menu{font:10.5px var(--fnum);letter-spacing:.06em;text-transform:uppercase;box-shadow:0 10px 30px rgba(0,0,0,.16)}
+.co-cp .pc-i,.co-cp .pc-gl{font:10.5px var(--fnum);letter-spacing:.06em;text-transform:uppercase}
+
+/* Strata: a glass pill over the photograph, above the name */
+.st-cp{margin-bottom:10px;text-shadow:none}
+.st-cp .pc-b{height:30px;border-radius:999px;border-color:rgba(255,255,255,.25);background:rgba(17,22,19,.5);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);color:#EFEBE1;padding:0 12px 0 13px}
+.st-cp .pc-b .pc-mic{color:#C9CFC6;border-color:rgba(255,255,255,.25)}
+.st-cp .pc-menu{border-radius:14px;background:rgba(24,31,26,.94);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-color:rgba(255,255,255,.14)}
+.st-cp .pc-i{border-radius:999px}
+
+/* Rotunda: a pill in the side column */
+.rt-cp .pc-b{height:32px;border-radius:999px;padding:0 12px 0 13px}
+.rt-cp .pc-menu{border-radius:14px}.rt-cp .pc-i{border-radius:999px}
+
+/* Material: a dark chip on the photograph, top left, in capitals */
+.ma-cp{position:absolute;left:14px;top:12px;max-width:calc(100% - 28px)}
+.ma-cp .pc-b{height:26px;border:0;background:rgba(0,0,0,.55);color:#fff;font:11px var(--fnum);letter-spacing:.06em;text-transform:uppercase;border-radius:3px;gap:7px}
+.ma-cp .pc-b .pc-mic{color:rgba(255,255,255,.75);border-color:rgba(255,255,255,.3)}
+.ma-cp .pc-b:hover,.ma-cp .pc-b[aria-expanded="true"]{background:rgba(0,0,0,.72)}
+.ma-cp .pc-menu{background:rgba(26,19,15,.94);border-color:rgba(255,255,255,.14);font:11px var(--fnum);letter-spacing:.04em;text-transform:uppercase}
+.ma-cp .pc-i,.ma-cp .pc-gl{font:11px var(--fnum);letter-spacing:.04em;text-transform:uppercase}
+
+/* Folio: a line of the running head on the hero, right aligned */
+.fo-cp{align-items:flex-end}
+.fo-cp .pc-b{height:auto;padding:0;border:0;background:none;color:#E5E1D8;font:12px var(--fui);gap:6px;text-decoration:underline;text-underline-offset:3px;text-decoration-color:rgba(255,255,255,.35)}
+.fo-cp .pc-b b{font-weight:400}.fo-cp .pc-b small{color:#C9C4B8}
+.fo-cp .pc-b .pc-mic{color:#C9C4B8;border-color:rgba(255,255,255,.3)}
+.fo-cp .pc-b:hover{color:#fff;text-decoration-color:#fff}
+.fo-cp .cp-mk{display:none}.fo-cp .pc-i .cp-mk{display:inline-block}
+.fo-cp .pc-menu{text-shadow:none;color:var(--tx);box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.fo-cp.right .pc-menu{left:auto;right:0}
+
+/* the stage view, shared: a chip under the room */
+.stg-cp{margin-top:6px}
+.stg-cp .pc-b{height:24px;font-size:11px}
 
 /* ===== focus, after every look's own rules so that none of them hides it. A point on a
    graph takes a wide ring of the focus colour with a halo of the ground; a button whose look

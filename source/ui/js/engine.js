@@ -107,8 +107,12 @@ var MAIN=['decay','pre','size','bright','el','dist'];
 function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
 function lerp(a,b,t){return a+(b-a)*t;}
 function f1(n){return (Math.round(n*10)/10).toFixed(1);}
+/* A thin space sets a unit off from its number ("2.3 s") without the gap of a word space. */
+var TS='\u2009';
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 var UID=0;function uid(){return 'u'+(++UID);}
+/* the page resets the count before each drawing, so the same element gets the same id each time */
+function resetIds(){UID=0;}
 function vol(sp){var v=sp.W*sp.D*sp.H;v=v>2000?Math.round(v/100)*100:Math.round(v/10)*10;return v.toLocaleString('en-GB')+' m\u00b3';}
 function decayOf(b){return (b[3]+b[4])/2;}
 /* The decay curve is one for both sides while linked. Unlinked, bands is the left side's and
@@ -119,7 +123,7 @@ function ghostBands(s){return s.link?null:s.side==='R'?s.bands:s.rbands;}
 function sideName(s){return s.side==='R'?'Right':'Left';}
 /* the aria label of a point or a typed band value, with its side while unlinked */
 function bandLabel(s,i){return (s.link?'':sideName(s)+' ')+(s.link?'Decay':'decay')+' at '+FREQ[i]+'Hz';}
-function newState(){var sp=SPACES[0];return eqDefaults({sp:0,bands:sp.bands.slice(),rbands:sp.bands.slice(),link:true,side:'L',mix:30,pre:sp.pre,size:100,bright:0,el:55,dist:40,lx:50,sx:50,output:0,preSync:0,xover:320,locut:80,hicut:14000,width:100,duck:0,mono:0,living:0,move:20,moveRate:0.7,rev:0,gate:0,attack:0,dLvl:0,dDel:0,dCol:0,xfeed:100,cloud:100,cpu:0,mode:'studio',slot:'A',slots:{A:null,B:null},freeze:false,adv:false,browse:false,view:'plan',locks:{},hint:null,note:null,lastBand:4,skin:'aperture',skins:false,inL:-60,inR:-60,outL:-60,outR:-60});}
+function newState(){var sp=SPACES[0];return eqDefaults({sp:0,bands:sp.bands.slice(),rbands:sp.bands.slice(),link:true,side:'L',mix:30,pre:sp.pre,size:100,bright:0,el:55,dist:40,lx:50,sx:50,output:0,preSync:0,xover:320,locut:80,hicut:14000,width:100,duck:0,mono:0,living:0,move:20,moveRate:0.7,rev:0,gate:0,attack:0,dLvl:0,dDel:0,dCol:0,xfeed:100,cloud:100,cpu:0,mode:'studio',slot:'A',slots:{A:null,B:null},freeze:false,adv:false,browse:false,view:'plan',locks:{},hint:null,note:null,peek:null,posOpen:false,fade:null,lastBand:4,skin:'aperture',skins:false,inL:-60,inR:-60,outL:-60,outR:-60,mh:{},clip:{}});}
 var st=newState();
 function spOf(s){return SPACES[s.sp];}
 function getV(s,k){return k==='decay'?decayOf(curBands(s)):s[k];}
@@ -145,35 +149,41 @@ function positionsOf(s){var sp=spOf(s),ids=roomSpaces(sp);if(ids.length<2)return
 /* the recording a position stands for: the current one if we are there, else the one made
    with the microphones in use now, else the first */
 function posTarget(s,g){if(g.cur)return s.sp;var m=spOf(s).mics;for(var j=0;j<g.items.length;j++)if(g.items[j].mics===m)return g.items[j].i;return g.items[0].i;}
-function posM(g){return g.atM!=null?f1(g.atM)+' m':'';}
+function posM(g){return g.atM!=null?f1(g.atM)+TS+'m':'';}
 function posAria(g){return g.label+(g.atM!=null?', '+f1(g.atM)+' m from the stage':'');}
-function posBtn(s,g,k,cls,inner){return '<button class="'+cls+'" data-act="pos" data-v="'+posTarget(s,g)+'" data-fid="posg-'+k+'" aria-pressed="'+g.cur+'" aria-label="'+esc(posAria(g))+'" title="'+esc(posAria(g))+'">'+inner+'</button>';}
-function micBtns(s,g,cls,inner){if(g.items.length<2)return '';return '<span class="cp-mics" role="group" aria-label="Microphones at '+esc(g.label.toLowerCase())+'">'+g.items.map(function(it){return '<button class="'+cls+'" data-act="pos" data-v="'+it.i+'" data-fid="pos-'+it.i+'" aria-pressed="'+it.cur+'" aria-label="'+esc(it.mics)+' at '+esc(g.label.toLowerCase())+'">'+(inner?inner(it):esc(it.mics))+'</button>';}).join('')+'</span>';}
-/* the plain list most looks start from: a row per position, the microphones under it */
-function posList(s,CP,cls,head){return '<div class="cp '+cls+'" role="group" aria-label="Captured positions in this room">'+(head?'<span class="cp-h">'+head+'</span>':'')+CP.groups.map(function(g,k){return '<div class="cp-p" aria-current="'+g.cur+'">'+posBtn(s,g,k,'cp-b','<i class="cp-mk"></i><b>'+esc(g.label)+'</b>'+(g.atM!=null?'<small>'+posM(g)+'</small>':''))+micBtns(s,g,'cp-m')+'</div>';}).join('')+'</div>';}
-/* a sentence of links, for the typographic looks */
-function posLinks(s,CP,cls,cur){return CP.groups.map(function(g,k){var lab=esc(g.label)+(g.atM!=null?' '+posM(g):'');
- return '<span class="cp-p" aria-current="'+g.cur+'">'+(g.cur?'<b class="'+cur+'" aria-current="true">'+lab+'</b>':posBtn(s,g,k,cls,lab))+(g.items.length>1?' <span class="cp-mics" role="group" aria-label="Microphones at '+esc(g.label.toLowerCase())+'">('+g.items.map(function(it){return it.cur?'<b class="'+cur+'" aria-current="true">'+esc(it.mics)+'</b>':'<button class="'+cls+'" data-act="pos" data-v="'+it.i+'" data-fid="pos-'+it.i+'" aria-pressed="false" aria-label="'+esc(it.mics)+' at '+esc(g.label.toLowerCase())+'">'+esc(it.mics)+'</button>';}).join(', ')+')</span>':'')+'</span>';}).join('');}
+/* One compact control for the room's recordings: where this one was made and with which
+   microphones, and a menu of the others. The same markup in every look (.pc, .pc-b the
+   button, .pc-menu the list, .pc-g a place, .pc-i a recording); each look styles it. */
+function posCtl(s,CP,cls){var cg=null,ci=null;CP.groups.forEach(function(g){if(g.cur){cg=g;g.items.forEach(function(it){if(it.cur)ci=it;});}});
+ var lab=cg?esc(cg.label):'Captured position',m=cg&&cg.atM!=null?posM(cg):'',mic=ci&&ci.mics?esc(ci.mics):'';
+ var btn='<button class="pc-b" data-act="posmenu" data-fid="pc-b" aria-haspopup="menu" aria-expanded="'+!!s.posOpen+'" aria-label="'+lab+(m?', '+m:'')+(mic?', '+mic:'')+'. Recorded position: choose another of the '+CP.n+' recordings of this room" title="'+CP.n+' recordings of this room">'+
+  '<i class="cp-mk"></i><b>'+lab+'</b>'+(m?'<small>'+m+'</small>':'')+(mic?'<span class="pc-mic">'+mic+'</span>':'')+ICON.down+'</button>';
+ var item=function(g,it,k,head){return '<button class="pc-i'+(head?' pc-gh':'')+'" role="menuitemradio" aria-checked="'+it.cur+'" data-act="pos" data-v="'+it.i+'" data-fid="pos-'+it.i+'"'+(head?'':' aria-label="'+esc(g.label)+(g.atM!=null?', '+f1(g.atM)+' m from the stage':'')+(it.mics?', '+esc(it.mics):'')+'"')+'><i class="cp-mk"></i>'+
+  (head?'<b>'+esc(g.label)+'</b>'+(g.atM!=null?'<small>'+posM(g)+'</small>':'')+(it.mics?'<span class="pc-mic">'+esc(it.mics)+'</span>':''):'<span class="pc-mic">'+esc(it.mics)+'</span>')+'</button>';};
+ var menu=s.posOpen?'<div class="pc-menu" role="menu" aria-label="Recordings of this room">'+CP.groups.map(function(g,k){
+  return g.items.length>1?'<div class="pc-g" aria-current="'+g.cur+'"><span class="pc-gl"><b>'+esc(g.label)+'</b>'+(g.atM!=null?'<small>'+posM(g)+'</small>':'')+'</span>'+g.items.map(function(it){return item(g,it,k,false);}).join('')+'</div>'
+   :'<div class="pc-g" aria-current="'+g.cur+'">'+item(g,g.items[0],k,true)+'</div>';}).join('')+'</div>':'';
+ return '<div class="cp pc '+cls+(s.posOpen?' open':'')+'" role="group" aria-label="Captured positions in this room">'+btn+menu+'</div>';}
 /* where a position sits along the room, 0 at the stage edge, for the drawings; null when the
    recording does not say */
 function posDepth(s,g){return (stageDepth(spOf(s))+g.atM)*s.size/100;}
 function posFrac(s,g){if(g.atM==null)return null;var r=distRange(s);return clamp((posDepth(s,g)-r.lo)/(r.hi-r.lo),0,1);}
 function eqp(el){var a=el/100*Math.PI/2;function d(x){return x<0.001?'\u2212\u221e':(20*Math.log10(x)).toFixed(1).replace('-','\u2212');}return {e:d(Math.cos(a)),t:d(Math.sin(a))};}
-function hzText(v){return v<1000?Math.round(v)+' Hz':(+(v/1000).toFixed(2))+' kHz';}
-function dbSigned(v){return (v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+' dB';}
+function hzText(v){return v<1000?Math.round(v)+TS+'Hz':(+(v/1000).toFixed(2))+TS+'kHz';}
+function dbSigned(v){return (v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+TS+'dB';}
 function fmt(s,k,v){if(v==null)v=getV(s,k);
  if(/^eq\d[fgq]$/.test(k)){var ek=k.charAt(3);return ek==='f'?hzText(v):ek==='g'?dbSigned(v):v.toFixed(2);}
  switch(k){
- case 'mix':return Math.round(v)+'%';case 'decay':return f1(v)+' s';case 'pre':return Math.round(v)+' ms';case 'size':return Math.round(v)+'%';
- case 'bright':return (v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+' dB';case 'el':return (100-Math.round(v))+' / '+Math.round(v);
- case 'dist':var old=s.dist;s.dist=v;var m=distM(s);s.dist=old;return f1(m)+' m';
- case 'output':return (v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+' dB';case 'preSync':case 'rev':case 'cpu':return v>=0.5?'On':'Off';
- case 'xover':case 'locut':return Math.round(v)+' Hz';case 'hicut':return (v/1000).toFixed(1)+' kHz';
- case 'lx':case 'sx':var off=Math.round((v-50)*2);return off===0?'Centre':Math.abs(off)+'% '+(off<0?'left':'right');case 'width':case 'cloud':case 'xfeed':return Math.round(v)+'%';case 'duck':return v>0?Math.round(v)+'%':'Off';case 'mono':return v>0?Math.round(v)+' Hz':'Off';
+ case 'mix':return Math.round(v)+'%';case 'decay':return f1(v)+TS+'s';case 'pre':return Math.round(v)+TS+'ms';case 'size':return Math.round(v)+'%';
+ case 'bright':return dbSigned(v);case 'el':return (100-Math.round(v))+' / '+Math.round(v);
+ case 'dist':var old=s.dist;s.dist=v;var m=distM(s);s.dist=old;return f1(m)+TS+'m';
+ case 'output':return dbSigned(v);case 'preSync':case 'rev':case 'cpu':return v>=0.5?'On':'Off';
+ case 'xover':case 'locut':return Math.round(v)+TS+'Hz';case 'hicut':return (v/1000).toFixed(1)+TS+'kHz';
+ case 'lx':case 'sx':var off=Math.round((v-50)*2);return off===0?'Centre':Math.abs(off)+'% '+(off<0?'left':'right');case 'width':case 'cloud':case 'xfeed':return Math.round(v)+'%';case 'duck':return v>0?Math.round(v)+'%':'Off';case 'mono':return v>0?Math.round(v)+TS+'Hz':'Off';
  case 'living':return v>0?Math.round(v)+'%':'Off';case 'move':return v>0?Math.round(v)+'%':'Still';
- case 'moveRate':return (v<1?v.toFixed(2):v.toFixed(1))+' Hz';case 'gate':case 'attack':return v>0?Math.round(v)+' ms':'Off';
- case 'dLvl':return v<=-60?'Off':(v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+' dB';case 'dDel':return f1(v)+' ms';
- case 'dCol':return (v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+' dB';}}
+ case 'moveRate':return (v<1?v.toFixed(2):v.toFixed(1))+TS+'Hz';case 'gate':case 'attack':return v>0?Math.round(v)+TS+'ms':'Off';
+ case 'dLvl':return v<=-60?'Off':dbSigned(v);case 'dDel':return f1(v)+TS+'ms';
+ case 'dCol':return dbSigned(v);}}
 function to01(k,v){var p=P[k];return p.log?Math.log(v/p.min)/Math.log(p.max/p.min):(v-p.min)/(p.max-p.min);}
 function from01(k,n){var p=P[k];n=clamp(n,0,1);var v=p.log?p.min*Math.pow(p.max/p.min,n):p.min+n*(p.max-p.min);return Math.round(v/p.st)*p.st;}
 function setParam(s,k,v){var p=P[k];v=clamp(Math.round(v/p.st)*p.st,p.min,p.max);
@@ -213,6 +223,8 @@ function wfBtn(s,cls,label,icon){return '<button class="'+cls+'" data-act="wf" a
 function lockBtn(s,k,label){var on=!!s.locks[k];return '<button class="lk" data-act="lock" data-k="'+k+'" aria-pressed="'+on+'" aria-label="Lock '+label+' when changing space" title="Lock '+label+'">'+(on?ICON.lockOn:ICON.lockOff)+'</button>';}
 function smooth(pts){var d='M'+pts[0][0].toFixed(1)+' '+pts[0][1].toFixed(1);for(var i=0;i<pts.length-1;i++){var p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;d+='C'+(p1[0]+(p2[0]-p0[0])/6).toFixed(1)+' '+(p1[1]+(p2[1]-p0[1])/6).toFixed(1)+' '+(p2[0]-(p3[0]-p1[0])/6).toFixed(1)+' '+(p2[1]-(p3[1]-p1[1])/6).toFixed(1)+' '+p2[0].toFixed(1)+' '+p2[1].toFixed(1);}return d;}
 function niceMax(v){var c=[1,1.5,2,3,4,5,6,8,10,12,16,20];for(var i=0;i<c.length;i++)if(c[i]>=v)return c[i];return 24;}
+/* the spacing of a graph's time lines: three or four quiet lines, never a ruled page */
+function gridStep(ymax){return ymax<=1.5?0.5:ymax<=4?1:ymax<=8?2:ymax<=16?4:8;}
 function rtAt(b,x){var i=Math.floor(x),t=x-i;if(i>=7)return b[7];if(i<0)return b[0];return lerp(b[i],b[i+1],t);}
 function hash(a,b){var x=Math.sin(a*12.9898+b*78.233)*43758.5453;return x-Math.floor(x);}
 var RAMP=[[0x1B,0x0C,0x41],[0xB5,0x36,0x79],[0xFB,0x9B,0x06],[0xFC,0xFF,0xA4]];
@@ -227,16 +239,19 @@ function decaySVG(sysId,s,w,h,o){o=o||{};var sp=spOf(s),b=curBands(s),g=ghostBan
   if(o.frame!==false)out+='<rect class="frm" x="'+L+'" y="'+T+'" width="'+pw+'" height="'+ph+'"/>';
   if(o.cb){out+='<defs><linearGradient id="'+u+'cb" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#1B0C41"/><stop offset=".33" stop-color="#B53679"/><stop offset=".66" stop-color="#FB9B06"/><stop offset="1" stop-color="#FCFFA4"/></linearGradient></defs><rect x="'+(w-R+14)+'" y="'+T+'" width="6" height="'+ph+'" fill="url(#'+u+'cb)"/><text x="'+(w-R+26)+'" y="'+(T+8)+'">0 dB</text><text x="'+(w-R+26)+'" y="'+(T+ph/2+4)+'">\u221230</text><text x="'+(w-R+26)+'" y="'+(T+ph)+'">\u221260</text>';}}
  if(o.mist){out+='<defs><filter id="'+u+'mf" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="16"/></filter><linearGradient id="'+u+'mg" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#8FD3C8" stop-opacity=".5"/><stop offset="1" stop-color="#8FD3C8" stop-opacity="0"/></linearGradient></defs><g filter="url(#'+u+'mf)">';for(var mm=0;mm<28;mm++){var xm=mm/27,yv=Y(rtAt(b,xm*7));out+='<rect x="'+(L+xm*pw-14).toFixed(1)+'" y="'+yv.toFixed(1)+'" width="28" height="'+(T+ph-yv+10).toFixed(1)+'" fill="url(#'+u+'mg)" opacity="'+(0.5+hash(mm,3)*0.5).toFixed(2)+'"/>';}out+='</g>';}
- var stp=ymax<=1.5?0.25:ymax<=3?0.5:ymax<=6?1:ymax<=12?2:4;
- for(var v=0;v<=ymax+1e-6;v+=stp){var yy=Y(v).toFixed(1);out+='<line class="gr" x1="'+L+'" x2="'+(L+pw)+'" y1="'+yy+'" y2="'+yy+'"/>';if(!bars&&!o.noY)out+='<text x="'+(L-8)+'" y="'+(+yy+4)+'" text-anchor="end">'+(+v.toFixed(2))+(v===0?'':' s')+'</text>';}
+ var stp=gridStep(ymax);
+ for(var v=0;v<=ymax+1e-6;v+=stp){var yy=Y(v).toFixed(1);out+='<line class="gr" x1="'+L+'" x2="'+(L+pw)+'" y1="'+yy+'" y2="'+yy+'"/>';if(!bars&&!o.noY)out+='<text x="'+(L-8)+'" y="'+(+yy+4)+'" text-anchor="end">'+(+v.toFixed(2))+(v===0?'':TS+'s')+'</text>';}
  var xy=o.xy!=null?o.xy:h-8;for(var i=0;i<8;i++){out+='<text x="'+X(i).toFixed(1)+'" y="'+xy+'" text-anchor="middle">'+(bars?FREQ[i].toUpperCase():FREQ[i])+(i===7&&!bars?' Hz':'')+'</text>';}
  if(bars){var bw=o.bw||pw/8-12;for(i=0;i<8;i++){var ed=Math.abs(b[i]-nat[i])>0.004,y0=Y(b[i]);if(o.track)out+='<rect class="trk" x="'+(X(i)-bw/2).toFixed(1)+'" y="'+T+'" width="'+bw.toFixed(1)+'" height="'+ph+'"/>';out+='<rect class="bar'+(ed?' ed':'')+'" data-node="'+i+'" data-fid="nd-'+i+'" x="'+(X(i)-bw/2).toFixed(1)+'" y="'+y0.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+(T+ph-y0).toFixed(1)+'" tabindex="0" role="slider" '+nodeAria(s,i,b[i])+'/>';
    if(g){var gy=Y(g[i]);out+='<rect class="gbar" x="'+(X(i)-bw/2+0.5).toFixed(1)+'" y="'+gy.toFixed(1)+'" width="'+(bw-1).toFixed(1)+'" height="'+Math.max(0,T+ph-gy).toFixed(1)+'"/>';}
    out+='<line class="cap-t" x1="'+(X(i)-bw/2-3).toFixed(1)+'" x2="'+(X(i)+bw/2+3).toFixed(1)+'" y1="'+Y(nat[i]).toFixed(1)+'" y2="'+Y(nat[i]).toFixed(1)+'"/>';
    out+='<text class="bv" x="'+X(i).toFixed(1)+'" y="'+(Math.min(y0,Y(nat[i]))-7).toFixed(1)+'" text-anchor="middle">'+b[i].toFixed(b[i]<1?2:1)+(ed?'*':'')+'</text>';}return out+sideCap(s,L+4,12)+'</svg>';}
+ /* the tail's energy, a soft fill from the curve down to the floor, in the look's accent */
+ var cur=smooth(b.map(function(v,i){return [X(i),Y(v)];}));
+ if(o.fill!==false&&!o.heat)out+='<defs><linearGradient id="'+u+'fl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--ac);stop-opacity:.28"/><stop offset="1" style="stop-color:var(--ac);stop-opacity:0"/></linearGradient></defs><path class="dg-fill" d="'+cur+'L'+(L+pw).toFixed(1)+' '+Y(0).toFixed(1)+'L'+L+' '+Y(0).toFixed(1)+'Z" fill="url(#'+u+'fl)"/>';
  out+='<path class="dg-cap" d="'+smooth(nat.map(function(v,i){return [X(i),Y(v)];}))+'"/>';
  if(g){out+='<path class="dg-gho" d="'+smooth(g.map(function(v,i){return [X(i),Y(v)];}))+'"/>';for(i=0;i<8;i++)out+='<circle class="gnd" cx="'+X(i).toFixed(1)+'" cy="'+Y(g[i]).toFixed(1)+'" r="2.5"/>';}
- out+='<path class="dg-cur" d="'+smooth(b.map(function(v,i){return [X(i),Y(v)];}))+'"/>';
+ out+='<path class="dg-cur" d="'+cur+'"/>';
  if(o.dims){var lb=s.lastBand,dx=X(lb)+16,y1=Y(b[lb]),y2=Y(0);out+='<path class="dim" d="M'+dx+' '+y1.toFixed(1)+'V'+y2+'M'+(dx-4)+' '+(y1+4).toFixed(1)+'l8 -8M'+(dx-4)+' '+(y2+4)+'l8 -8M'+(X(lb)+5)+' '+y1.toFixed(1)+'H'+(dx+6)+'"/><text class="dimt" x="'+(dx+8)+'" y="'+((y1+y2)/2+4).toFixed(1)+'">'+(s.link?'':sideName(s)+', ')+b[lb].toFixed(2)+' s at '+FREQ[lb]+' Hz</text>';}
  for(i=0;i<8;i++){var e2=Math.abs(b[i]-nat[i])>0.004,cx=X(i).toFixed(1),cy=Y(b[i]).toFixed(1),cl='nd'+(e2?' ed':'')+(i===s.lastBand?' cur':''),ar=' data-node="'+i+'" data-fid="nd-'+i+'" tabindex="0" role="slider" '+nodeAria(s,i,b[i]);
   if(sysId==='section')out+='<rect class="'+cl+'"'+ar+' x="'+(cx-4.5)+'" y="'+(cy-4.5)+'" width="9" height="9"/>';else out+='<circle class="'+cl+'"'+ar+' cx="'+cx+'" cy="'+cy+'" r="'+(o.big?6:sysId==='catalogue'?4.5:5.5)+'"/>';}
@@ -296,7 +311,11 @@ function decayCurveSVG(a,w,h){var L=30,R=12,T=10,B=20,pw=w-L-R,ph=h-T-B;
 function timeStep(secs){return secs>12?4:secs>6?2:secs>3?1:secs>1.5?0.5:secs>0.6?0.25:0.1;}
 
 /* photographs */
-function photoEl(s,w,h,extra){var z=1+(1-s.dist/100)*0.22,st2=w?'width:'+w+'px;height:'+h+'px;':'';return '<div class="phw" style="'+st2+(extra||'')+'" role="img" aria-label="'+esc(spOf(s).name)+'"><div class="phi ph-'+spOf(s).img+'" style="transform:scale('+z.toFixed(3)+')'+''+'"></div></div>';}
+function photoEl(s,w,h,extra){var z=1+(1-s.dist/100)*0.22,st2=w?'width:'+w+'px;height:'+h+'px;':'',tr=' style="transform:scale('+z.toFixed(3)+')"';
+ /* after a change of space the old photograph lies over the new one and fades (s.fade, kept
+    by the page for a moment); as the page redraws in place, the fade runs on */
+ var old=s.fade&&s.fade.img!==spOf(s).img?'<div class="phi ph-old ph-'+s.fade.img+'"'+tr+'></div>':'';
+ return '<div class="phw" style="'+st2+(extra||'')+'" role="img" aria-label="'+esc(spOf(s).name)+'"><div class="phi ph-'+spOf(s).img+'"'+tr+'></div>'+old+'</div>';}
 
 /* the captured positions on the drawing: a station mark where each recording was made, the
    current one ringed, labelled unless the drawing is small. at(metres) gives the point. */
@@ -387,8 +406,8 @@ function polarSVG(sysId,s,size,o){o=o||{};var sp=spOf(s),b=curBands(s),g=ghostBa
  function R(v){return r0+(r1-r0)*v/ymax;}function ang(i){return (-90+i*45)*Math.PI/180;}function pt(i,v){var r=R(v),a=ang(i);return [c+r*Math.cos(a),c+r*Math.sin(a)];}
  function poly(arr){return arr.map(function(v,i){var p=pt(i,v);return (i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1);}).join('')+'Z';}
  var out='<svg class="dg pol" width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'" data-decay="1" data-polar="1" data-cx="'+c+'" data-cy="'+c+'" data-r0="'+r0+'" data-r1="'+r1+'" data-ymax="'+ymax+'" data-w="'+size+'" role="group" aria-label="'+graphLabel(s)+' Drawn around the room: drag a point outward for a longer decay, or focus it and use the arrow keys.">';
- var stp=ymax<=1.5?0.25:ymax<=3?0.5:ymax<=6?1:ymax<=12?2:4;
- var la=-67.5*Math.PI/180;for(var v=stp;v<=ymax+1e-6;v+=stp){out+='<circle class="gr" cx="'+c+'" cy="'+c+'" r="'+R(v).toFixed(1)+'"/><text x="'+(c+(R(v)+3)*Math.cos(la)).toFixed(1)+'" y="'+(c+(R(v)+3)*Math.sin(la)+3).toFixed(1)+'">'+(+v.toFixed(2))+' s</text>';}
+ var stp=gridStep(ymax);
+ var la=-67.5*Math.PI/180;for(var v=stp;v<=ymax+1e-6;v+=stp){out+='<circle class="gr" cx="'+c+'" cy="'+c+'" r="'+R(v).toFixed(1)+'"/><text x="'+(c+(R(v)+3)*Math.cos(la)).toFixed(1)+'" y="'+(c+(R(v)+3)*Math.sin(la)+3).toFixed(1)+'">'+(+v.toFixed(2))+TS+'s</text>';}
  for(var i=0;i<8;i++){var a=ang(i),p0=pt(i,0),p1=pt(i,ymax),rl=r1+24+6*Math.abs(Math.sin(2*a));out+='<line class="spk" x1="'+p0[0].toFixed(1)+'" y1="'+p0[1].toFixed(1)+'" x2="'+p1[0].toFixed(1)+'" y2="'+p1[1].toFixed(1)+'"/><text x="'+(c+rl*Math.cos(a)).toFixed(1)+'" y="'+(c+rl*Math.sin(a)+4).toFixed(1)+'" text-anchor="middle">'+FREQ[i]+(i===7?' Hz':'')+'</text>';}
  out+='<path class="dg-cap" d="'+poly(nat)+'"/>';
  if(g){out+='<path class="dg-gho" d="'+poly(g)+'"/>';for(i=0;i<8;i++){var gp=pt(i,g[i]);out+='<circle class="gnd" cx="'+gp[0].toFixed(1)+'" cy="'+gp[1].toFixed(1)+'" r="2.5"/>';}}
@@ -404,8 +423,8 @@ function polarSVG(sysId,s,size,o){o=o||{};var sp=spOf(s),b=curBands(s),g=ghostBa
 function ridgesSVG(s,w,h){var sp=spOf(s),b=curBands(s),g=ghostBands(s),nat=sp.bands,L=64,R=40,T=56,B=28,pw=w-L-R,ph=h-T-B,rh=ph/8,amp=rh*2.2,ymax=niceMax(Math.max.apply(null,b.concat(nat,g||[]))*1.15);
  function X(v){return L+pw*v/ymax;}
  var out='<svg class="dg rdg" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" data-decay="1" data-horiz="1" data-l="'+L+'" data-t="'+T+'" data-pw="'+pw+'" data-ph="'+ph+'" data-rh="'+rh.toFixed(2)+'" data-ymax="'+ymax+'" data-w="'+w+'" role="group" aria-label="'+graphLabel(s)+' One ridge per band: drag the foot of a ridge sideways, or focus it and use the arrow keys.">';
- var stp=ymax<=1.5?0.25:ymax<=3?0.5:ymax<=6?1:ymax<=12?2:4;
- for(var v=0;v<=ymax+1e-6;v+=stp){var xx=X(v).toFixed(1);out+='<line class="gr" x1="'+xx+'" x2="'+xx+'" y1="'+(T+rh-amp).toFixed(1)+'" y2="'+(T+ph+6)+'"/><text x="'+xx+'" y="'+(h-8)+'" text-anchor="middle">'+(+v.toFixed(2))+(v===0?'':' s')+'</text>';}
+ var stp=gridStep(ymax);
+ for(var v=0;v<=ymax+1e-6;v+=stp){var xx=X(v).toFixed(1);out+='<line class="gr" x1="'+xx+'" x2="'+xx+'" y1="'+(T+rh-amp).toFixed(1)+'" y2="'+(T+ph+6)+'"/><text x="'+xx+'" y="'+(h-8)+'" text-anchor="middle">'+(+v.toFixed(2))+(v===0?'':TS+'s')+'</text>';}
  var late='';
  for(var i=0;i<8;i++){var base=T+(i+1)*rh,top=base-amp,ed=Math.abs(b[i]-nat[i])>0.004,xb=X(b[i]).toFixed(1),bs=base.toFixed(1),tp=top.toFixed(1);
   out+='<path class="rg-f" style="fill:rgba(239,235,225,'+(0.12-i*0.013).toFixed(3)+')" d="M'+L+' '+tp+'L'+xb+' '+bs+'H'+(L+pw)+'V'+(T+ph)+'H'+L+'Z"/>';
@@ -433,12 +452,39 @@ function lisAria(s,m){return 'aria-label="Listener position. Up and down change 
 function wordmark(s,cls,inner,raw){return '<button class="wmb" data-act="skins" aria-expanded="'+s.skins+'" aria-label="Drenched, change the look, current '+esc(skinOf(s.skin).name)+'" title="Change the look"><span class="'+cls+'"'+(raw?' style="margin:0"':'')+'>'+inner+'</span></button>';}
 function segMode(s){return '<div class="seg" role="group" aria-label="View"><button data-act="mode" data-v="studio" aria-pressed="'+(s.mode==='studio')+'">Studio</button><button data-act="mode" data-v="stage" aria-pressed="'+(s.mode==='stage')+'">Stage</button></div>';}
 function segAB(s){return '<div class="seg" role="group" aria-label="Compare"><button data-act="slot" data-v="A" aria-pressed="'+(s.slot==='A')+'" aria-label="Snapshot A">A</button><button data-act="slot" data-v="B" aria-pressed="'+(s.slot==='B')+'" aria-label="Snapshot B">B</button></div>';}
-function hintText(s){var t;if(s.note)t=s.note;else if(s.hint){var k=s.hint,ov=isOver(s,k),nv=natV(s,k),lb=k==='decay'&&!s.link?sideName(s)+' decay':P[k].l;t='<b>'+lb+' '+esc(fmt(s,k))+'</b>, '+(nv==null?'':ov?'captured '+esc(fmt(s,k,nv))+'. ':'as captured. ')+P[k].l+' '+P[k].help+(k==='decay'&&!s.link?' The other side shows faintly.':'');}
- else t='Drag any control or a point on the graph. Click a value to type it. Shift gives fine steps, and the arrow keys work everywhere. Drag the window\u2019s corner to make everything larger.';
- if(s.freeze)t='<b>Frozen.</b> The tail holds until you release Freeze. '+t;var key=textKey(t),open=s.noteOpen===key;
+/* The strip's line: a note left by the last action, or else a line about the control under
+   the pointer or the keyboard (s.peek, set by the page: a parameter, a point on the graph, a
+   wet EQ band or a button), or else nothing. */
+var ACT_HELP={freeze:'<b>Freeze</b> holds the tail as it sounds now, for as long as it is on. Below the crossover it keeps fading, so the bass never builds up.',
+ match:'<b>Match a room</b> listens to a recording made in a room and sets the decay to match it.',
+ adv:'<b>All parameters</b> opens every setting in place: direct sound, gate, reverse, living tail, width and more.',
+ eq:'<b>Wet EQ</b> shapes the reverb alone. The dry sound is not changed.',
+ wf:'<b>Waterfall</b> shows the tail decaying, frequency by time.',
+ browse:'<b>Spaces</b> lists every recorded room, modelled hall and your own impulse responses.',
+ prev:'<b>Previous space.</b> Locked values stay as they are.',next:'<b>Next space.</b> Locked values stay as they are.',
+ pick:'<b>Choose this space.</b> Locked values stay as they are.',
+ mode:'<b>Studio</b> shows the space and its decay; <b>Stage</b> shows large numbers and a meter per channel.',
+ slot:'<b>A and B</b> hold two settings to compare. Changes go to the one chosen.',
+ skins:'<b>The look.</b> Every look has the same controls and sounds the same.',
+ view:'<b>Plan</b> looks down on the room; <b>Section</b> looks across it.',
+ dlink:'<b>Link</b> ties the left and right decay together. Unlinked, each side has its own curve.',
+ dside:'<b>The side</b> the graph and its values edit; the other shows faintly.',
+ pos:'<b>A captured position.</b> Hear this room from where that recording was made; the old position rings out as the new one takes the sound.',
+ posmenu:function(s){var CP=positionsOf(s);return '<b>Captured positions.</b> This room was recorded from '+(CP?CP.n:'several')+' places or microphone setups. Choose one to hear the room from there.';},
+ report:'<b>Report a bug</b> copies the details a report needs: version, host, computer, audio settings, space and look.',
+ licence:'<b>Activate</b> Drenched with its licence number, or see how long the trial has left.',
+ lock:function(s,p){var k=p.k,on=!!(k&&s.locks[k]);return '<b>Lock '+(k&&P[k]?P[k].l:'')+'.</b> '+(on?'Held when you change space. Click to let it follow each space again.':'Keeps this value when you change space.');},
+ toggle:function(s,p){var k=p.k;return k&&P[k]?'<b>'+P[k].l+' '+esc(fmt(s,k))+'.</b> '+P[k].l+' '+P[k].help:'';}};
+function peekText(s,p){if(!p)return '';
+ if(p.band!=null){var i=p.band,b=curBands(s)[i],nb=spOf(s).bands[i];return '<b>'+bandLabel(s,i)+' '+b.toFixed(2)+TS+'s</b>'+(Math.abs(b-nb)>0.004?', captured '+nb.toFixed(2)+TS+'s':', as captured')+'. Drag the point up or down, or use the arrow keys.';}
+ if(p.eq!=null){var n=p.eq+1;return '<b>Wet EQ band '+n+'.</b> Drag it to set the frequency and gain. The wheel sets Q, and a double click returns it to 0 dB.';}
+ if(p.k&&P[p.k]){var k=p.k,ov=isOver(s,k),nv=natV(s,k),lb=k==='decay'&&!s.link?sideName(s)+' decay':P[k].l;return '<b>'+lb+' '+esc(fmt(s,k))+'</b>'+(nv==null?'':ov?', captured '+esc(fmt(s,k,nv)):', as captured')+'. '+P[k].l+' '+P[k].help+(k==='decay'&&!s.link?' The other side shows faintly.':'');}
+ if(p.act){var h=ACT_HELP[p.act];if(typeof h==='function')h=h(s,p);return h||'';}
+ return '';}
+function hintText(s){var t=s.note||peekText(s,s.peek)||'',key=textKey(t),open=!!t&&s.noteOpen===key;
  /* the strip has room for a line; when the note is longer, More (shown once the page is drawn
     and the note measured) opens all of it above the strip, for the keyboard and touch too */
- return '<div class="hint'+(open?' open':'')+'" title="'+t.replace(/<[^>]*>/g,'').replace(/"/g,'&quot;')+'">'+t+'</div><button class="hint-more" data-act="note" data-v="'+key+'" data-fid="hint-more" aria-expanded="'+open+'"'+(open?'':' hidden')+'>'+(open?'Less':'More')+'<span class="vh"> of the note</span></button>'+licChip(s);}
+ return '<div class="hint'+(open?' open':'')+(t?'':' empty')+'"'+(t?' title="'+t.replace(/<[^>]*>/g,'').replace(/"/g,'&quot;')+'"':'')+'>'+t+'</div><button class="hint-more" data-act="note" data-v="'+key+'" data-fid="hint-more" aria-expanded="'+open+'"'+(open?'':' hidden')+'>'+(open?'Less':'More')+'<span class="vh"> of the note</span></button>'+licChip(s);}
 function textKey(t){var h=5381;for(var i=0;i<t.length;i++)h=((h*33)^t.charCodeAt(i))>>>0;return h.toString(36);}
 function days(n){return n+' day'+(n===1?'':'s');}
 /* the trial, in the strip beside the hint until Drenched is activated */
@@ -447,7 +493,11 @@ function licChip(s){var L=s.licence;if(!L||L.state==='licensed')return '';
  return '<button class="licchip'+(L.state==='ended'?' end':'')+'" data-act="licence" aria-haspopup="dialog">'+(L.state==='ended'?'Trial ended, reverb muted. <u>Activate</u>':'Trial: '+days(L.daysLeft)+' left. <u>Activate</u>')+'</button>';}
 function dbText(v){return v<=-60?'\u2212\u221e':v.toFixed(1).replace('-','\u2212');}
 function meterPct(v){return clamp(1+v/60,0,1)*100;}
-function meters(){var i=Math.max(st.inL,st.inR),o=Math.max(st.outL,st.outR);return '<div class="mm">In<span class="bar"><i data-m="in" style="width:'+meterPct(i).toFixed(0)+'%"></i></span><em data-mt="in">'+dbText(i)+'</em></div><div class="mm">Out<span class="bar"><i data-m="out" style="width:'+meterPct(o).toFixed(0)+'%"></i></span><em data-mt="out">'+dbText(o)+'</em></div>';}
+/* a stereo meter: a bar per side with a peak-hold mark, the peak in dBFS, and a lamp that
+   lights when a side reaches full scale (the page moves the marks and the lamp in place) */
+function meterEl(n,lab,l,r){var h=function(k,v){var m=st.mh[k];return m&&m.v>v?m.v:v;},hl=h(n+'L',l),hr=h(n+'R',r),pk=Math.max(hl,hr),lit=Date.now()-(st.clip[n]||0)<2000;
+ return '<div class="mm'+(lit?' clip':'')+'" data-mch="'+n+'" role="img" aria-label="'+lab+' '+dbText(pk).replace('\u2212','-')+' dB"><span class="mm-l">'+lab+'</span><span class="mm-t"><span class="mm-b"><i data-m="'+n+'L" style="width:'+meterPct(l).toFixed(0)+'%"></i><b data-mp="'+n+'L" style="left:'+meterPct(hl).toFixed(0)+'%"></b></span><span class="mm-b"><i data-m="'+n+'R" style="width:'+meterPct(r).toFixed(0)+'%"></i><b data-mp="'+n+'R" style="left:'+meterPct(hr).toFixed(0)+'%"></b></span></span><em data-mt="'+n+'">'+dbText(pk)+'</em><u class="mm-c" title="Reached full scale"></u></div>';}
+function meters(){return meterEl('in','In',st.inL,st.inR)+meterEl('out','Out',st.outL,st.outR);}
 /* ---- the space browser: search, kinds, Similar, and the tools in a strip of their own ---- */
 /* The kinds the browser filters by. A recorded space goes under its own kind (a garage is
    listed as industrial, which is what the warehouses and stairwells are), the modelled ones
@@ -522,10 +572,9 @@ function chLevel(s,i){var v=s.spkM&&s.spkM[i]!=null?+s.spkM[i]:i===0?s.outL:i===
 function layoutText(s){var n=outputsOf(s).length,l=String(s.layout||'');l=l==='1.0'||(!l&&n===1)?'Mono':l==='2.0'||(!l&&n===2)?'Stereo':l;return (l?l+', ':'')+n+' channel'+(n===1?'':'s');}
 function stageHTML(id,s){var sp=spOf(s),e=eqp(s.el);
  function tile(lbl,k,inner){return '<div class="tile"><div class="ph"><span class="lbl">'+lbl+(k&&k!=='el'?ovrEl(s,k):'')+'</span>'+(k?lockBtn(s,k,lbl):'')+'</div>'+inner+'</div>';}
- var CP=positionsOf(s),thh=CP?176:220,th;if(id==='section')th=planView(s,298,thh);else if(id==='signal')th=pixelRoom(s,298,thh);else th=photoEl(s,298,thh,id==='catalogue'?'filter:grayscale(1)':'');
- /* the captured positions as a chip per recording, under the room */
- var pos=CP?'<div class="cp stg-cp" role="group" aria-label="Captured positions in this room">'+CP.groups.map(function(g,k){return g.items.length>1?g.items.map(function(it){return '<button class="cp-b" data-act="pos" data-v="'+it.i+'" data-fid="pos-'+it.i+'" aria-pressed="'+it.cur+'" aria-label="'+esc(g.label)+', '+esc(it.mics)+(g.atM!=null?', '+f1(g.atM)+' m from the stage':'')+'">'+esc(g.label)+', '+esc(it.mics)+'</button>';}).join('')
-  :posBtn(s,g,k,'cp-b',esc(g.label)+(g.atM!=null?', '+posM(g):''));}).join('')+'</div>':'';
+ var CP=positionsOf(s),thh=CP?186:220,th;if(id==='section')th=planView(s,298,thh);else if(id==='signal')th=pixelRoom(s,298,thh);else th=photoEl(s,298,thh,id==='catalogue'?'filter:grayscale(1)':'');
+ /* the captured positions, under the room */
+ var pos=CP?posCtl(s,CP,'stg-cp'):'';
  var wm={anodised:'<span class="an-wm">DRENCHED</span>',section:'<span class="se-title">Drenched</span>',catalogue:'<span class="ca-wm">Drenched</span>',field:'<span style="font:500 14px var(--fnum)">drenched</span>',vitrine:'<span class="vi-wm" style="margin:0">Drenched</span>',signal:'<span class="si-wm"><i></i>DRENCHED</span>',aperture:'<span class="ap-wm" style="margin:0">Drenched</span>',contact:'<span class="co-wm" style="margin:0">DRENCHED</span>',strata:'<span class="st-wm" style="margin:0">Drenched</span>',rotunda:'<span class="rt-wm" style="margin:0">Drenched</span>',material:'<span class="ma-wm" style="margin:0">DRENCHED</span>',folio:'<span class="fo-wm" style="margin:0;color:var(--tx);text-shadow:none">Drenched</span>'}[id];
  return '<div class="stg-top">'+wordmark(s,'wm',wm,true)+prevNext(s)+'<span style="font-size:13px">'+esc(sp.name)+'</span><span style="flex:1"></span>'+segMode(s)+segAB(s)+'</div>'+
  '<div class="stg"><div class="stg-nums">'+tile('RT60','decay',roEl(s,'decay'))+tile('Pre-delay','pre',roEl(s,'pre'))+tile('Early','el','<span class="big">'+e.e+'<small> dB</small></span>')+tile('Tail',null,'<span class="big">'+e.t+'<small> dB</small></span>')+tile('Mix','mix',roEl(s,'mix'))+'</div>'+
@@ -538,7 +587,7 @@ var COMPOSE={
  anodised:function(s){var sp=spOf(s),e=eqp(s.el),CP=positionsOf(s);
   var ctl=function(k){return '<div class="an-ctl">'+roEl(s,k)+knobEl(s,k,72,'anodised')+'<span class="an-lab">'+P[k].l+ovrEl(s,k)+'</span></div>';};
   var top='<div class="an-top">'+wordmark(s,'an-wm','DRENCHED')+prevNext(s)+'<button class="an-sel" data-act="browse" aria-expanded="'+s.browse+'"><span class="st"><b>'+esc(sp.name)+'</b><small>'+esc(sp.place)+', '+vol(sp)+'</small></span><span class="vh">, choose a space</span>'+ICON.down+'</button><span style="flex:1"></span>'+segMode(s)+segAB(s)+'</div>';
-  var win='<div class="an-win">'+photoEl(s,0,0,'position:absolute;inset:0')+'<div class="scrim"></div><div class="an-name"><b>'+esc(sp.name)+'</b><span>'+esc(sp.mat)+', '+vol(sp)+', captured '+esc(sp.date)+'</span></div>'+(CP?posList(s,CP,'an-cp','Captured from'):'')+
+  var win='<div class="an-win">'+photoEl(s,0,0,'position:absolute;inset:0')+'<div class="scrim"></div><div class="an-name"><b>'+esc(sp.name)+'</b><span>'+esc(sp.mat)+', '+vol(sp)+', captured '+esc(sp.date)+'</span></div>'+(CP?posCtl(s,CP,'an-cp'):'')+
    '<div class="an-ro"><div>'+roEl(s,'decay')+'<span>RT60'+(isOver(s,'decay')?', changed':'')+'</span></div><div>'+roEl(s,'pre')+'<span>Pre-delay</span></div><div><span class="ro" style="font-size:24px;height:30px;width:112px;white-space:nowrap;text-align:right;font-weight:300;display:inline-block;line-height:30px">'+e.e+' dB</span><span>Early</span></div><div><span class="ro" style="font-size:24px;height:30px;width:112px;white-space:nowrap;text-align:right;font-weight:300;display:inline-block;line-height:30px">'+e.t+' dB</span><span>Tail</span></div></div>'+
    '<div class="an-graph">'+decaySVG('anodised',s,568,250,{m:[40,20,14,26]})+'</div><div class="an-link">'+linkCtl(s)+'</div>'+
    '<div class="an-bands">'+bandInputs(s,sp,false)+'</div><div class="glass"></div></div>';
@@ -547,8 +596,8 @@ var COMPOSE={
   return top+win+deck+'<div class="an-strip">'+hintText(s)+meters()+'</div>';},
 
  section:function(s){var sp=spOf(s),e=eqp(s.el),CP=positionsOf(s);
-  /* the schedule of captured positions, in the sheet's corner; the marks are on the drawing */
-  var sched=CP?'<div class="cp se-cp" role="group" aria-label="Captured positions in this room"><span class="se-cp-h">CAPTURED POSITIONS</span>'+CP.groups.map(function(g,k){return '<div class="cp-p" aria-current="'+g.cur+'">'+posBtn(s,g,k,'cp-b','<i class="cp-mk"></i><b>'+esc(g.label.toUpperCase())+'</b>'+(g.atM!=null?'<small>'+posM(g).toUpperCase()+'</small>':''))+micBtns(s,g,'cp-m',function(it){return esc(it.mics.toUpperCase());})+'</div>';}).join('')+'</div>':'';
+  /* the captured positions, in the sheet's corner; the marks are on the drawing */
+  var sched=CP?posCtl(s,CP,'se-cp'):'';
   var head='<div class="se-head">'+wordmark(s,'se-title','Drenched')+'<span class="se-sub" style="color:var(--tx);font-size:12px">'+esc(sp.name.toUpperCase())+'</span><span class="se-sub">PLAN AND SECTION, SHEET '+esc(sp.no.replace(/\D/g,''))+'</span>'+prevNext(s)+'<button class="ca-link" data-act="browse" aria-expanded="'+s.browse+'" style="font:11px var(--fnum);letter-spacing:.08em;color:var(--tx2)">CHANGE SPACE</button><span style="flex:1"></span><div class="se-box"><span class="cap">VIEW</span><button data-act="mode" data-v="studio" aria-pressed="'+(s.mode==='studio')+'">STUDIO</button><button data-act="mode" data-v="stage" aria-pressed="'+(s.mode==='stage')+'">STAGE</button></div><div class="se-box"><span class="cap">REV</span><button data-act="slot" data-v="A" aria-pressed="'+(s.slot==='A')+'">A</button><button data-act="slot" data-v="B" aria-pressed="'+(s.slot==='B')+'">B</button></div></div>';
   var plan='<div class="se-plan"><div class="legend"><div class="se-box" style="height:24px;margin-right:6px"><button data-act="view" data-v="plan" aria-pressed="'+(s.view==='plan')+'">PLAN</button><button data-act="view" data-v="section" aria-pressed="'+(s.view==='section')+'">SECTION</button></div><span><i></i>S1 source</span><span><i class="r"></i>R1 listener. Drag either to move it</span>'+(CP?'<span><i class="st"></i>Captured position, click to go</span>':'')+'</div>'+planView(s,664,620)+sched+'<div class="se-photo">'+photoEl(s,212,132)+'<span>SITE PHOTOGRAPH, '+esc(sp.date.toUpperCase())+'</span></div></div>';
   var row=function(k){return '<div class="se-row"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+lockBtn(s,k,P[k].l)+'</div>';};
@@ -563,19 +612,19 @@ var COMPOSE={
   var wall=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="ca-wall"><div class="ca-top">'+wordmark(s,'ca-wm','Drenched')+'<button class="ca-link" data-act="mode" data-v="studio" aria-pressed="'+(s.mode==='studio')+'">Day</button><button class="ca-link" data-act="mode" data-v="stage" aria-pressed="'+(s.mode==='stage')+'">Night</button><span style="width:8px"></span><button class="ca-link" data-act="slot" data-v="A" aria-pressed="'+(s.slot==='A')+'">A</button><button class="ca-link" data-act="slot" data-v="B" aria-pressed="'+(s.slot==='B')+'">B</button></div>'+
    '<div class="ca-no">'+esc(sp.no)+'</div><h3 class="ca-name'+(sp.name.length>12?' ca-long':'')+'">'+esc(parts.join(' '))+(parts.length?' ':'')+'<em>'+esc(last)+'</em></h3>'+
    '<div class="ca-nav">'+prevNext(s)+'<button class="ca-link" data-act="browse" aria-expanded="'+s.browse+'">Browse the collection</button></div>'+
-   '<dl class="ca-dl"><dt>Location</dt><dd>'+esc(sp.place)+'</dd><dt>Volume</dt><dd>'+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</dd><dt>Captured</dt><dd>'+esc(sp.rec)+', '+esc(sp.date)+'</dd><dt>Listener</dt><dd>'+esc(fmt(s,'dist'))+' from the source, early '+e.e+' dB, tail '+e.t+' dB</dd>'+(CP?'<dt>Heard from</dt><dd><span class="cp ca-cp" role="group" aria-label="Captured positions in this room">'+posLinks(s,CP,'ca-link','ca-cur')+'</span></dd>':'')+'</dl>'+
+   '<dl class="ca-dl"><dt>Location</dt><dd>'+esc(sp.place)+'</dd><dt>Volume</dt><dd>'+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</dd><dt>Captured</dt><dd>'+esc(sp.rec)+', '+esc(sp.date)+'</dd><dt>Listener</dt><dd>'+esc(fmt(s,'dist'))+' from the source, early '+e.e+' dB, tail '+e.t+' dB</dd>'+(CP?'<dt>Heard from</dt><dd>'+posCtl(s,CP,'ca-cp')+'</dd>':'')+'</dl>'+
    '<div class="ca-fig"><div class="fh"><b>Fig. 1</b><span>Decay time by frequency</span>'+linkCtl(s,'end')+'</div>'+decaySVG('catalogue',s,488,160,{m:[36,14,12,24]})+'<p class="fc">Solid line as set, dashed as captured'+(s.link?'. Drag a point to change one band.':', faint the other side. Drag a point to change one band.')+'</p></div>'+
    '<div class="ca-list">'+MAIN.map(row).join('')+'</div>'+
    '<div class="ca-mix">'+knobEl(s,'mix',56,'catalogue')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div><div class="ca-acts"><button class="ca-link" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="ca-link" data-act="match">Match a room</button><button class="ca-link" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'ca-link')+wfBtn(s,'ca-link')+'</div></div></div>';
-  return '<div class="ca-photo">'+photoEl(s,620,760)+(s.note?'<div class="ca-note">'+s.note+'</div>':'')+'<div class="ca-lic">'+licChip(s)+'</div></div>'+wall;},
+  return '<div class="ca-photo">'+photoEl(s,620,760)+'<div class="ca-foot">'+hintText(s)+meters()+'</div></div>'+wall;},
 
  field:function(s){var sp=spOf(s),e=eqp(s.el),CP=positionsOf(s);
   var fr=function(k,cls){return '<div class="fr '+(cls||'')+'">'+knobEl(s,k,cls?44:34,'field')+'<div class="t"><span>'+P[k].l+ovrEl(s,k)+(k==='mix'?lockBtn(s,'mix','Mix'):'')+'</span>'+roEl(s,k)+'</div></div>';};
   var rail=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="fi-rail">'+fr('mix','mix')+MAIN.map(function(k){return fr(k);}).join('')+'<div class="segs">'+segMode(s)+segAB(s)+'</div><div class="acts"><button class="fi-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="fi-btn" data-act="match">'+ICON.match+'Match a room</button><button class="fi-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'All parameters</button>'+eqBtn(s,'fi-btn',null,true)+wfBtn(s,'fi-btn',null,true)+'</div></div>';
   return '<div class="fi-heat">'+decaySVG('field',s,1200,760,{heat:true,cols:88,rows:44,m:[72,280,150,96],big:true,cb:true,xy:712})+'</div>'+
    '<div class="fi-big">'+roEl(s,'decay').replace('class="ro "','class="ro "')+'<div class="what"><b>RT60, mid band'+(s.link?'':', '+sideName(s).toLowerCase())+(isOver(s,'decay')?', changed':'')+'</b><span>Energy decay, frequency by time, \u221260 dB floor</span></div></div>'+
-   '<div class="fi-sp">'+prevNext(s).replace('</button><button','</button><button class="ca-link" data-act="browse" aria-expanded="'+s.browse+'" style="font:13px var(--fui);color:var(--tx);text-decoration:none"><span class="nm">'+esc(sp.name)+', '+vol(sp)+', pre-delay '+esc(fmt(s,'pre'))+'</span></button><button')+linkCtl(s)+'</div>'+
-   '<div class="fi-th">'+photoEl(s,148,92)+'<span>'+esc(sp.place)+'</span></div>'+(CP?posList(s,CP,'fi-cp','Captured from'):'')+rail+
+   '<div class="fi-sp">'+prevNext(s).replace('</button><button','</button><button class="ca-link" data-act="browse" aria-expanded="'+s.browse+'" style="font:13px var(--fui);color:var(--tx);text-decoration:none"><span class="nm">'+esc(sp.name)+', '+vol(sp)+', pre-delay '+esc(fmt(s,'pre'))+'</span></button><button')+linkCtl(s)+(CP?posCtl(s,CP,'fi-cp'):'')+'</div>'+
+   '<div class="fi-th">'+photoEl(s,148,92)+'<span>'+esc(sp.place)+'</span></div>'+rail+
    '<div class="fi-bands">'+[0,1,2,3,4,5,6,7].map(function(i){return bandInput(s,sp,i);}).join('')+'</div>'+
    '<div class="fi-strip">'+hintText(s)+meters()+'</div>';},
 
@@ -585,19 +634,19 @@ var COMPOSE={
   return '<div class="vi-photo">'+photoEl(s,0,0,'position:absolute;inset:0')+'</div><div class="vi-grade"></div>'+
    '<div class="vi-top">'+wordmark(s,'vi-wm','Drenched')+segMode(s)+segAB(s)+'</div>'+
    '<div class="vi-name"><h3>'+esc(sp.name)+'</h3><span>'+esc(sp.place)+', '+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</span></div>'+
-   '<div class="vi-nav"><button data-act="prev">'+ICON.prev+esc(pv.name)+'</button><button data-act="browse" aria-expanded="'+s.browse+'">All spaces'+ICON.down+'</button><button data-act="next">'+esc(nx.name)+ICON.next+'</button></div>'+(CP?posList(s,CP,'vi-cp'):'')+
+   '<div class="vi-nav"><button data-act="prev">'+ICON.prev+esc(pv.name)+'</button><button data-act="browse" aria-expanded="'+s.browse+'">All spaces'+ICON.down+'</button><button data-act="next">'+esc(nx.name)+ICON.next+'</button></div>'+(CP?posCtl(s,CP,'vi-cp'):'')+
    '<div class="vi-lens"><div class="lh"><span class="lt">Decay by frequency'+linkCtl(s)+'</span><span class="vv"><span><b>RT60</b>'+roEl(s,'decay')+'</span><span><b>Pre-delay</b>'+roEl(s,'pre')+'</span><span><b>Distance</b>'+roEl(s,'dist')+'</span></span></div>'+decaySVG('vitrine',s,748,250,{mist:true,m:[40,20,14,26],big:true})+'</div>'+rail+
-   '<div class="vi-strip">'+hintText(s)+'</div>';},
+   '<div class="vi-strip">'+hintText(s)+meters()+'</div>';},
 
  signal:function(s){var sp=spOf(s),ss=s.size/100,e=eqp(s.el),CP=positionsOf(s);
-  /* the captured positions as blocks under the pixel room: a position, then its microphones */
-  var pos=CP?'<div class="cp si-cp" role="group" aria-label="Captured positions in this room">'+CP.groups.map(function(g,k){return '<div class="cp-p" aria-current="'+g.cur+'">'+posBtn(s,g,k,'cp-b','<i class="cp-mk"></i>'+esc(g.label)+(g.atM!=null?'<small>'+posM(g)+'</small>':''))+micBtns(s,g,'cp-m')+'</div>';}).join('')+'</div>':'';
+  /* the captured positions, under the pixel room */
+  var pos=CP?posCtl(s,CP,'si-cp'):'';
   var blk=function(k,cls){var ed=isOver(s,k);return '<div class="blk'+(ed?' ed':'')+(k==='mix'?' wet mix':'')+' '+(cls||'')+'" data-knob="'+k+'">'+knobHit(s,k)+'<div class="blk-l"><span>'+P[k].l+(ed?' *':'')+'</span>'+(k==='mix'?lockBtn(s,'mix','Mix'):'')+'</div>'+roEl(s,k)+'<div class="blk-bar"><i style="width:'+(to01(k,getV(s,k))*100).toFixed(1)+'%"></i></div></div>';};
   var vb=function(l,v,u){return '<div class="blk ro-only"><div class="blk-l"><span>'+l+'</span></div><div class="vbig">'+v+'<small>'+u+'</small></div><div class="blk-bar" style="background:transparent"></div></div>';};
   var rail=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="si-rail">'+blk('mix','mix')+blk('decay')+blk('pre')+'<div class="si-acts"><button class="si-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="si-btn" data-act="match">'+ICON.match+'Match a room</button><button class="si-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'All parameters</button>'+eqBtn(s,'si-btn',null,true)+wfBtn(s,'si-btn',null,true)+'</div></div>';
   return '<div class="si-grid"></div><div class="si-top">'+wordmark(s,'si-wm','<i></i>DRENCHED')+segMode(s)+segAB(s)+'</div>'+
    '<div class="si-space"><div class="nm"><button data-act="browse" aria-expanded="'+s.browse+'" aria-label="Choose a space, current '+esc(sp.name)+'">'+esc(sp.name)+'</button></div><div class="meta">'+prevNext(s)+'<span>'+esc(sp.place)+'</span><span>'+vol(sp)+'</span></div></div>'+
-   '<div class="si-room"><div class="si-mh"><span>Room</span><span>'+f1(sp.W*ss)+' \u00d7 '+f1(sp.D*ss)+' \u00d7 '+f1(sp.H*ss)+' m</span></div>'+photoEl(s,398,CP?110:140)+pixelRoom(s,398,CP?176:260)+pos+'</div>'+
+   '<div class="si-room"><div class="si-mh"><span>Room</span><span>'+f1(sp.W*ss)+' \u00d7 '+f1(sp.D*ss)+' \u00d7 '+f1(sp.H*ss)+' m</span></div>'+photoEl(s,398,140)+pixelRoom(s,398,CP?222:260)+pos+'</div>'+
    '<div class="si-bars"><div class="si-mh"><span>Decay by band</span><span class="mr">'+linkCtl(s)+'<span>'+(s.link?'Seconds, * edited':'* edited')+'</span></span></div>'+decaySVG('signal',s,402,494,{bars:true})+'</div>'+rail+
    '<div class="si-vals">'+blk('size')+blk('bright')+blk('el')+blk('dist')+vb('Early',e.e,'dB')+vb('Tail',e.t,'dB')+vb('Listener',f1(distM(s)),'m')+'</div>'+
    '<div class="si-strip">'+hintText(s)+meters()+'</div>';},
@@ -605,28 +654,22 @@ var COMPOSE={
   var bar=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="ap-nums">'+bandInputs(s,sp)+'</div><div class="ap-bar">'+numCtl(s,'mix','mix')+MAIN.map(function(k){return numCtl(s,k);}).join('')+'<div class="ap-acts"><button class="ap-btn" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="ap-btn" data-act="match">Match a room</button><button class="ap-btn" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'ap-btn')+wfBtn(s,'ap-btn')+'</div></div>';
   return '<div class="ap-photo">'+photoEl(s,0,0,'position:absolute;inset:0')+'</div><div class="ap-grade"></div>'+
    '<div class="ap-top">'+wordmark(s,'ap-wm','Drenched')+segMode(s)+segAB(s)+'</div>'+
-   '<div class="ap-name"><h3>'+esc(sp.name)+'</h3><span>'+prevNext(s)+'<button class="ap-link" data-act="browse" aria-expanded="'+s.browse+'">'+esc(sp.place)+', '+vol(sp)+'</button></span>'+(CP?'<div class="cp ap-cp" role="group" aria-label="Captured positions in this room">'+posLinks(s,CP,'ap-link','ap-cur')+'</div>':'')+'</div>'+
+   '<div class="ap-name"><h3>'+esc(sp.name)+'</h3><span>'+prevNext(s)+'<button class="ap-link" data-act="browse" aria-expanded="'+s.browse+'">'+esc(sp.place)+', '+vol(sp)+'</button></span>'+(CP?posCtl(s,CP,'ap-cp'):'')+'</div>'+
    '<div class="ap-lk">'+linkCtl(s)+'</div><div class="ap-graph">'+decaySVG('aperture',s,1120,236,{m:[0,0,16,4],noY:true,big:true})+'</div>'+bar+
    '<div class="ap-strip">'+hintText(s)+meters()+'</div>';},
 
  contact:function(s){var sp=spOf(s),e=eqp(s.el),CP=positionsOf(s);
-  /* the captured positions as a strip of frames, one per recording, the chosen one marked;
-     each frame is a little plan with the microphones' place on it */
-  var frame=function(g,it,k){var f=posFrac(s,g),mk=f==null?'':'<circle cx="18" cy="'+(7+f*17).toFixed(1)+'" r="2.2"/>';
-   return '<button class="cp-b" data-act="pos" data-v="'+it.i+'" data-fid="pos-'+it.i+'" aria-pressed="'+it.cur+'" aria-label="'+esc(it.mics)+', '+esc(g.label.toLowerCase())+(g.atM!=null?', '+f1(g.atM)+' m from the stage':'')+'"><svg width="36" height="28" viewBox="0 0 36 28" aria-hidden="true"><rect x="5.5" y="3.5" width="25" height="21"/><line x1="8" y1="7" x2="28" y2="7"/>'+mk+'</svg><small>'+esc(it.mics)+'</small></button>';};
-  var strip=CP?'<div class="cp co-cp" role="group" aria-label="Captured positions in this room">'+CP.groups.map(function(g,k){return '<div class="cp-p" aria-current="'+g.cur+'"><span class="co-cp-l">'+esc(g.label)+(g.atM!=null?', '+posM(g):'')+'</span><span class="cp-mics">'+g.items.map(function(it){return frame(g,it,k);}).join('')+'</span></div>';}).join('')+'</div>':'';
+  var strip=CP?posCtl(s,CP,'co-cp'):'';
   var row=function(k){return '<div class="co-row"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+lockBtn(s,k,P[k].l)+'</div>';};
   var right=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="co-right"><div class="co-h"><span>Decay by frequency, seconds</span><span class="mr">'+linkCtl(s)+'<span>'+(s.link?'Ticks mark the capture':'Outlines, other side')+'</span></span></div><div class="co-fad">'+decaySVG('contact',s,506,340,{bars:true,bw:18,track:true,m:[14,14,30,26]})+'</div>'+
    '<div class="co-list">'+MAIN.map(row).join('')+'</div>'+
    '<div class="co-mix">'+knobEl(s,'mix',48,'contact')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix '+lockBtn(s,'mix','Mix')+'</span></div><div class="co-acts"><button class="co-btn" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="co-btn" data-act="match">Match a room</button><button class="co-btn" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'co-btn')+wfBtn(s,'co-btn')+'</div></div></div>';
   return '<div class="co-top">'+wordmark(s,'co-wm','DRENCHED')+segMode(s)+segAB(s)+'</div>'+
-   '<div class="co-print">'+photoEl(s,506,CP?366:430)+'<div class="co-cap"><h3>'+esc(sp.name)+'</h3><div class="co-meta"><span>Location</span><b>'+esc(sp.place)+'</b><span>Volume</span><b>'+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</b><span>Capture</span><b>'+esc(sp.rec)+', '+esc(sp.date)+'</b><span>Listener</span><b>'+esc(fmt(s,'dist'))+', early '+e.e+' dB, tail '+e.t+' dB</b></div></div>'+strip+'<div class="co-nav">'+prevNext(s)+'<span style="font:11px var(--fnum);color:var(--tx2);letter-spacing:.08em">'+esc(sp.no.toUpperCase())+'</span><button class="co-link" data-act="browse" aria-expanded="'+s.browse+'">Browse the prints</button></div></div>'+right+
+   '<div class="co-print">'+photoEl(s,506,CP?392:430)+'<div class="co-cap"><h3>'+esc(sp.name)+'</h3><div class="co-meta"><span>Location</span><b>'+esc(sp.place)+'</b><span>Volume</span><b>'+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</b><span>Capture</span><b>'+esc(sp.rec)+', '+esc(sp.date)+'</b><span>Listener</span><b>'+esc(fmt(s,'dist'))+', early '+e.e+' dB, tail '+e.t+' dB</b></div></div>'+strip+'<div class="co-nav">'+prevNext(s)+'<span style="font:11px var(--fnum);color:var(--tx2);letter-spacing:.08em">'+esc(sp.no.toUpperCase())+'</span><button class="co-link" data-act="browse" aria-expanded="'+s.browse+'">Browse the prints</button></div></div>'+right+
    '<div class="co-strip">'+hintText(s)+meters()+'</div>';},
 
  strata:function(s){var sp=spOf(s),parts=sp.name.split(' '),last=parts.pop(),CP=positionsOf(s);
-  /* the captured positions as strata: a line per position with the microphones' place on it */
-  var layers=CP?'<div class="cp st-cp" role="group" aria-label="Captured positions in this room">'+CP.groups.map(function(g,k){var f=posFrac(s,g);
-   return '<div class="cp-p" aria-current="'+g.cur+'">'+posBtn(s,g,k,'cp-b','<b>'+esc(g.label)+'</b><span class="st-cp-ln">'+(f==null?'':'<i class="cp-mk" style="left:'+(f*100).toFixed(1)+'%"></i>')+'</span><small>'+(g.atM!=null?posM(g):'')+'</small>')+micBtns(s,g,'cp-m')+'</div>';}).join('')+'</div>':'';
+  var layers=CP?posCtl(s,CP,'st-cp'):'';
   var c=function(k){return '<div class="st-c'+(k==='mix'?' mix':'')+'">'+roEl(s,k)+slideEl(s,k)+'<span class="nm">'+P[k].l+ovrEl(s,k)+(k==='mix'?lockBtn(s,'mix','Mix'):'')+'</span></div>';};
   var ctl=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="st-ctl">'+c('mix')+MAIN.map(c).join('')+'</div><div class="st-acts"><button class="st-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="st-btn" data-act="match">'+ICON.match+'Match a room</button><button class="st-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'All parameters</button>'+eqBtn(s,'st-btn',null,true)+wfBtn(s,'st-btn',null,true)+'</div>';
   return '<div class="st-photo">'+photoEl(s,440,760)+'<div class="st-name">'+layers+'<h3>'+esc(parts.join(' '))+(parts.length?' ':'')+'<em>'+esc(last)+'</em></h3><span>'+esc(sp.place)+', '+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</span><div class="nav">'+prevNext(s)+'<button class="st-link" data-act="browse" aria-expanded="'+s.browse+'">All spaces</button></div></div></div>'+
@@ -636,7 +679,7 @@ var COMPOSE={
 
  rotunda:function(s){var sp=spOf(s),e=eqp(s.el),CP=positionsOf(s);
   var c=function(k){return '<div class="rt-c">'+knobEl(s,k,40,'rotunda')+'<div class="t"><span>'+P[k].l+ovrEl(s,k)+'</span>'+roEl(s,k)+'</div></div>';};
-  var side=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="rt-side"><h3>'+esc(sp.name)+'</h3><div class="sub"><span>'+esc(sp.place)+', '+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</span><span>Listener '+esc(fmt(s,'dist'))+' from the source, early '+e.e+' dB, tail '+e.t+' dB</span></div>'+(CP?posList(s,CP,'rt-cp'):'')+'<div class="rt-nav">'+prevNext(s)+'<button class="rt-link" data-act="browse" aria-expanded="'+s.browse+'">All spaces</button></div>'+
+  var side=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="rt-side"><h3>'+esc(sp.name)+'</h3><div class="sub"><span>'+esc(sp.place)+', '+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</span><span>Listener '+esc(fmt(s,'dist'))+' from the source, early '+e.e+' dB, tail '+e.t+' dB</span></div>'+(CP?posCtl(s,CP,'rt-cp'):'')+'<div class="rt-nav">'+prevNext(s)+'<button class="rt-link" data-act="browse" aria-expanded="'+s.browse+'">All spaces</button></div>'+
    '<div class="rt-mix">'+knobEl(s,'mix',64,'rotunda')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div></div><div class="rt-grid">'+MAIN.map(c).join('')+'</div>'+
    '<div class="rt-acts"><button class="rt-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="rt-btn" data-act="match">'+ICON.match+'Match</button><button class="rt-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'More</button>'+eqBtn(s,'rt-btn','EQ',true)+wfBtn(s,'rt-btn','Waterfall',true)+'</div></div>';
   return '<div class="rt-top">'+wordmark(s,'rt-wm','Drenched')+segMode(s)+segAB(s)+'</div>'+
@@ -649,7 +692,7 @@ var COMPOSE={
   return '<div class="ma-top">'+wordmark(s,'ma-wm','DRENCHED')+segMode(s)+segAB(s)+'</div>'+
    '<div class="ma-head"><h3'+(sp.name.length>18?' class="lg"':'')+' title="'+esc(sp.name)+'">'+esc(sp.name)+'</h3><span class="sub"><i></i>'+esc(sp.mat)+', '+vol(sp)+', '+f1(sp.W*ss)+' \u00d7 '+f1(sp.D*ss)+' \u00d7 '+f1(sp.H*ss)+' m</span><div class="nav">'+prevNext(s)+'<button class="ma-link" data-act="browse" aria-expanded="'+s.browse+'">All spaces</button></div></div>'+
    '<div class="ma-graph"><span class="lbl">Decay by frequency'+linkCtl(s)+'<span style="margin-left:auto">RT60 '+esc(fmt(s,'decay'))+', pre-delay '+esc(fmt(s,'pre'))+'</span></span>'+decaySVG('material',s,538,296,{m:[44,18,10,26]})+'</div>'+
-   '<div class="ma-photo">'+photoEl(s,0,0,'position:absolute;inset:0')+'<span class="tag">'+esc(sp.place.toUpperCase())+', '+esc(sp.date.toUpperCase())+'</span>'+(CP?posList(s,CP,'ma-cp'):'')+'</div>'+
+   '<div class="ma-photo">'+photoEl(s,0,0,'position:absolute;inset:0')+'<span class="tag">'+esc(sp.place.toUpperCase())+', '+esc(sp.date.toUpperCase())+'</span>'+(CP?posCtl(s,CP,'ma-cp'):'')+'</div>'+
    '<div class="ma-sw">'+swatchWindow(s).map(function(i){var x=SPACES[i],m=MAT[x.kind];return '<button data-act="pick" data-v="'+i+'" aria-current="'+(i===s.sp)+'"><i style="background:linear-gradient(135deg,'+m.g+' 50%,'+m.ac+' 50%)"></i><span>'+esc(x.name)+'<small>'+f1(decayOf(x.bands))+' s</small></span></button>';}).join('')+'</div>'+ctl+
    '<div class="ma-strip">'+hintText(s)+meters()+'</div>';},
 
@@ -658,7 +701,7 @@ var COMPOSE={
   var page=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="fo-page"><div class="fo-col"><span class="hd">'+esc(sp.no)+'</span><p><b>'+esc(sp.place)+'.</b> '+esc(sp.mat)+', '+vol(sp)+'. Captured '+esc(sp.date)+' with '+esc(sp.rec.toLowerCase())+'.</p><div class="dl"><span>Listener</span><span>'+esc(fmt(s,'dist'))+' from the source</span><span>Early</span><span>'+e.e+' dB</span><span>Tail</span><span>'+e.t+' dB</span><span>Pre-delay</span><span>'+esc(fmt(s,'pre'))+'</span></div></div>'+
    '<div class="fo-col fo-fig"><span class="hd">Fig. 1, decay time by frequency'+linkCtl(s,'end')+'</span>'+decaySVG('folio',s,468,236,{m:[48,14,12,24]})+'<p class="fc">Solid as set, dashed as captured'+(s.link?'':', faint the other side')+'. Drag a point to change one band.</p></div>'+
    '<div class="fo-col"><span class="hd">Settings</span>'+MAIN.map(row).join('')+'<div class="fo-mix">'+knobEl(s,'mix',44,'folio')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div><div class="fo-acts"><button class="fo-btn" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="fo-btn" data-act="match">Match a room</button><button class="fo-btn" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'fo-btn')+wfBtn(s,'fo-btn')+'</div></div></div></div>';
-  return '<div class="fo-hero">'+photoEl(s,0,0,'position:absolute;inset:0')+'<div class="fo-top">'+wordmark(s,'fo-wm','Drenched')+segMode(s)+segAB(s)+'</div><div class="fo-title"><div><span class="kick">'+esc(sp.place)+'</span><h3>'+esc(parts.join(' '))+(parts.length?' ':'')+'<em>'+esc(last)+'</em></h3></div><div class="fo-side">'+(CP?'<div class="cp fo-cp" role="group" aria-label="Captured positions in this room">'+CP.groups.map(function(g,k){return '<div class="cp-p" aria-current="'+g.cur+'">'+posBtn(s,g,k,'cp-b','<b>'+esc(g.label)+'</b>'+(g.atM!=null?'<small>'+posM(g)+'</small>':''))+micBtns(s,g,'cp-m')+'</div>';}).join('')+'</div>':'')+'<div class="nav">'+prevNext(s)+'<button class="fo-link" data-act="browse" aria-expanded="'+s.browse+'">All spaces</button></div></div></div></div>'+page+
+  return '<div class="fo-hero">'+photoEl(s,0,0,'position:absolute;inset:0')+'<div class="fo-top">'+wordmark(s,'fo-wm','Drenched')+segMode(s)+segAB(s)+'</div><div class="fo-title"><div><span class="kick">'+esc(sp.place)+'</span><h3>'+esc(parts.join(' '))+(parts.length?' ':'')+'<em>'+esc(last)+'</em></h3></div><div class="fo-side">'+(CP?posCtl(s,CP,'fo-cp'):'')+'<div class="nav">'+prevNext(s)+'<button class="fo-link" data-act="browse" aria-expanded="'+s.browse+'">All spaces</button></div></div></div></div>'+page+
    '<div class="fo-foot"><span class="no">DRENCHED, '+esc(sp.no.toUpperCase())+'</span>'+hintText(s)+meters()+'</div>';}
 
 };
