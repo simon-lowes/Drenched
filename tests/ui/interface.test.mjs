@@ -1470,3 +1470,78 @@ test ('No control sits inside another, so a screen reader reaches each one, in e
     assert.deepEqual ([...nested], []);
     assert.deepEqual (errors, []);
 });
+
+test ('Escape in a value field puts back the value it had, and nothing is sent', async () =>
+{
+    await open ('anodised');
+    await page.click ('[data-act="adv"]');
+    const field = (await visible ('input[data-fid="ro-decay"]'))[0];
+    const before = await shown ('ro-decay');
+    await page.evaluate (() => { window.__sent = []; });
+    await field.fill ('12');
+    await page.keyboard.press ('Escape');
+    assert.deepEqual (await page.evaluate (() => [document.activeElement.getAttribute ('data-fid'), document.activeElement.value]), ['ro-decay', before]);
+
+    // Leaving the field afterwards changes nothing either.
+    await page.keyboard.press ('Tab');
+    await drawn();
+    assert.deepEqual (await page.evaluate (() => window.__sent.filter (m => m[0] === 'params')), []);
+    assert.equal (await shown ('ro-decay'), before);
+    assert.deepEqual (errors, []);
+});
+
+test ('The space list is one Tab stop: the arrow keys move through the spaces', async () =>
+{
+    await open ('anodised');
+    await page.click ('[data-act="browse"]');
+    await drawn();
+    const stops = await page.evaluate (() => [...document.querySelectorAll ('.brw .brw-pick')].filter (b => b.tabIndex >= 0).length);
+    assert.equal (stops, 0);
+    assert.ok (await page.evaluate (() => document.querySelectorAll ('.brw .brw-pick').length) > 10);
+    assert.deepEqual (errors, []);
+});
+
+test ('Catalogue\'s details list holds only terms and their descriptions', async () =>
+{
+    await open ('catalogue');
+    const bad = await page.evaluate (() => [...document.querySelectorAll ('dl')].flatMap (dl => [...dl.children].filter (c => ! /^(DT|DD|DIV)$/.test (c.tagName) || c.hasAttribute ('role')).map (c => c.outerHTML.slice (0, 60))));
+    assert.deepEqual (bad, []);
+    assert.deepEqual (errors, []);
+});
+
+test ('Nothing on the main screen is cut off, squashed or drawn over its neighbour', async () =>
+{
+    // Signal: the captured positions fit their panel, and the room's volume stays on one line.
+    await open ('signal');
+    const sig = await page.evaluate (() =>
+    {
+        const cp = document.querySelector ('.si-cp'), vol = document.querySelector ('.si-space .meta span:last-child');
+        return { over: cp.scrollHeight - cp.clientHeight, lines: Math.round (vol.getBoundingClientRect().height / parseFloat (getComputedStyle (vol).fontSize)) };
+    });
+    assert.ok (sig.over <= 0, 'positions overflow by ' + sig.over + ' px');
+    assert.ok (sig.lines <= 1.5, 'the volume wraps');
+
+    // Anodised: the decay graph fits inside its window.
+    await page.goto ('about:blank');
+    await open ('anodised');
+    const an = await page.evaluate (() => { const w = document.querySelector ('.an-win'); return w.scrollWidth - w.clientWidth; });
+    assert.ok (an <= 0, 'the graph is ' + an + ' px wider than its window');
+
+    // Strata: every slider has a track to click.
+    await page.goto ('about:blank');
+    await open ('strata');
+    const flat = await page.evaluate (() => [...document.querySelectorAll ('.st-ctl .sl')].filter (e => e.getBoundingClientRect().height < 10).map (e => e.getAttribute ('data-knob')));
+    assert.deepEqual (flat, []);
+
+    // Rotunda: no band value touches a point or a band name.
+    await page.goto ('about:blank');
+    await open ('rotunda');
+    const hits = await page.evaluate (() =>
+    {
+        const r = e => e.getBoundingClientRect(), meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+        const values = [...document.querySelectorAll ('.dg text.bv')], others = [...document.querySelectorAll ('.dg .nd, .dg text:not(.bv)')];
+        return values.flatMap (v => others.filter (o => meet (r (v), r (o))).map (o => v.textContent + ' on ' + (o.textContent || 'a point')));
+    });
+    assert.deepEqual (hits, []);
+    assert.deepEqual (errors, []);
+});

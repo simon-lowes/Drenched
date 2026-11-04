@@ -433,6 +433,8 @@ document.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,A
   if(!ts.length){e.preventDefault();dw.focus({preventScroll:true});return;}
   // from the window itself, or past either end, round to the other end
   if(ti<0||(e.shiftKey?ti===0:ti===ts.length-1)){e.preventDefault();ts[e.shiftKey?ts.length-1:0].focus({preventScroll:true});}return;}
+ // Escape in a field that has been edited puts back the value it had; a second Escape goes on to close
+ if(e.key==='Escape'&&t.matches&&t.matches('input[data-type],input[data-spk],input[data-scn]')&&t.value!==t.defaultValue){t.value=t.defaultValue;t.select();e.preventDefault();return;}
  if(e.key==='Escape'&&st.noteOpen&&!dialogOpen()){st.noteOpen=null;e.preventDefault();renderLive();return;}
  if(e.key==='Escape'&&dialogOpen()){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.wf)st.wf=false;else if(st.eq)st.eq=false;else if(st.scn)st.scn=false;else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
  if(e.ctrlKey||e.metaKey||e.altKey||!t.matches)return;
