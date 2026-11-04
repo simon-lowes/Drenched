@@ -385,16 +385,22 @@ function pixelRoom(s,w,h){var sp=spOf(s),ss=s.size/100,cell=12,cols=Math.floor((
  var c0=Math.floor((cols-rw)/2),r0=Math.floor((rows-rh)/2),sc=c0+1+Math.round(s.sx/100*(rw-3)),sr=r0+2,lc=c0+1+Math.round(s.lx/100*(rw-3)),D=sp.D*ss,lr=r0+1+Math.round(clamp(distM(s)/D,0,1)*(rh-3)),reach=rh*clamp(decayOf(s.bands)/3,0.3,1.2);
  var out='<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" aria-hidden="true" style="display:block">';
  var open=sp.kind==='outdoor'||sp.kind==='underground';/* open ends: every other cell */
+ /* the stage: a band inside the far wall, where the source stands */
+ if(rh>6)out+='<rect x="'+(ox+(c0+1)*cell)+'" y="'+(oy+(r0+1)*cell)+'" width="'+((rw-2)*cell)+'" height="'+(2*cell)+'" fill="var(--ln)" opacity=".45"/>';
  for(var r=0;r<rows;r++)for(var c=0;c<cols;c++){var x=ox+c*cell,y=oy+r*cell,inR=c>=c0&&c<c0+rw&&r>=r0&&r<r0+rh,wall=inR&&(c===c0||c===c0+rw-1||r===r0||r===r0+rh-1),fill=null;
   if(wall&&open&&(r===r0||r===r0+rh-1)&&(c-c0)%2)wall=false;
   if(wall)fill='var(--tx)';else if(inR){var d=Math.hypot(c-sc,r-sr);if(d<reach&&(Math.floor(d)%3===0))fill='var(--ln)';}
-  if(c===sc&&r===sr)fill='var(--ac)';if(c===lc&&r===lr)fill='var(--wet)';
-  if(fill)out+='<rect x="'+(x+1)+'" y="'+(y+1)+'" width="'+(cell-2)+'" height="'+(cell-2)+'" fill="'+fill+'"'+(c===lc&&r===lr?' stroke="var(--tx)" stroke-width="1.5"':'')+'/>';
+  if(fill)out+='<rect x="'+(x+1)+'" y="'+(y+1)+'" width="'+(cell-2)+'" height="'+(cell-2)+'" fill="'+fill+'"/>';
   else out+='<rect x="'+(x+cell/2-1)+'" y="'+(y+cell/2-1)+'" width="2" height="2" fill="var(--ln)"/>';}
+ /* the source, a diamond on the stage; the listener, a ring; the distance between them as a line */
+ var sxp=ox+sc*cell+cell/2,syp=oy+sr*cell+cell/2,lxp=ox+lc*cell+cell/2,lyp=oy+lr*cell+cell/2;
+ out+='<line x1="'+sxp+'" y1="'+syp+'" x2="'+lxp+'" y2="'+lyp+'" stroke="var(--tx2)" stroke-width="1" stroke-dasharray="2 3"/>'+
+  '<path d="M'+sxp+' '+(syp-7)+'L'+(sxp+7)+' '+syp+'L'+sxp+' '+(syp+7)+'L'+(sxp-7)+' '+syp+'Z" fill="var(--ac)"/>'+
+  '<circle cx="'+lxp+'" cy="'+lyp+'" r="6" fill="var(--wet)" stroke="var(--tx)" stroke-width="1.5"/><circle cx="'+lxp+'" cy="'+lyp+'" r="1.6" fill="var(--tx)"/>';
  /* the captured positions: hollow cells down the middle of the room, the current one doubled */
  var CP=positionsOf(s);if(CP)CP.groups.forEach(function(g){if(g.atM==null)return;var pc=c0+1+Math.round(0.5*(rw-3)),pr=r0+1+Math.round(clamp(posDepth(s,g)/D,0,1)*(rh-3)),px=ox+pc*cell,py=oy+pr*cell;
   out+='<g class="si-px'+(g.cur?' cur':'')+'" data-act="pos" data-v="'+posTarget(s,g)+'"><title>'+esc(posAria(g))+'</title><rect x="'+(px-cell/2)+'" y="'+(py-cell/2)+'" width="'+(cell*2)+'" height="'+(cell*2)+'" fill="transparent"/><rect x="'+(px+1.5)+'" y="'+(py+1.5)+'" width="'+(cell-3)+'" height="'+(cell-3)+'" fill="none" stroke="var(--ac)" stroke-width="1.5"/>'+(g.cur?'<rect x="'+(px-2.5)+'" y="'+(py-2.5)+'" width="'+(cell+5)+'" height="'+(cell+5)+'" fill="none" stroke="var(--ac)" stroke-width="1.5"/>':'')+'</g>';});
- out+='<rect x="'+ox+'" y="'+(h-24)+'" width="10" height="10" fill="var(--ac)"/><text x="'+(ox+16)+'" y="'+(h-15)+'" font-size="10" font-family="var(--fnum)" fill="var(--tx2)" style="letter-spacing:.1em">SOURCE</text><rect x="'+(ox+88)+'" y="'+(h-24)+'" width="10" height="10" fill="var(--wet)" stroke="var(--tx)" stroke-width="1.5"/><text x="'+(ox+104)+'" y="'+(h-15)+'" font-size="10" font-family="var(--fnum)" fill="var(--tx2)" style="letter-spacing:.1em">LISTENER '+f1(distM(s))+' M</text>';
+ out+='<path d="M'+(ox+5)+' '+(h-25)+'L'+(ox+11)+' '+(h-19)+'L'+(ox+5)+' '+(h-13)+'L'+(ox-1)+' '+(h-19)+'Z" fill="var(--ac)"/><text x="'+(ox+16)+'" y="'+(h-15)+'" font-size="10" font-family="var(--fnum)" fill="var(--tx2)" style="letter-spacing:.1em">SOURCE</text><circle cx="'+(ox+93)+'" cy="'+(h-19)+'" r="5" fill="var(--wet)" stroke="var(--tx)" stroke-width="1.5"/><text x="'+(ox+104)+'" y="'+(h-15)+'" font-size="10" font-family="var(--fnum)" fill="var(--tx2)" style="letter-spacing:.1em">LISTENER '+f1(distM(s))+' M</text>';
  if(CP)out+='<rect x="'+(ox+230)+'" y="'+(h-23)+'" width="8" height="8" fill="none" stroke="var(--ac)" stroke-width="1.5"/><text x="'+(ox+246)+'" y="'+(h-15)+'" font-size="10" font-family="var(--fnum)" fill="var(--tx2)" style="letter-spacing:.1em">CAPTURED</text>';
  return out+'</svg>';}
 
@@ -606,7 +612,7 @@ var COMPOSE={
   var right=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="se-right"><div><div class="se-h"><span>SECTION A-A, DECAY TIME BY FREQUENCY</span><span>SOLID AS SET, DASHED AS CAPTURED</span></div><div class="se-lk">'+(s.link?'':'<span>FAINT, THE OTHER SIDE</span>')+linkCtl(s)+'</div>'+decaySVG('section',s,454,214,{dims:true,m:[40,16,16,24]})+'</div>'+
    '<div class="se-sched"><div class="se-row hd"><span>Parameter</span><span>Value</span><span style="text-align:right">Typed</span><span></span></div>'+row('mix')+MAIN.map(row).join('')+'</div>'+
    '<div class="se-acts"><button data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button data-act="match">Match a room</button><button data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'')+wfBtn(s,'')+'</div>'+
-   '<div class="se-tb"><div><small>Drawing</small><b>'+esc(sp.name)+'</b></div><div><small>RT60 mid</small><b>'+esc(fmt(s,'decay'))+'</b></div><div><small>Early / tail</small><b>'+e.e+' / '+e.t+' dB</b></div><div><small>Captured</small><b>'+esc(sp.date)+'</b></div></div></div>';
+   '<div class="se-tb"><div><small>Sheet</small><b>'+esc(sp.no)+'</b></div><div><small>RT60 mid</small><b>'+esc(fmt(s,'decay'))+'</b></div><div><small>Early / tail</small><b>'+e.e+' / '+e.t+' dB</b></div><div><small>Captured</small><b>'+esc(sp.date)+'</b></div></div></div>';
   return '<div class="se-grid"></div><div class="se-frame"></div><div class="se-ticks"></div>'+head+plan+right+'<div class="se-strip">'+hintText(s)+meters()+'</div>';},
 
  catalogue:function(s){var sp=spOf(s),e=eqp(s.el),parts=sp.name.split(' '),last=parts.pop(),CP=positionsOf(s);
@@ -627,7 +633,7 @@ var COMPOSE={
   return '<div class="fi-heat">'+decaySVG('field',s,1200,760,{heat:true,cols:88,rows:44,m:[72,280,150,96],big:true,cb:true,xy:712})+'</div>'+
    '<div class="fi-big">'+roEl(s,'decay').replace('class="ro "','class="ro "')+'<div class="what"><b>RT60, mid band'+(s.link?'':', '+sideName(s).toLowerCase())+(isOver(s,'decay')?', changed':'')+'</b><span>Energy decay, frequency by time, \u221260 dB floor</span></div></div>'+
    '<div class="fi-sp">'+prevNext(s).replace('</button><button','</button><button class="ca-link" data-act="browse" aria-expanded="'+s.browse+'" style="font:13px var(--fui);color:var(--tx);text-decoration:none"><span class="nm">'+esc(sp.name)+', '+vol(sp)+', pre-delay '+esc(fmt(s,'pre'))+'</span></button><button')+linkCtl(s)+(CP?posCtl(s,CP,'fi-cp'):'')+'</div>'+
-   '<div class="fi-th">'+photoEl(s,148,92)+'<span>'+esc(sp.place)+'</span></div>'+rail+
+   '<div class="fi-th">'+photoEl(s,120,74)+'<span>'+esc(sp.place)+'</span></div>'+rail+
    '<div class="fi-bands">'+[0,1,2,3,4,5,6,7].map(function(i){return bandInput(s,sp,i);}).join('')+'</div>'+
    '<div class="fi-strip">'+hintText(s)+meters()+'</div>';},
 
@@ -637,7 +643,7 @@ var COMPOSE={
   return '<div class="vi-photo">'+photoEl(s,0,0,'position:absolute;inset:0')+'</div><div class="vi-grade"></div>'+
    '<div class="vi-top">'+wordmark(s,'vi-wm','Drenched')+segMode(s)+segAB(s)+'</div>'+
    '<div class="vi-name"><h3>'+esc(sp.name)+'</h3><span>'+esc(sp.place)+', '+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</span></div>'+
-   '<div class="vi-nav"><button data-act="prev">'+ICON.prev+esc(pv.name)+'</button><button data-act="browse" aria-expanded="'+s.browse+'">All spaces'+ICON.down+'</button><button data-act="next">'+esc(nx.name)+ICON.next+'</button></div>'+(CP?posCtl(s,CP,'vi-cp'):'')+
+   '<div class="vi-nav"><button data-act="prev" aria-label="Previous space, '+esc(pv.name)+'" title="Previous: '+esc(pv.name)+'">'+ICON.prev+'</button><button data-act="browse" aria-expanded="'+s.browse+'">All spaces'+ICON.down+'</button><button data-act="next" aria-label="Next space, '+esc(nx.name)+'" title="Next: '+esc(nx.name)+'">'+ICON.next+'</button></div>'+(CP?posCtl(s,CP,'vi-cp'):'')+
    '<div class="vi-lens"><div class="lh"><span class="lt">Decay by frequency'+linkCtl(s)+'</span><span class="vv"><span><b>RT60</b>'+roEl(s,'decay')+'</span><span><b>Pre-delay</b>'+roEl(s,'pre')+'</span><span><b>Distance</b>'+roEl(s,'dist')+'</span></span></div>'+decaySVG('vitrine',s,748,250,{mist:true,m:[40,20,14,26],big:true})+'</div>'+rail+
    '<div class="vi-strip">'+hintText(s)+meters()+'</div>';},
 
