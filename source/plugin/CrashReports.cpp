@@ -442,13 +442,14 @@ namespace
         putBack (sig);
 
         // A signal sent rather than caused (abort(), raise(), kill) doesn't happen again by
-        // itself, so it is sent again.
-        bool sent = sig == SIGABRT || info == nullptr || info->si_code == SI_USER;
-       #ifdef SI_TKILL
-        sent = sent || (info != nullptr && info->si_code == SI_TKILL);
-       #endif
+        // itself, so it is sent again. A fault the processor raised carries one of the
+        // small positive codes (SEGV_MAPERR, BUS_ADRERR, ILL_ILLOPC, FPE_INTDIV...); a
+        // sent signal carries 0 or below on Linux (SI_USER, SI_TKILL) and 0 or 0x10001
+        // and up on macOS.
+        const auto code = info != nullptr ? info->si_code : 0;
+        const bool caused = sig != SIGABRT && code > 0 && code < 0x100;
 
-        if (sent)
+        if (! caused)
             std::raise (sig);
     }
 
