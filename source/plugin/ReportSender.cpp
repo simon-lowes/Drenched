@@ -66,7 +66,7 @@ void ReportSender::send (const juce::var& report, std::function<void()> onSent)
         return;
 
     state = "sending";
-    message = "Sending…";
+    message = juce::String (juce::CharPointer_UTF8 ("Sending\xe2\x80\xa6"));
     sendChangeMessage();
 
     const auto json = juce::JSON::toString (report, true);
