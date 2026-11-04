@@ -5,11 +5,17 @@
 
 #include <csignal>
 #include <cstdlib>
+#include <cstring>
+#include <string>
+#include <vector>
 
 #if ! JUCE_WINDOWS
  #include <pthread.h>
+ #include <spawn.h>
  #include <sys/wait.h>
  #include <unistd.h>
+
+extern char** environ;
 #endif
 
 using namespace drenched;
@@ -51,26 +57,46 @@ namespace
 
     [[gnu::noinline]] void badWriteInDrenched()
     {
-        *static_cast<volatile int*> (nullptr) = 1;
+        // Read through a volatile, so the compiler can't see the null and drop the write.
+        int* volatile nowhere = nullptr;
+        *static_cast<volatile int*> (nowhere) = 1;
     }
 
-    /** Runs fn in a child process that sets the handler up first; its wait status. */
-    template <typename Fn>
-    int inChild (const juce::File& folder, Fn&& fn)
+    /** A thread that starts straight in the C library's abort(): only system code runs on it. */
+    void abortOnSystemThread()
     {
-        const auto child = fork();
-        REQUIRE (child >= 0);
+        pthread_t thread;
+        pthread_create (&thread, nullptr, reinterpret_cast<void* (*) (void*)> (reinterpret_cast<void*> (&std::abort)), nullptr);
+        pthread_join (thread, nullptr);
+    }
 
-        if (child == 0)
-        {
-            // Without the test framework's own crash handler, which would report a failure.
-            for (const auto sig : { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT })
-                std::signal (sig, SIG_DFL);
+    /** Runs this test program again, as a new process, to do one of the crashes above
+        with the handler set up (the hidden test case "Crash child" below); its wait
+        status. A new process rather than a fork: on macOS a forked child of a program
+        that has started threads can't use Objective-C, which JUCE's strings do. */
+    int inChild (const juce::File& folder, const char* crash)
+    {
+        const auto program = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getFullPathName().toStdString();
+        const auto folderSetting = "DRENCHED_CRASH_CHILD_FOLDER=" + folder.getFullPathName().toStdString();
+        const auto crashSetting = std::string ("DRENCHED_CRASH_CHILD=") + crash;
 
-            crashReports::install (folder, "Drenched test build\nHost: the tests");
-            fn();
-            _exit (0);
-        }
+        std::vector<std::string> settings { folderSetting, crashSetting };
+        std::vector<char*> environment;
+
+        for (auto& setting : settings)
+            environment.push_back (setting.data());
+
+        for (auto** entry = environ; *entry != nullptr; ++entry)
+            if (std::strncmp (*entry, "DRENCHED_CRASH_CHILD", 20) != 0)
+                environment.push_back (*entry);
+
+        environment.push_back (nullptr);
+
+        std::string filter = "Crash child";
+        std::vector<char*> arguments { const_cast<char*> (program.c_str()), filter.data(), nullptr };
+
+        pid_t child = 0;
+        REQUIRE (posix_spawn (&child, program.c_str(), nullptr, nullptr, arguments.data(), environment.data()) == 0);
 
         int status = 0;
         waitpid (child, &status, 0);
@@ -129,7 +155,7 @@ TEST_CASE ("A crash in Drenched leaves a report saying where, and what it last d
     for (auto* crash : { &crashInDrenched, &badWriteInDrenched })
     {
         const auto folder = emptyFolder ("drenched-crash");
-        const auto status = inChild (folder, crash);
+        const auto status = inChild (folder, crash == &crashInDrenched ? "raise" : "bad-write");
 
         // The crash still ends the process, as it would have without Drenched's handler.
         CHECK (WIFSIGNALED (status));
@@ -159,18 +185,37 @@ TEST_CASE ("A crash with Drenched nowhere on the stack is left to the host", "[c
 
     const auto folder = emptyFolder ("drenched-crash");
 
-    // A thread that starts straight in the C library's abort(): only system code runs on it.
-    const auto status = inChild (folder, []
-    {
-        pthread_t thread;
-        pthread_create (&thread, nullptr, reinterpret_cast<void* (*) (void*)> (reinterpret_cast<void*> (&std::abort)), nullptr);
-        pthread_join (thread, nullptr);
-    });
+    const auto status = inChild (folder, "abort-thread");
 
     CHECK (WIFSIGNALED (status));
     CHECK (WTERMSIG (status) == SIGABRT);
     CHECK_FALSE (crashReports::pending (folder).has_value());
     folder.deleteRecursively();
+}
+
+/** Not run by itself (hidden): the crash tests above run it in a new process. */
+TEST_CASE ("Crash child", "[.][crash]")
+{
+    const auto* folder = std::getenv ("DRENCHED_CRASH_CHILD_FOLDER");
+    const juce::String crash (std::getenv ("DRENCHED_CRASH_CHILD"));
+
+    if (folder == nullptr || crash.isEmpty())
+        SKIP ("Only run by the crash tests");
+
+    // Without the test framework's own crash handler, which would report a failure.
+    for (const auto sig : { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT })
+        std::signal (sig, SIG_DFL);
+
+    crashReports::install (juce::File (folder), "Drenched test build\nHost: the tests");
+
+    if (crash == "raise")
+        crashInDrenched();
+    else if (crash == "bad-write")
+        badWriteInDrenched();
+    else if (crash == "abort-thread")
+        abortOnSystemThread();
+
+    std::_Exit (0);
 }
 
 #endif
