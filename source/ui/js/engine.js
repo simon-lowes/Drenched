@@ -195,7 +195,9 @@ function knobSVG(v01,size,sysId){var c=size/2,r=size/2-4,a0=135,a1=135+270*clamp
  if(sysId==='anodised'){for(var i=0;i<=20;i++){var a=(135+13.5*i)*Math.PI/180,L=i%2?2:4;s+='<line class="k-tk" x1="'+(c+Math.cos(a)*(r-1)).toFixed(1)+'" y1="'+(c+Math.sin(a)*(r-1)).toFixed(1)+'" x2="'+(c+Math.cos(a)*(r-1+L)).toFixed(1)+'" y2="'+(c+Math.sin(a)*(r-1+L)).toFixed(1)+'"/>';}}
  s+='<path class="k-tr" d="'+arcD(c,rv,135,405)+'"/>';if(v01>0.004)s+='<path class="k-val" d="'+arcD(c,rv,a0,a1)+'"/>';
  s+='<circle class="k-body" cx="'+c+'" cy="'+c+'" r="'+(rv*0.72).toFixed(1)+'"/>';
- var i0=sysId==='catalogue'?0.78:0.32,i1=sysId==='catalogue'?0.8:0.64;
+ /* a machined face: a knurled rim, a domed cap and a highlight where the room light catches it */
+ if(sysId==='anodised'){var rb=rv*0.72;s+='<circle class="k-knurl" cx="'+c+'" cy="'+c+'" r="'+(rb-2).toFixed(1)+'"/><circle class="k-cap" cx="'+c+'" cy="'+c+'" r="'+(rb*0.74).toFixed(1)+'"/><path class="k-spec" d="'+arcD(c,rb-0.8,195,290)+'"/>';}
+ var i0=sysId==='catalogue'?0.78:sysId==='anodised'?0.3:0.32,i1=sysId==='catalogue'?0.8:0.64;
  s+='<line class="k-ptr" x1="'+(c+Math.cos(pa)*rv*i0).toFixed(1)+'" y1="'+(c+Math.sin(pa)*rv*i0).toFixed(1)+'" x2="'+(c+Math.cos(pa)*rv*i1).toFixed(1)+'" y2="'+(c+Math.sin(pa)*rv*i1).toFixed(1)+'"/>';return s+'</svg>';}
 function ariaFor(s,k){var p=P[k];return 'role="slider" tabindex="0" aria-label="'+p.l+'" aria-valuemin="'+p.min+'" aria-valuemax="'+p.max+'" aria-valuenow="'+(+clamp(getV(s,k),p.min,p.max).toFixed(2))+'" aria-valuetext="'+esc(fmt(s,k))+'"';}
 /* the slider of a block that also holds the value field and a lock: a slider's children are
@@ -588,11 +590,11 @@ var COMPOSE={
   var ctl=function(k){return '<div class="an-ctl">'+roEl(s,k)+knobEl(s,k,72,'anodised')+'<span class="an-lab">'+P[k].l+ovrEl(s,k)+'</span></div>';};
   var top='<div class="an-top">'+wordmark(s,'an-wm','DRENCHED')+prevNext(s)+'<button class="an-sel" data-act="browse" aria-expanded="'+s.browse+'"><span class="st"><b>'+esc(sp.name)+'</b><small>'+esc(sp.place)+', '+vol(sp)+'</small></span><span class="vh">, choose a space</span>'+ICON.down+'</button><span style="flex:1"></span>'+segMode(s)+segAB(s)+'</div>';
   var win='<div class="an-win">'+photoEl(s,0,0,'position:absolute;inset:0')+'<div class="scrim"></div><div class="an-name"><b>'+esc(sp.name)+'</b><span>'+esc(sp.mat)+', '+vol(sp)+', captured '+esc(sp.date)+'</span></div>'+(CP?posCtl(s,CP,'an-cp'):'')+
-   '<div class="an-ro"><div>'+roEl(s,'decay')+'<span>RT60'+(isOver(s,'decay')?', changed':'')+'</span></div><div>'+roEl(s,'pre')+'<span>Pre-delay</span></div><div><span class="ro" style="font-size:24px;height:30px;width:112px;white-space:nowrap;text-align:right;font-weight:300;display:inline-block;line-height:30px">'+e.e+' dB</span><span>Early</span></div><div><span class="ro" style="font-size:24px;height:30px;width:112px;white-space:nowrap;text-align:right;font-weight:300;display:inline-block;line-height:30px">'+e.t+' dB</span><span>Tail</span></div></div>'+
-   '<div class="an-graph">'+decaySVG('anodised',s,568,250,{m:[40,20,14,26]})+'</div><div class="an-link">'+linkCtl(s)+'</div>'+
+   '<div class="an-ro"><div>'+roEl(s,'decay')+'<span>RT60'+(isOver(s,'decay')?', changed':'')+'</span></div><div>'+roEl(s,'pre')+'<span>Pre-delay</span></div><div><span class="ro an-rov">'+e.e+' dB</span><span>Early</span></div><div><span class="ro an-rov">'+e.t+' dB</span><span>Tail</span></div></div>'+
+   '<div class="an-graph">'+decaySVG('anodised',s,568,292,{m:[40,20,14,26]})+'</div><div class="an-link">'+linkCtl(s)+'</div>'+
    '<div class="an-bands">'+bandInputs(s,sp,false)+'</div><div class="glass"></div></div>';
   var deck=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="an-deck"><div class="an-mix">'+roEl(s,'mix')+knobEl(s,'mix',128,'anodised')+'<span class="an-lab">Mix '+lockBtn(s,'mix','Mix')+'</span></div>'+MAIN.map(ctl).join('')+
-   '<div class="an-acts"><button class="an-btn" data-act="freeze" aria-pressed="'+s.freeze+'"><i></i>Freeze</button><button class="an-btn" data-act="match"><i></i>Match a room</button><button class="an-btn" data-act="adv" aria-expanded="'+s.adv+'"><i></i>All parameters</button>'+eqBtn(s,'an-btn','<i></i>Wet EQ')+wfBtn(s,'an-btn','<i></i>Waterfall')+'</div></div>';
+   '<div class="an-acts" role="group" aria-label="Actions"><button class="an-btn" data-act="freeze" aria-pressed="'+s.freeze+'"><i></i>Freeze</button><button class="an-btn" data-act="match"><i></i>Match a room</button><button class="an-btn" data-act="adv" aria-expanded="'+s.adv+'"><i></i>All parameters</button>'+eqBtn(s,'an-btn','<i></i>Wet EQ')+wfBtn(s,'an-btn','<i></i>Waterfall')+'</div></div>';
   return top+win+deck+'<div class="an-strip">'+hintText(s)+meters()+'</div>';},
 
  section:function(s){var sp=spOf(s),e=eqp(s.el),CP=positionsOf(s);
@@ -612,11 +614,12 @@ var COMPOSE={
   var wall=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="ca-wall"><div class="ca-top">'+wordmark(s,'ca-wm','Drenched')+'<button class="ca-link" data-act="mode" data-v="studio" aria-pressed="'+(s.mode==='studio')+'">Day</button><button class="ca-link" data-act="mode" data-v="stage" aria-pressed="'+(s.mode==='stage')+'">Night</button><span style="width:8px"></span><button class="ca-link" data-act="slot" data-v="A" aria-pressed="'+(s.slot==='A')+'">A</button><button class="ca-link" data-act="slot" data-v="B" aria-pressed="'+(s.slot==='B')+'">B</button></div>'+
    '<div class="ca-no">'+esc(sp.no)+'</div><h3 class="ca-name'+(sp.name.length>12?' ca-long':'')+'">'+esc(parts.join(' '))+(parts.length?' ':'')+'<em>'+esc(last)+'</em></h3>'+
    '<div class="ca-nav">'+prevNext(s)+'<button class="ca-link" data-act="browse" aria-expanded="'+s.browse+'">Browse the collection</button></div>'+
-   '<dl class="ca-dl"><dt>Location</dt><dd>'+esc(sp.place)+'</dd><dt>Volume</dt><dd>'+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</dd><dt>Captured</dt><dd>'+esc(sp.rec)+', '+esc(sp.date)+'</dd><dt>Listener</dt><dd>'+esc(fmt(s,'dist'))+' from the source, early '+e.e+' dB, tail '+e.t+' dB</dd>'+(CP?'<dt>Heard from</dt><dd>'+posCtl(s,CP,'ca-cp')+'</dd>':'')+'</dl>'+
-   '<div class="ca-fig"><div class="fh"><b>Fig. 1</b><span>Decay time by frequency</span>'+linkCtl(s,'end')+'</div>'+decaySVG('catalogue',s,488,160,{m:[36,14,12,24]})+'<p class="fc">Solid line as set, dashed as captured'+(s.link?'. Drag a point to change one band.':', faint the other side. Drag a point to change one band.')+'</p></div>'+
+   '<dl class="ca-dl"><dt>Listener</dt><dd>'+esc(fmt(s,'dist'))+' from the source, early '+e.e+' dB, tail '+e.t+' dB</dd>'+(CP?'<dt>Heard from</dt><dd>'+posCtl(s,CP,'ca-cp')+'</dd>':'')+'</dl>'+
+   '<div class="ca-fig"><div class="fh"><b>Fig. 1</b><span>Decay time by frequency</span>'+linkCtl(s,'end')+'</div>'+decaySVG('catalogue',s,488,226,{m:[36,14,12,24]})+'<p class="fc">Solid line as set, dashed as captured'+(s.link?'. Drag a point to change one band.':', faint the other side. Drag a point to change one band.')+'</p></div>'+
    '<div class="ca-list">'+MAIN.map(row).join('')+'</div>'+
    '<div class="ca-mix">'+knobEl(s,'mix',56,'catalogue')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div><div class="ca-acts"><button class="ca-link" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="ca-link" data-act="match">Match a room</button><button class="ca-link" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'ca-link')+wfBtn(s,'ca-link')+'</div></div></div>';
-  return '<div class="ca-photo">'+photoEl(s,620,760)+'<div class="ca-foot">'+hintText(s)+meters()+'</div></div>'+wall;},
+  var label='<div class="ca-label"><b>'+esc(sp.no)+'</b><span>'+esc(sp.place)+'</span><span>'+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</span><span>'+esc(sp.rec)+', '+esc(sp.date)+'</span></div>';
+  return '<div class="ca-photo">'+photoEl(s,620,760)+label+'<div class="ca-foot">'+hintText(s)+meters()+'</div></div>'+wall;},
 
  field:function(s){var sp=spOf(s),e=eqp(s.el),CP=positionsOf(s);
   var fr=function(k,cls){return '<div class="fr '+(cls||'')+'">'+knobEl(s,k,cls?44:34,'field')+'<div class="t"><span>'+P[k].l+ovrEl(s,k)+(k==='mix'?lockBtn(s,'mix','Mix'):'')+'</span>'+roEl(s,k)+'</div></div>';};
