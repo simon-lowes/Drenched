@@ -211,7 +211,7 @@ In the **Section** look, the plan is a room map: drag R1 (you) up and down for D
 Each point is one octave band's decay time, from 0.1 to 20 seconds.
 
 - Drag a point up or down, or type a value in the box for its band.
-- With a point focused, Left and Right move between bands, and Up and Down change it by 0.1 s (0.01 s with Shift).
+- With a point focused, Left and Right move between bands, Up and Down change it by 0.1 s (0.01 s with Shift), Page Up and Page Down by 1 s, and Home and End go to 0.1 s and 20 s. The keys are the same in every look, including Strata and Rotunda, where the graph is drawn sideways or round.
 - The Decay control scales all eight at once.
 
 ### Left and right unlinked

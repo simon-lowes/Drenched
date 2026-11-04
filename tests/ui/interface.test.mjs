@@ -1545,3 +1545,113 @@ test ('Nothing on the main screen is cut off, squashed or drawn over its neighbo
     assert.deepEqual (hits, []);
     assert.deepEqual (errors, []);
 });
+
+test ('Decay points take Page Up, Page Down, Home and End, and say which keys they take', async () =>
+{
+    await open ('aperture');
+    const point = (await visible ('[data-fid="nd-3"]'))[0];
+    await point.focus();
+    const now = async () => +(await page.evaluate (() => document.querySelector ('[data-fid="nd-3"]').getAttribute ('aria-valuenow')));
+    await page.keyboard.press ('End');
+    await drawn();
+    assert.equal (await now(), 20);
+    await page.keyboard.press ('PageDown');
+    await drawn();
+    assert.equal (await now(), 19);
+    await page.keyboard.press ('Home');
+    await drawn();
+    assert.equal (await now(), 0.1);
+    await page.keyboard.press ('PageUp');
+    await drawn();
+    assert.equal (await now(), 1.1);
+    const help = await page.evaluate (() => { const n = document.querySelector ('[data-fid="nd-3"]'), d = document.getElementById (n.getAttribute ('aria-describedby')); return d ? d.textContent : ''; });
+    assert.match (help, /Page Up/);
+    assert.match (help, /Home and End/);
+    assert.deepEqual (errors, []);
+});
+
+test ('Every look names its space, decay and controls for screen readers, in Studio and Stage', async () =>
+{
+    for (const look of ['anodised', 'section', 'catalogue', 'field', 'vitrine', 'signal', 'aperture', 'contact', 'strata', 'rotunda', 'material', 'folio'])
+    {
+        await page.goto ('about:blank');
+        await open (look);
+        for (const mode of ['studio', 'stage'])
+        {
+            if (mode === 'stage') { await page.click ('[data-act="mode"][data-v="stage"]'); await drawn(); }
+            const areas = await page.evaluate (() => [...document.querySelectorAll ('.screen [role="region"]')].filter (r => r.querySelector ('button, input, [tabindex="0"]')).map (r => r.getAttribute ('aria-label')));
+            for (const need of ['Space', 'Decay', 'Controls'])
+                assert.ok (areas.includes (need), look + ' ' + mode + ' has no "' + need + '" area: ' + areas.join (', '));
+            assert.equal (new Set (areas).size, areas.length, look + ' ' + mode + ' names two areas the same: ' + areas.join (', '));
+        }
+    }
+    assert.deepEqual (errors, []);
+});
+
+test ('A toggle that is on shows more than its small lamp', async () =>
+{
+    await open ('anodised');
+    const look = () => page.evaluate (() => { const b = document.querySelector ('.an-btn[data-act="freeze"]'), c = getComputedStyle (b); return [c.backgroundImage, c.color, c.borderColor].join (' | '); });
+    const off = await look();
+    await page.click ('.an-btn[data-act="freeze"]');
+    await drawn();
+    assert.notEqual (await look(), off);
+    assert.deepEqual (errors, []);
+});
+
+test ('Wider text spacing does not push text over its neighbours or controls off the screen', async () =>
+{
+    const spacing = '*{line-height:1.5!important;letter-spacing:.12em!important;word-spacing:.16em!important}p{margin-bottom:2em!important}';
+    const widen = async () => { await page.addStyleTag ({ content: spacing }); await page.evaluate (() => document.fonts.ready); await page.evaluate (() => window.schedule()); await drawn(); };
+
+    // At the designed spacing nothing is set smaller or made to scroll in these looks.
+    for (const look of ['anodised', 'folio', 'catalogue'])
+    {
+        await page.goto ('about:blank');
+        await open (look);
+        await page.evaluate (() => document.fonts.ready);
+        assert.deepEqual (await page.evaluate (() => [...document.querySelectorAll ('.spill, [data-fitted]')].map (e => e.className)), [], look);
+    }
+
+    // Signal: the space name stays above the room, and values fit their boxes.
+    await page.goto ('about:blank');
+    await open ('signal');
+    await widen();
+    const sig = await page.evaluate (() =>
+    {
+        const meta = document.querySelector ('.si-space .meta').getBoundingClientRect(), room = document.querySelector ('.si-room').getBoundingClientRect();
+        return { gap: room.top - meta.bottom, cut: [...document.querySelectorAll ('.blk input.ro')].filter (e => e.scrollWidth > e.clientWidth + 1).map (e => e.value) };
+    });
+    assert.ok (sig.gap >= 0, 'the name runs ' + -sig.gap + ' px into the room');
+    assert.deepEqual (sig.cut, []);
+
+    // Rotunda and Folio: a column that no longer fits scrolls, so every button can still be reached.
+    for (const [look, column] of [['rotunda', '.rt-side'], ['folio', '.fo-page>.fo-col:last-child']])
+    {
+        await page.goto ('about:blank');
+        await open (look);
+        await widen();
+        const reach = await page.evaluate ((column) =>
+        {
+            const c = document.querySelector (column), box = c.getBoundingClientRect(), wf = c.querySelector ('[data-act="wf"]');
+            wf.scrollIntoView ({ block: 'nearest' });
+            const r = wf.getBoundingClientRect();
+            return { scrolls: getComputedStyle (c).overflowY, inside: r.top >= box.top - 1 && r.bottom <= box.bottom + 1 };
+        }, column);
+        assert.equal (reach.scrolls, 'auto', look);
+        assert.ok (reach.inside, look + ': Waterfall cannot be scrolled into view');
+    }
+    assert.deepEqual (errors, []);
+});
+
+test ('Signal: a two-line space name is set smaller so the room panel never covers its arrows', async () =>
+{
+    await open ('signal');
+    await page.evaluate (() => { st.sp = 3; window.schedule(); });
+    await drawn();
+    await page.evaluate (() => document.fonts.ready);
+    await drawn();
+    const gap = await page.evaluate (() => document.querySelector ('.si-room').getBoundingClientRect().top - document.querySelector ('.si-space .meta').getBoundingClientRect().bottom);
+    assert.ok (gap >= 0, 'the room covers the arrows by ' + -gap + ' px');
+    assert.deepEqual (errors, []);
+});

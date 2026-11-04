@@ -243,7 +243,7 @@ function decaySVG(sysId,s,w,h,o){o=o||{};var sp=spOf(s),b=curBands(s),g=ghostBan
  return out+sideCap(s,L+6,T+11)+'</svg>';}
 /* the pieces every decay graph shares while the sides are unlinked */
 function graphLabel(s){return s.link?'Decay time by frequency.':sideName(s)+' side\u2019s decay time by frequency; the '+(s.side==='R'?'left':'right')+' is drawn faintly.';}
-function nodeAria(s,i,v){return 'aria-label="'+bandLabel(s,i)+'" aria-valuemin="0.1" aria-valuemax="20" aria-valuenow="'+v.toFixed(2)+'" aria-valuetext="'+v.toFixed(2)+' seconds"';}
+function nodeAria(s,i,v){return 'aria-label="'+bandLabel(s,i)+'" aria-valuemin="0.1" aria-valuemax="20" aria-valuenow="'+v.toFixed(2)+'" aria-valuetext="'+v.toFixed(2)+' seconds" aria-describedby="nd-keys"';}
 /* a word in the plot naming the side the solid curve and its values belong to */
 function sideCap(s,x,y,anchor){return s.link?'':'<text class="sd" x="'+x+'" y="'+y+'"'+(anchor?' text-anchor="'+anchor+'"':'')+'>'+sideName(s)+'</text>';}
 /* the Link control: one curve for both sides, or a side to edit with the other shown faintly */

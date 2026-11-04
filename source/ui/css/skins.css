@@ -356,6 +356,8 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .an-btn{height:34px;border-radius:4px;border:1px solid #34363A;background:linear-gradient(180deg,#232528,#1A1B1D);color:#CFC9BD;font-size:12px;display:flex;align-items:center;gap:9px;padding:0 12px;box-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 2px 4px rgba(0,0,0,.5)}
 .an-btn i{width:6px;height:6px;border-radius:3px;background:#3A3C40;box-shadow:inset 0 1px 1px rgba(0,0,0,.8)}
 .an-btn[aria-pressed="true"] i,.an-btn[aria-expanded="true"] i{background:#FFB547;box-shadow:0 0 6px rgba(255,181,71,.8)}
+/* an on toggle also lights its face and label, not only the 6 px lamp (WCAG 1.4.1) */
+.an-btn[aria-pressed="true"],.an-btn[aria-expanded="true"]{background:linear-gradient(180deg,#2E3034,#232528);border-color:#6A5428;color:#FFB547}
 .an-strip{position:absolute;left:28px;right:28px;bottom:12px;height:24px;display:flex;align-items:center;gap:18px}
 .an-strip .hint{flex:1}
 .s-anodised .seg{background:#121314;border-color:#2E3034}.s-anodised .seg button[aria-pressed="true"]{background:#2A2C30;color:#FFB547}
@@ -508,7 +510,7 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .fi-rail .segs{display:flex;gap:8px;margin-top:12px}
 .fi-rail .acts{display:flex;flex-direction:column;gap:4px;margin-top:12px}
 .fi-btn{height:28px;border:1px solid rgba(255,255,255,.14);background:rgba(7,8,11,.6);color:var(--tx);font:11px var(--fnum);text-align:left;padding:0 10px;display:flex;align-items:center;gap:8px;border-radius:3px}
-.fi-btn[aria-pressed="true"],.fi-btn[aria-expanded="true"]{border-color:var(--ac);color:var(--ac)}
+.fi-btn[aria-pressed="true"],.fi-btn[aria-expanded="true"]{border-color:var(--ac);color:var(--ac);box-shadow:inset 3px 0 0 var(--ac)}
 .fi-bands{position:absolute;left:72px;width:850px;bottom:66px;display:grid;grid-template-columns:repeat(8,minmax(0,1fr))}
 .fi-bands .ro{width:100%;height:24px;background:rgba(7,8,11,.55);border-color:rgba(255,255,255,.1);font-size:13px}
 .fi-bands .ro.ed{color:var(--ac)}
@@ -892,6 +894,8 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .fo-acts{display:flex;gap:14px;margin-top:6px}
 .fo-btn{background:none;border:0;padding:0;font:13px var(--fui);color:var(--tx2);text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--ln)}
 .fo-btn[aria-pressed="true"],.fo-btn[aria-expanded="true"]{color:var(--ac);text-decoration-color:var(--ac)}
+/* link-style toggles that are on get a heavier underline as well as colour (WCAG 1.4.1) */
+.ca-link[aria-pressed="true"],.ca-link[aria-expanded="true"],.ap-btn[aria-pressed="true"],.ap-btn[aria-expanded="true"],.co-link[aria-pressed="true"],.co-link[aria-expanded="true"],.fo-link[aria-pressed="true"],.fo-link[aria-expanded="true"],.fo-btn[aria-pressed="true"],.fo-btn[aria-expanded="true"]{text-decoration-thickness:2px}
 .fo-foot{position:absolute;left:48px;right:48px;bottom:14px;height:24px;display:flex;align-items:center;gap:16px;border-top:1px solid var(--ln);padding-top:6px}
 .fo-foot .hint{flex:1;font:11px var(--fnum)}
 .fo-foot .no{font:11px var(--fnum);letter-spacing:.1em;color:var(--tx2);white-space:nowrap}
@@ -1073,3 +1077,11 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .sys .si-space .nm button:focus-visible{outline:2px solid var(--focus);outline-offset:2px;box-shadow:0 0 0 2px var(--g)}
 /* inside a box that clips, the ring is drawn inside the control's edge */
 .sys .cap .seg button:focus-visible,.sys .brw .brw-pick:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;box-shadow:inset 0 0 0 4px var(--g)}
+
+/* text set wider or taller than designed: rows wrap, columns that still overflow scroll (see fitText in app.js) */
+.ca-acts{flex-wrap:wrap;justify-content:flex-end;min-width:0;row-gap:4px}
+.co-acts{flex-wrap:wrap;row-gap:6px}
+.spill{overflow-y:auto;overscroll-behavior:contain;padding-right:4px}
+.si-space{height:94px}
+.fo-page{grid-template-rows:minmax(0,1fr)}
+.fo-page>.fo-col:last-child{height:318px}
