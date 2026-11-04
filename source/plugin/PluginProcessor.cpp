@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "CrashReports.h"
 #include "Settings.h"
 #include "ChannelLayouts.h"
 #include "MovedFiles.h"
@@ -122,6 +123,13 @@ DrenchedProcessor::DrenchedProcessor()
     state.state.addListener (this);
     keepSessionForSaving();
     startTimerHz (20);
+
+    // A crash in Drenched leaves a report to offer next time (CrashReports.h). Tests that
+    // crash on purpose turn it off with DRENCHED_CRASH_REPORTS=0.
+    if (juce::SystemStats::getEnvironmentVariable ("DRENCHED_CRASH_REPORTS", "1") != "0")
+        crashReports::install (settings::crashFolder(), aboutThisBuild());
+
+    crashReports::step ("opened in " + juce::String (juce::PluginHostType().getHostDescription()));
 }
 
 DrenchedProcessor::~DrenchedProcessor()
@@ -513,6 +521,8 @@ void DrenchedProcessor::loadLibrarySpace (const juce::String& id, bool now)
 
 void DrenchedProcessor::loadImpulseResponseAsync (const juce::File& file, bool keepSettings)
 {
+    crashReports::step ("loading an impulse response (" + file.getFileExtension() + ", "
+                        + juce::String (file.getSize() / 1024) + " KB)");
     std::weak_ptr<int> alive = lifetime;
 
     loader.addJob ([this, file, alive, keepSettings]
@@ -1174,18 +1184,13 @@ void DrenchedProcessor::restoreImpulseResponse (juce::ValueTree ui)
         ui.setProperty (UiIDs::irPath, found, nullptr);
 }
 
-juce::String DrenchedProcessor::bugReportDetails()
+juce::String DrenchedProcessor::aboutThisBuild() const
 {
    #ifdef JucePlugin_VersionString
     const juce::String version (JucePlugin_VersionString);
    #else
     const juce::String version ("unknown");
    #endif
-
-    const auto layout = getBusesLayout();
-    const auto ui = getUiState();
-    const auto irName = ui.getProperty (UiIDs::irName, "").toString();
-    const auto space = chosenSpaceId();
 
    #ifdef DRENCHED_BUILD_NUMBER
     const juce::String buildNumber (DRENCHED_BUILD_NUMBER), commit (DRENCHED_COMMIT);
@@ -1203,6 +1208,18 @@ juce::String DrenchedProcessor::bugReportDetails()
     lines.add ("System: " + juce::SystemStats::getOperatingSystemName() + ", "
                + juce::SystemStats::getCpuModel().trim() + ", "
                + juce::String (juce::SystemStats::getMemorySizeInMegabytes() / 1024.0, 1) + " GB");
+    return lines.joinIntoString ("\n");
+}
+
+juce::String DrenchedProcessor::bugReportDetails()
+{
+    const auto layout = getBusesLayout();
+    const auto ui = getUiState();
+    const auto irName = ui.getProperty (UiIDs::irName, "").toString();
+    const auto space = chosenSpaceId();
+
+    juce::StringArray lines;
+    lines.add (aboutThisBuild());
     lines.add ("Audio: " + juce::String (getSampleRate(), 0) + " Hz, buffer " + juce::String (getBlockSize())
                + ", latency " + juce::String (getLatencySamples()) + " samples"
                + (params.lowCpu.load() > 0.5f ? " (Low CPU)" : ""));
@@ -1571,6 +1588,7 @@ void DrenchedProcessor::prepareToPlay (double hostRate, int)
     // value it failed to read. Building a room for that could take forever, so the plugin
     // prepares at the nearest rate it can play; the host prepares it again before playing.
     const auto sampleRate = std::isfinite (hostRate) && hostRate > 0.0 ? std::clamp (hostRate, lowestRate, highestRate) : 48000.0;
+    crashReports::step ("host prepared " + juce::String (hostRate, 0) + " Hz, buffer " + juce::String (getBlockSize()));
 
     // A capture can't carry on across new audio settings: the audio thread is stopped now,
     // so the take is dropped and the message thread says why.
@@ -1953,6 +1971,7 @@ void DrenchedProcessor::migrateState (juce::ValueTree& session) const
 
 void DrenchedProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
+    crashReports::step ("host loaded a session (" + juce::String (sizeInBytes) + " bytes)");
     juce::ValueTree session;
 
     if (auto xml = getXmlFromBinary (data, sizeInBytes); xml != nullptr && xml->hasTagName (stateType))

@@ -173,6 +173,9 @@ public:
         the look. Plain text, one fact per line. Message thread only. */
     juce::String bugReportDetails();
 
+    /** The first lines of a bug report: version and build, format, host and computer. */
+    juce::String aboutThisBuild() const;
+
     /** The loaded impulse response for the interface: name, channels, rate, measured decay
         and room size, or whether its file is missing. Void when none is loaded. */
     juce::var impulseResponseInfo();

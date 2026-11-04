@@ -114,6 +114,13 @@ namespace settings
             .getChildFile ("Drenched").getChildFile ("Imported");
     }
 
+    /** Where crash reports wait until they are sent or let go (crashReports): beside the
+        settings file, in the user's application data. */
+    inline juce::File crashFolder()
+    {
+        return options().getDefaultFile().getParentDirectory().getChildFile ("Crash reports");
+    }
+
     /** Where the Windows WebView2 runtime may keep its cache for this plugin. */
     inline juce::File webViewDataFolder()
     {

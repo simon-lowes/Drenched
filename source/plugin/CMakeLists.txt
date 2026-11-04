@@ -98,12 +98,14 @@ set_source_files_properties(PluginProcessor.cpp PROPERTIES COMPILE_DEFINITIONS
     "DRENCHED_BUILD_NUMBER=\"${DRENCHED_BUILD_NUMBER}\";DRENCHED_COMMIT=\"${DRENCHED_COMMIT}\"")
 
 target_sources(Drenched PRIVATE
+    CrashReports.cpp
     Library.cpp
     LicenceManager.cpp
     PageMessages.cpp
     PluginProcessor.cpp
     PluginEditor.cpp
     RecordingCache.cpp
+    ReportSender.cpp
     WebView.cpp)
 
 target_compile_definitions(Drenched PUBLIC
@@ -122,6 +124,15 @@ endif()
 # (npx wrangler dev in server/); release builds set the deployed address.
 set(DRENCHED_LICENCE_SERVER "http://127.0.0.1:8787" CACHE STRING "Activation server address")
 target_compile_definitions(Drenched PRIVATE DRENCHED_LICENCE_SERVER="${DRENCHED_LICENCE_SERVER}")
+
+# Where Report a bug sends reports: the relay (server/reports/relay.mjs, or the activation
+# server's /v1/report), which emails them on. The address they are emailed to is only on
+# that server, never in the plugin.
+set(DRENCHED_REPORT_SERVER "https://simonlowes.cloud" CACHE STRING "Bug report relay address")
+if(NOT DRENCHED_REPORT_SERVER MATCHES "^https?://[^/]+$")
+    message(FATAL_ERROR "DRENCHED_REPORT_SERVER must be an address like https://example.com, not ${DRENCHED_REPORT_SERVER}")
+endif()
+set_property(SOURCE ReportSender.cpp APPEND PROPERTY COMPILE_DEFINITIONS "DRENCHED_REPORT_SERVER=\"${DRENCHED_REPORT_SERVER}\"")
 
 # Beta builds, for testers before sales start, have no trial or licence check.
 # Release builds turn this off.
@@ -157,6 +168,7 @@ target_link_libraries(Drenched
         juce::juce_audio_utils
         juce::juce_dsp
         juce::juce_gui_extra
+        ${CMAKE_DL_LIBS}
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags

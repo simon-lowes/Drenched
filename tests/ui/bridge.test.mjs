@@ -140,8 +140,10 @@ function problems (sent)
 const STATES = [
     {}, { adv: true }, { mode: 'stage' }, { mode: 'stage', adv: true }, { eq: true }, { wf: true }, { scn: true }, { spk: true },
     { capture: true }, { lic: true }, { lic: true, licOff: true }, { credits: true }, { skins: true }, { browse: true },
+    { rep: true, repShow: true }, { rep: true, report: { state: 'idle', message: '', crash: '4 Nov 2026, 18:00', details: 'Drenched', steps: '', crashText: 'crashed' } },
 ];
-const CLOSED = { adv: false, mode: 'studio', eq: false, wf: false, scn: false, spk: false, capture: false, lic: false, licOff: false, credits: false, skins: false, browse: false };
+const CLOSED = { adv: false, mode: 'studio', eq: false, wf: false, scn: false, spk: false, capture: false, lic: false, licOff: false, credits: false, skins: false, browse: false,
+                 rep: false, repShow: false, report: { state: 'idle', message: '', crash: false, details: '', steps: '', crashText: '' } };
 
 /** Puts the page in one of STATES, in its look. */
 const show = (look, state) => page.evaluate (async ([look, state, closed]) =>
@@ -309,7 +311,8 @@ test ('Every control clicked sends only what the plugin takes', async () =>
 
     // The plugin heard from each of the buttons that are for it.
     const wanted = ['params', 'ui', 'match', 'loadIr', 'copyReport', 'sceneStore', 'sceneRecall', 'sceneDelete', 'startCapture',
-                    'licenceOpen', 'licenceActivate', 'licenceCode', 'licencePage', 'copyText', 'pasteText', 'displays'];
+                    'licenceOpen', 'licenceActivate', 'licenceCode', 'licencePage', 'copyText', 'pasteText', 'displays',
+                    'reportOpen', 'reportSend', 'reportDismissCrash'];
     assert.deepEqual (wanted.filter (n => ! heard.has (n)), [], 'never sent; heard: ' + [...heard]);
 });
 

@@ -65,7 +65,7 @@
     {"id": "decayR4k", "kind": "float", "min": 0.1, "max": 20.0, "step": 0.01, "default": 1.6},
     {"id": "decayR8k", "kind": "float", "min": 0.1, "max": 20.0, "step": 0.01, "default": 1.1}
   ],
-  "toPlugin": ["ready", "params", "gesture", "ui", "loadIr", "dropIr", "match", "displays", "sceneStore", "sceneRename", "sceneDelete", "sceneRecall", "startCapture", "cancelCapture", "licenceOpen", "licenceActivate", "licenceCode", "licenceDeactivate", "licencePage", "copyText", "copyReport", "pasteText"],
-  "toPage": ["state", "meters", "capture", "licence", "matched", "analysis", "spectrum", "pasted", "dropFailed"],
+  "toPlugin": ["ready", "params", "gesture", "ui", "loadIr", "dropIr", "match", "displays", "sceneStore", "sceneRename", "sceneDelete", "sceneRecall", "startCapture", "cancelCapture", "licenceOpen", "licenceActivate", "licenceCode", "licenceDeactivate", "licencePage", "copyText", "copyReport", "reportOpen", "reportSend", "reportDismissCrash", "pasteText"],
+  "toPage": ["state", "meters", "capture", "licence", "matched", "analysis", "spectrum", "pasted", "dropFailed", "report"],
   "interfaceKeys": ["spaceId", "locks", "mode", "view", "speakers", "skin"]
 }
