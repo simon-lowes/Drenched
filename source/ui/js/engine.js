@@ -650,12 +650,16 @@ var COMPOSE={
    '<div class="si-bars"><div class="si-mh"><span>Decay by band</span><span class="mr">'+linkCtl(s)+'<span>'+(s.link?'Seconds, * edited':'* edited')+'</span></span></div>'+decaySVG('signal',s,402,494,{bars:true})+'</div>'+rail+
    '<div class="si-vals">'+blk('size')+blk('bright')+blk('el')+blk('dist')+vb('Early',e.e,'dB')+vb('Tail',e.t,'dB')+vb('Listener',f1(distM(s)),'m')+'</div>'+
    '<div class="si-strip">'+hintText(s)+meters()+'</div>';},
- aperture:function(s){var sp=spOf(s),CP=positionsOf(s);
-  var bar=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="ap-nums">'+bandInputs(s,sp)+'</div><div class="ap-bar">'+numCtl(s,'mix','mix')+MAIN.map(function(k){return numCtl(s,k);}).join('')+'<div class="ap-acts"><button class="ap-btn" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="ap-btn" data-act="match">Match a room</button><button class="ap-btn" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'ap-btn')+wfBtn(s,'ap-btn')+'</div></div>';
+ aperture:function(s){var sp=spOf(s),CP=positionsOf(s),GL=36,GW=1120-2*GL;
+  /* the windows and the room match live top right, as pills; Freeze sits with the values it holds */
+  var acts='<div class="ap-acts" role="group" aria-label="Actions"><button class="ap-btn" data-act="match">Match a room</button><button class="ap-btn" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'ap-btn')+wfBtn(s,'ap-btn')+'</div>';
+  /* each band's value sits under its point on the curve, as an axis the curve is read against */
+  var nums='<div class="ap-nums">'+FREQ.map(function(f,i){return '<div style="left:'+(GL+GW*i/7).toFixed(1)+'px">'+bandInput(s,sp,i)+'<span>'+f+(i===7?' Hz':'')+'</span></div>';}).join('')+'</div>';
+  var bar=s.adv?'<div class="adv">'+advRows(s)+'</div>':nums+'<div class="ap-bar">'+numCtl(s,'mix','mix')+MAIN.map(function(k){return numCtl(s,k);}).join('')+'<button class="ap-frz" data-act="freeze" aria-pressed="'+s.freeze+'"><i></i>Freeze</button></div>';
   return '<div class="ap-photo">'+photoEl(s,0,0,'position:absolute;inset:0')+'</div><div class="ap-grade"></div>'+
-   '<div class="ap-top">'+wordmark(s,'ap-wm','Drenched')+segMode(s)+segAB(s)+'</div>'+
+   '<div class="ap-top">'+wordmark(s,'ap-wm','Drenched')+segMode(s)+segAB(s)+acts+'</div>'+
    '<div class="ap-name"><h3>'+esc(sp.name)+'</h3><span>'+prevNext(s)+'<button class="ap-link" data-act="browse" aria-expanded="'+s.browse+'">'+esc(sp.place)+', '+vol(sp)+'</button></span>'+(CP?posCtl(s,CP,'ap-cp'):'')+'</div>'+
-   '<div class="ap-lk">'+linkCtl(s)+'</div><div class="ap-graph">'+decaySVG('aperture',s,1120,236,{m:[0,0,16,4],noY:true,big:true})+'</div>'+bar+
+   '<div class="ap-lk">'+linkCtl(s)+'</div><div class="ap-graph">'+decaySVG('aperture',s,1120,236,{m:[GL,GL,16,4],noY:true,big:true})+'</div>'+bar+
    '<div class="ap-strip">'+hintText(s)+meters()+'</div>';},
 
  contact:function(s){var sp=spOf(s),e=eqp(s.el),CP=positionsOf(s);
