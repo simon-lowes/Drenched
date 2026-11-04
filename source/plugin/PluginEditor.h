@@ -99,6 +99,9 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
     bool choosing = false;
 
+    // Report a bug's sender, shared by every window in the process.
+    juce::SharedResourcePointer<ReportSender> reports;
+
     // What the page's events do. Before the web view, whose listeners call it.
     PageMessages messages;
 

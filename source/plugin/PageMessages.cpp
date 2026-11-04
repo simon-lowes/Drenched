@@ -1,5 +1,7 @@
 #include "PageMessages.h"
 
+#include "CrashReports.h"
+
 namespace drenched
 {
 
@@ -14,13 +16,16 @@ namespace
     }
 }
 
-PageMessages::PageMessages (DrenchedProcessor& p, LicenceManager& l, ParameterWatch& w, Window& win, juce::File folder)
+PageMessages::PageMessages (DrenchedProcessor& p, LicenceManager& l, ReportSender& r, ParameterWatch& w, Window& win,
+                            juce::File imports, juce::File crashes)
     : processor (p),
       licence (l),
+      reports (r),
       state (p.getState()),
       watch (w),
       window (win),
-      importFolder (std::move (folder))
+      importFolder (std::move (imports)),
+      crashFolder (std::move (crashes))
 {
 }
 
@@ -52,7 +57,18 @@ const std::vector<std::pair<const char*, PageMessages::Handler>>& PageMessages::
         // Some hosts keep copy and paste shortcuts from reaching a plugin window, so the page
         // has its own buttons for them, served by the system clipboard.
         { "copyText",   [] (M& m, V v) { m.window.copyToClipboard (v["text"].toString()); } },
-        { "copyReport", [] (M& m, V)   { m.window.copyToClipboard (m.processor.bugReportDetails()); } },
+        { "copyReport", [] (M& m, V v) { m.window.copyToClipboard (m.reportText (v.getProperty ("description", "").toString(),
+                                                                                static_cast<bool> (v.getProperty ("crash", false)))); } },
+        // Report a bug: the window opens (and is told what a report sends), a report is sent
+        // to the relay, or a waiting crash report is let go unsent.
+        { "reportOpen",  [] (M& m, V)   { m.reports.reset(); m.window.send (PageEvents::report, m.reportInfo (true)); } },
+        { "reportSend",  [] (M& m, V v) { m.onReportSend (v); } },
+        { "reportDismissCrash", [] (M& m, V)
+            {
+                if (const auto crash = crashReports::pending (m.crashFolder))
+                    crashReports::handled (crash->file);
+                m.window.send (PageEvents::report, m.reportInfo (false));
+            } },
         { "pasteText",  [] (M& m, V v) { m.onPasteText (v); } },
     };
 
@@ -80,6 +96,7 @@ bool PageMessages::handle (const juce::String& name, const juce::var& payload)
     {
         if (name == each)
         {
+            noteStep (name, payload);
             handler (*this, payload);
             return true;
         }
@@ -222,6 +239,112 @@ void PageMessages::onPasteText (const juce::var& payload)
     reply->setProperty ("target", payload["target"]);
     reply->setProperty ("text", window.clipboardText().substring (0, 4096));
     window.send (PageEvents::pasted, juce::var (reply.release()));
+}
+
+
+
+//==============================================================================
+// Report a bug
+
+void PageMessages::noteStep (const juce::String& name, const juce::var& payload)
+{
+    juce::String what;
+
+    if (name == "gesture" || name == "copyText" || name == "pasteText")
+        return;
+
+    if (name == "params" || name == "ui")
+    {
+        juce::StringArray changed;
+
+        forEachProperty (payload, [&] (const juce::String& id, const juce::var& value)
+        {
+            if (changed.size() < 6)
+                changed.add (name == "ui" && value.isString() ? id + " " + value.toString().substring (0, 40) : id);
+        });
+
+        what = (name == "params" ? "changed " : "interface: ") + changed.joinIntoString (", ");
+    }
+    else if (name == "dropIr")
+    {
+        if (payload.getProperty ("stage", "").toString() != "start")
+            return;
+
+        what = "dropped a file on the window";
+    }
+    else
+    {
+        what = name == "ready" ? juce::String ("window opened") : name;
+    }
+
+    // A drag sends the same change many times; once is enough.
+    if (what != lastStep)
+        crashReports::step (lastStep = what);
+}
+
+juce::var PageMessages::reportInfo (bool withDetails) const
+{
+    auto info = reports.status();
+    auto* object = info.getDynamicObject();
+    const auto crash = crashReports::pending (crashFolder);
+
+    object->setProperty ("crash", crash.has_value() ? juce::var (crash->when.formatted ("%d %b %Y, %H:%M")) : juce::var (false));
+    object->setProperty ("server", ReportSender::server().isNotEmpty());
+
+    if (withDetails)
+    {
+        object->setProperty ("details", processor.bugReportDetails());
+        object->setProperty ("steps", crashReports::recentSteps());
+        object->setProperty ("crashText", crash.has_value() ? crash->text : juce::String());
+    }
+
+    return info;
+}
+
+juce::String PageMessages::reportText (const juce::String& description, bool crash) const
+{
+    juce::StringArray parts;
+    parts.add ("What I was doing:\n" + (description.trim().isNotEmpty() ? description.trim() : juce::String ("(not written)")));
+    parts.add ("Setup:\n" + processor.bugReportDetails());
+
+    if (const auto steps = crashReports::recentSteps(); steps.isNotEmpty())
+        parts.add ("What Drenched last did:\n" + steps);
+
+    if (crash)
+        if (const auto pending = crashReports::pending (crashFolder))
+            parts.add ("Crash:\n" + pending->text);
+
+    return parts.joinIntoString ("\n\n");
+}
+
+void PageMessages::onReportSend (const juce::var& payload)
+{
+    const auto description = payload.getProperty ("description", "").toString().trim().substring (0, 8000);
+    const auto crash = static_cast<bool> (payload.getProperty ("crash", false)) ? crashReports::pending (crashFolder)
+                                                                                : std::optional<crashReports::Crash>();
+
+    // A bug report says what happened; a crash report has the crash.
+    if (description.isEmpty() && ! crash.has_value())
+        return;
+
+    auto* object = new juce::DynamicObject();
+    object->setProperty ("kind", crash.has_value() ? "crash" : "bug");
+    object->setProperty ("description", description);
+    object->setProperty ("replyTo", payload.getProperty ("replyTo", "").toString().trim().substring (0, 254));
+    object->setProperty ("details", processor.bugReportDetails());
+    object->setProperty ("steps", crashReports::recentSteps());
+
+    if (crash.has_value())
+        object->setProperty ("crash", crash->text);
+
+    // Once it has arrived, the crash report is done with.
+    std::function<void()> onSent;
+
+    if (crash.has_value())
+        onSent = [file = crash->file] { crashReports::handled (file); };
+
+    crashReports::step (crash.has_value() ? "sent a crash report" : "sent a bug report");
+    reports.send (juce::var (object), std::move (onSent));
 }
 
 } // namespace drenched

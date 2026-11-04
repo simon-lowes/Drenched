@@ -581,11 +581,13 @@ TEST_CASE ("The page's licence messages reach the licence manager", "[licence][b
     Manager m (computer);
     testing::Plugin plugin;
     testing::FakeWindow window;
+    ReportSender reports { [] (const juce::String&) { return 0; } };
 
     auto watch = testing::onMessageThread ([&] { return std::make_unique<ParameterWatch> (plugin->getState()); });
     auto messages = testing::onMessageThread ([&]
     {
-        return std::make_unique<PageMessages> (*plugin, *m.manager, *watch, window, testing::isolatedHome().getChildFile ("Imported"));
+        return std::make_unique<PageMessages> (*plugin, *m.manager, reports, *watch, window, testing::isolatedHome().getChildFile ("Imported"),
+                                               testing::isolatedHome().getChildFile ("Crash reports"));
     });
 
     const auto send = [&] (const juce::String& name, const juce::String& json)

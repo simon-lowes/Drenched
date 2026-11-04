@@ -298,6 +298,27 @@ function licenceHTML(){var L=st.licence,busy=!!L.busy,dis=busy?' disabled':'',bo
  var dev=L.testKey?'<p class="ldev">Development build: its activation codes use the published test key, so this copy is not for sale.</p>':'';
  return '<div class="cap lic" role="dialog" aria-modal="true" aria-labelledby="lic-h" tabindex="-1" data-fid="dlg-lic"><div class="cbox"><div class="chd"><h2 id="lic-h">'+(L.state==='licensed'?'Licence':'Activate Drenched')+'</h2><button class="cx" data-act="licence" aria-label="Close">Close</button></div>'+body+dev+'</div></div>';}
 function licActivate(){if(JUCE)JUCE.emitEvent('licenceActivate',{licence:st.licKey});else st.licence=Object.assign({},st.licence,{message:'Activation works inside the plugin.',error:true});}
+/* ---- Report a bug: what happened, sent to the developer with this setup's details. A crash
+   report Drenched saved last time is offered here too, and sent only if the person chooses. ---- */
+st.rep=false;st.repText='';st.repMail='';st.repShow=false;
+st.report={state:'idle',message:'',crash:false,details:'',steps:'',crashText:''};
+function onReport(m){if(!m)return;var was=st.report.state;st.report=Object.assign({},st.report,m);if(st.report.state==='sent'&&was!=='sent')st.repText='';schedule();}
+function reportHTML(){var R=st.report,crash=!!R.crash,busy=R.state==='sending',dis=busy?' disabled':'';
+ var sent=[R.details,R.steps?'What Drenched last did:\n'+R.steps:'',crash&&R.crashText?'Crash:\n'+R.crashText:''].filter(Boolean).join('\n\n');
+ var body=(crash?'<p>Drenched closed unexpectedly on <b>'+esc(R.crash)+'</b> and saved a crash report. Sending it helps get it fixed. If you remember what you were doing, say so below.</p>'
+   :'<p>Say what happened and it goes to the developer, with this setup\u2019s details: version, format, host, computer, audio settings, space and look.</p>')+
+  '<label class="ll" for="rep-text">'+(crash?'What were you doing, if you remember?':'What were you doing, and what went wrong?')+'</label>'+
+  '<div class="lrow top"><textarea id="rep-text" data-fid="rep-text" data-in="repText" placeholder="Step by step: what you did, what you expected, and what happened instead"'+dis+'>'+esc(st.repText)+'</textarea></div>'+
+  '<label class="ll" for="rep-mail">Your email, if you\u2019d like a reply (optional)</label>'+
+  '<div class="lrow"><input id="rep-mail" data-fid="rep-mail" data-in="repMail" type="email" autocomplete="email" spellcheck="false" value="'+esc(st.repMail)+'"'+dis+'></div>'+
+  '<button class="ldisc" data-act="repshow" aria-expanded="'+st.repShow+'">What\u2019s sent with it</button>'+
+  (st.repShow?'<pre class="rpre" tabindex="0" aria-label="What\u2019s sent with it">'+esc(sent||'\u2026')+'</pre>':'')+
+  '<p class="lmsg'+(R.state==='failed'?' err':'')+'">'+esc(R.message||'')+'</p>'+
+  '<div class="cft"><button class="cgo" data-act="repsend"'+dis+'>'+(crash?'Send crash report':'Send report')+'</button>'+
+  '<button class="lsm" data-act="repcopy"'+dis+'>Copy instead</button>'+(crash?'<button class="lsm" data-act="repdismiss"'+dis+'>Don\u2019t send</button>':'')+'</div>';
+ return '<div class="cap lic rep" role="dialog" aria-modal="true" aria-labelledby="rep-h" tabindex="-1" data-fid="dlg-rep"><div class="cbox"><div class="chd"><h2 id="rep-h">'+(crash?'Send a crash report':'Report a bug')+'</h2><button class="cx" data-act="report" aria-label="Close">Close</button></div>'+body+'</div></div>';}
+function repSend(){var R=st.report;if(!R.crash&&!st.repText.trim()){st.report=Object.assign({},R,{state:'failed',message:'Say what happened first: what you did, what you expected, and what happened instead.'});return;}
+ if(JUCE)JUCE.emitEvent('reportSend',{description:st.repText,replyTo:st.repMail,crash:!!R.crash});else st.report=Object.assign({},R,{state:'failed',message:'Reports are sent from inside the plugin.'});}
 
 /* ---- rendering ---- */
 function fit(){var w=live.clientWidth,h=live.clientHeight,sc=Math.min(w/W,h/H),el=live.firstElementChild;if(!el)return;
@@ -361,7 +382,7 @@ function fitText(){var sc=live.querySelector('.screen');if(!sc)return;
 if(document.fonts&&document.fonts.addEventListener)document.fonts.addEventListener('loadingdone',function(){fitText();});
 function drawLive(){var a=document.activeElement,af=a&&live.contains(a)?a:null,fid=af?af.getAttribute('data-fid'):null,bl=live.querySelector('.brw-list'),blt=bl?bl.scrollTop:0;
  var text=!!af&&af.matches('input,textarea'),v=text?af.value:'',s0=text?af.selectionStart:0,s1=text?af.selectionEnd:0,all=text&&s0===0&&s1===v.length,typed=text&&af!==committed&&v!==af.defaultValue?af:null;
- resetIds();var html=screenHTML(st.skin,viewState());if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.wf)html=html.slice(0,-6)+wfHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';html=uniqueFids(html);
+ resetIds();var html=screenHTML(st.skin,viewState());if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.rep)html=html.slice(0,-6)+reportHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.wf)html=html.slice(0,-6)+wfHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';html=uniqueFids(html);
  var t=document.createElement('template');t.innerHTML=html;morphKids(live,t.content,typed);
  var kept=!!af&&live.contains(af);
  if(kept&&typed){if(af.value!==v){af.value=v;af.setSelectionRange(s0,s1);}}
@@ -391,7 +412,7 @@ function menuFit(){var pm=live.querySelector('.pc-menu');if(!pm)return;var sc=li
 var noteShown=null,noteAt=0,noteT=0;
 function noteTimer(){if(st.note===noteShown)return;noteShown=st.note;noteAt=Date.now();clearTimeout(noteT);
  if(st.note)noteT=setTimeout(function(){if(st.note===noteShown&&!st.noteOpen){st.note=null;renderLive();}},st.note===errNote?15000:9000);}
-function dialogOpen(){return !!(st.skins||st.browse||st.capture||st.lic||st.credits||st.spk||st.scn||st.eq||st.wf);}
+function dialogOpen(){return !!(st.skins||st.browse||st.capture||st.lic||st.rep||st.credits||st.spk||st.scn||st.eq||st.wf);}
 function topDialog(){var sc=live.firstElementChild,d=null;if(sc)for(var c=sc.firstElementChild;c;c=c.nextElementSibling)if(c.getAttribute('role')==='dialog')d=c;return d;}
 function modal(d){var sc=live.firstElementChild;if(sc)for(var c=sc.firstElementChild;c;c=c.nextElementSibling){var bg=!!d&&c!==d;if(bg!==c.hasAttribute('inert')){if(bg)c.setAttribute('inert','');else c.removeAttribute('inert');}}}
 function tabStops(d){return Array.prototype.filter.call(d.querySelectorAll('button,input,textarea,[tabindex]'),function(x){return !x.disabled&&x.getAttribute('tabindex')!=='-1'&&!x.closest('[inert]')&&x.getClientRects().length>0;});}
@@ -400,7 +421,7 @@ function refOf(el){if(!el||!el.getAttribute||!live.contains(el))return null;var 
 /* ---- status messages: the notes, a capture's progress, the licence's answers and the
    waterfall's state go to a region outside the redrawn page, so a screen reader hears each
    once; errors go to an assertive one. The meters and the hint are not announced. ---- */
-var sayPolite=document.getElementById('say'),sayAlert=document.getElementById('say-err'),saidNote=null,errNote=null,saidCap='',saidLic='',saidWf='';
+var sayPolite=document.getElementById('say'),sayAlert=document.getElementById('say-err'),saidNote=null,errNote=null,saidCap='',saidLic='',saidRep='',saidWf='';
 function plain(html){var t=document.createElement('template');t.innerHTML=html;return t.content.textContent.replace(/\s+/g,' ').trim();}
 function say(text,err){var el=err?sayAlert:sayPolite,other=err?sayPolite:sayAlert;if(!el||!text)return;if(other)other.textContent='';
  // the same words again are a new message: a no-break space makes them differ
@@ -408,6 +429,7 @@ function say(text,err){var el=err?sayAlert:sayPolite,other=err?sayPolite:sayAler
 function announce(){if(st.note!==saidNote){saidNote=st.note;if(st.note)say(plain(st.note),st.note===errNote);}
  var cs=st.capStatus,c=st.capture?(cs.stage==='working'?'Working out the impulse response.':cs.message):'';if(c!==saidCap){saidCap=c;if(c)say(c,cs.stage==='failed');}
  var L=st.licence,l=st.lic&&L.message||'';if(l!==saidLic){saidLic=l;if(l)say(l,!!L.error);}
+ var R=st.report,r=st.rep&&R.message||'';if(r!==saidRep){saidRep=r;if(r)say(r,R.state==='failed');}
  if(!st.wf)saidWf='';}
 /* ---- motion: a change of space, scene or snapshot settles over a moment rather than jumping.
    The drawing is handed a view of the state whose numbers run from the old values to the new;
@@ -497,7 +519,7 @@ document.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,A
  if(e.key==='Escape'&&t.matches&&t.matches('input[data-type],input[data-spk],input[data-scn]')&&t.value!==t.defaultValue){t.value=t.defaultValue;t.select();e.preventDefault();return;}
  if(e.key==='Escape'&&st.posOpen&&!dialogOpen()){st.posOpen=false;e.preventDefault();renderLive();var pb=live.querySelector('.pc-b');if(pb)pb.focus({preventScroll:true});return;}
  if(e.key==='Escape'&&st.noteOpen&&!dialogOpen()){st.noteOpen=null;e.preventDefault();renderLive();return;}
- if(e.key==='Escape'&&dialogOpen()){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.wf)st.wf=false;else if(st.eq)st.eq=false;else if(st.scn)st.scn=false;else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
+ if(e.key==='Escape'&&dialogOpen()){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.wf)st.wf=false;else if(st.eq)st.eq=false;else if(st.scn)st.scn=false;else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.rep)st.rep=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
  if(e.ctrlKey||e.metaKey||e.altKey||!t.matches)return;
  var pm=t.closest('.pc-menu');if(pm&&(e.key==='ArrowDown'||e.key==='ArrowUp'||e.key==='Home'||e.key==='End')){var pit=Array.prototype.slice.call(pm.querySelectorAll('.pc-i')),pc=pit.indexOf(t),pn=e.key==='Home'?0:e.key==='End'?pit.length-1:clamp(pc+(e.key==='ArrowDown'?1:-1),0,pit.length-1);if(pit[pn])pit[pn].focus({preventScroll:true});e.preventDefault();return;}
  var bw=st.browse&&t.closest&&t.closest('.brw');
@@ -551,7 +573,7 @@ function onChange(e){var t=e.target;
  st.note=null;renderLive();sync();}
 /* the field being committed takes its new, formatted value when the page is redrawn */
 live.addEventListener('change',function(e){committed=e.target;try{onChange(e);}finally{committed=null;}});
-live.addEventListener('input',function(e){var k=e.target.getAttribute&&e.target.getAttribute('data-in');if(k==='licKey'||k==='licCode')st[k]=e.target.value;
+live.addEventListener('input',function(e){var k=e.target.getAttribute&&e.target.getAttribute('data-in');if(k==='licKey'||k==='licCode'||k==='repText'||k==='repMail')st[k]=e.target.value;
  if(e.target.id==='brw-q'){var ss=e.target.selectionStart;st.brwQ=e.target.value;st.brwCur=0;renderLive();var q=live.querySelector('#brw-q');if(q&&q!==e.target){q.focus({preventScroll:true});q.selectionStart=q.selectionEnd=ss;}brwReveal();}});
 /* ---- the hint line: the control under the pointer, or the one with the keyboard. A note left
    by an action shows first; moving on to another control once it has been read puts it away. ---- */
@@ -596,7 +618,11 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'findir':st.browse=false;st.hint=null;if(JUCE){JUCE.emitEvent('loadIr',{keep:true});st.note='Choose the file this session used. Your decay and other settings stay as they are.';}else st.note='<b>Find</b> opens a file chooser in the plugin.';break;
   case 'loadir':st.browse=false;st.hint=null;if(JUCE){JUCE.emitEvent('loadIr',{});st.note='Choose a WAV, AIFF, FLAC or SOFA impulse response: mono, stereo, true stereo, surround up to 9.1.6, or B-format.';}else st.note='<b>Load your own IR</b> opens a file chooser in the plugin.';break;
   case 'credits':st.credits=!st.credits;st.browse=false;st.hint=null;break;
-  case 'report':st.browse=false;st.hint=null;if(JUCE){JUCE.emitEvent('copyReport',{});st.note='<b>Copied</b> the details of this setup: version, format, host, computer, audio settings, space and look. Paste them into your bug report with what you did, what you expected and what happened.';}else st.note='<b>Report a bug</b> copies this setup\'s details in the plugin.';break;
+  case 'report':st.rep=!st.rep;st.browse=false;st.hint=null;if(st.rep){st.report.message='';st.report.state='idle';if(JUCE)JUCE.emitEvent('reportOpen',{});}break;
+  case 'repshow':st.repShow=!st.repShow;break;
+  case 'repsend':repSend();break;
+  case 'repcopy':if(JUCE){JUCE.emitEvent('copyReport',{description:st.repText,crash:!!st.report.crash});st.report=Object.assign({},st.report,{state:'idle',message:'Copied. Paste it into an email to whoever sent you Drenched.'});}else st.report=Object.assign({},st.report,{state:'failed',message:'Copying works inside the plugin.'});break;
+  case 'repdismiss':if(JUCE)JUCE.emitEvent('reportDismissCrash',{});st.report=Object.assign({},st.report,{crash:false,crashText:''});st.rep=false;break;
   case 'speakers':st.spk=!st.spk;st.browse=false;st.hint=null;break;
   case 'spkreset':st.speakers=[];break;
   case 'scenes':st.scn=!st.scn;st.browse=false;st.hint=null;break;
@@ -641,6 +667,7 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
  else if(a==='speakers'&&st.spk){var sf=live.querySelector('.spkd input');if(sf)sf.focus({preventScroll:true});}
  else if(a==='eq'&&st.eq){var ef=live.querySelector('.eqd [data-eqn="'+(st.eqCur||0)+'"]');if(ef)ef.focus({preventScroll:true});}
  else if(a==='wf'&&st.wf){var wfc=live.querySelector('.wfd .cx');if(wfc)wfc.focus({preventScroll:true});}
+ else if(a==='report'&&st.rep){var rf=live.querySelector('#rep-text');if(rf)rf.focus({preventScroll:true});}
  else if(a==='licence'&&st.lic){var lf=live.querySelector('#lic-key')||live.querySelector('.lic .cgo');if(lf)lf.focus({preventScroll:true});}
  else if(a==='posmenu'){var pi=st.posOpen?live.querySelector('.pc-menu [aria-checked="true"]')||live.querySelector('.pc-menu .pc-i'):live.querySelector('.pc-b');if(pi)pi.focus({preventScroll:true});}
  else if(a==='pos'){var pb=live.querySelector('.pc-b');if(pb)pb.focus({preventScroll:true});}
@@ -697,12 +724,12 @@ function sendDropped(f,keep){var id=Date.now()%1e9,at=0;dropping=f.name;
    function(){JUCE.emitEvent('dropIr',{stage:'cancel',id:id});dropping=null;errNote=st.note='<b>'+esc(f.name)+'</b> couldn\u2019t be read.';schedule();});})();}
 var init=null;
 try{var d=window.__JUCE__&&window.__JUCE__.initialisationData&&window.__JUCE__.initialisationData.drenched;if(d&&d.length)init=d[0];}catch(_){}
-if(init){setLibrary(init.library);Object.assign(st,{sp:0,bands:SPACES[0].bands.slice(),rbands:SPACES[0].bands.slice(),pre:SPACES[0].pre});applyFromHost(init);if(init.licence)Object.assign(st.licence,init.licence);st.bits=+init.bits||64;}
+if(init){setLibrary(init.library);Object.assign(st,{sp:0,bands:SPACES[0].bands.slice(),rbands:SPACES[0].bands.slice(),pre:SPACES[0].pre});applyFromHost(init);if(init.licence)Object.assign(st.licence,init.licence);if(init.report){Object.assign(st.report,init.report);if(init.report.crash)st.rep=true;}st.bits=+init.bits||64;}
 else{setLibrary(PREVIEW_LIBRARY);Object.assign(st,{sp:0,bands:SPACES[0].bands.slice(),rbands:SPACES[0].bands.slice(),pre:SPACES[0].pre});}
 try{var hs=(location.hash||'').slice(1);if(SKINS.some(function(x){return x.id===hs;}))st.skin=hs;}catch(_){}
 Object.assign(lastSent,paramValues(st));Object.assign(lastUi,uiState(st));
 renderLive();
-if(JUCE){JUCE.addEventListener('state',applyFromHost);JUCE.addEventListener('meters',onMeters);JUCE.addEventListener('capture',onCapture);JUCE.addEventListener('licence',onLicence);JUCE.addEventListener('pasted',onPasted);JUCE.addEventListener('matched',onMatched);JUCE.addEventListener('analysis',onAnalysis);JUCE.addEventListener('dropFailed',onDropFailed);JUCE.addEventListener('spectrum',onSpectrum);JUCE.emitEvent('ready',{});
+if(JUCE){JUCE.addEventListener('state',applyFromHost);JUCE.addEventListener('meters',onMeters);JUCE.addEventListener('capture',onCapture);JUCE.addEventListener('licence',onLicence);JUCE.addEventListener('report',onReport);JUCE.addEventListener('pasted',onPasted);JUCE.addEventListener('matched',onMatched);JUCE.addEventListener('analysis',onAnalysis);JUCE.addEventListener('dropFailed',onDropFailed);JUCE.addEventListener('spectrum',onSpectrum);JUCE.emitEvent('ready',{});if(st.rep)JUCE.emitEvent('reportOpen',{});
  // after a reload the plugin has forgotten which displays were open, so it is told again
  dispOpen=false;syncDisplays();}
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);

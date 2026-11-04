@@ -327,14 +327,22 @@ Every feature is in both the 32-bit and 64-bit versions, and sessions move freel
 
 ## Reporting bugs
 
-Send reports to whoever sent you the beta. Click **Report a bug** (on the
-Beta chip at the top, or in the Spaces window's tools) and Drenched copies
-your setup to the clipboard: its version and build, format, host, system, sample rate,
-buffer size, channels, space and look. Paste that into your message, then
-add:
+Click **Report a bug** (on the Beta chip at the top, or in the Spaces
+window's tools), say what you did, what you expected and what happened,
+and press **Send report**. It goes straight to the developer with your
+setup added: Drenched's version and build, format, host, system, sample
+rate, buffer size, channels, space and look, and the last few things
+Drenched did. **What's sent with it** shows all of it before you send. Add
+your email if you'd like a reply.
 
-- What you did, step by step, what you expected, and what happened.
-- If you can, the session, any IR file you loaded, and a screenshot or recording.
+If Drenched crashes, it saves a short crash report. The next time it
+opens, it offers to send it: say what you were doing if you remember, and
+press **Send crash report**, or **Don't send** to throw it away. Nothing is
+sent unless you press Send.
+
+Without an internet connection, **Copy instead** copies the whole report:
+paste it into an email to whoever sent you Drenched, with the session, any
+IR file you loaded, and a screenshot or recording if you can.
 
 ## Parameter reference
 

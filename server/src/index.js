@@ -7,6 +7,7 @@ import { COMPUTERS_PER_LICENCE, activationCode, cleanName, importSigningKey, imp
 import { licenceEmail, resendMailer } from './mail.js';
 import { copiesIn, fetchCustomer, verifySignature } from './paddle.js';
 import { activationPage, thanksPage } from './pages.js';
+import { reportHandler, resendReportMailer } from './reports.js';
 import { d1Store } from './stores.js';
 
 /** Computers a licence may release (to make room for another) in any 365 days. */
@@ -81,7 +82,7 @@ async function readBody (request)
 }
 
 /** The app, with everything it depends on passed in so the tests can run it. */
-export function createApp ({ store, signingKey, verifyKey, adminToken = null, paddle = null, mailer = null,
+export function createApp ({ store, signingKey, verifyKey, adminToken = null, paddle = null, mailer = null, reports = null,
                              today = () => new Date().toISOString().slice (0, 10),
                              now = () => Date.now() / 1000,
                              randomBytes = (n) => crypto.getRandomValues (new Uint8Array (n)) })
@@ -391,6 +392,10 @@ export function createApp ({ store, signingKey, verifyKey, adminToken = null, pa
             if (path.startsWith ('/v1/admin/'))
                 return await admin (request, path);
 
+            // Bug and crash reports, emailed on (reports.js); 503 when the server has no address for them.
+            if (path === '/v1/report')
+                return await (reports ?? reportHandler ({ send: null })) (request, request.headers.get ('cf-connecting-ip') ?? 'unknown');
+
             if (path === '/v1/paddle' && request.method === 'POST')
                 return await paddleEvent (request);
 
@@ -449,6 +454,11 @@ export default {
                         productId: env.PADDLE_PRODUCT_ID || null,
                     } : null,
                     mailer: env.RESEND_API_KEY && env.MAIL_FROM ? resendMailer ({ apiKey: env.RESEND_API_KEY, from: env.MAIL_FROM }) : null,
+                    reports: reportHandler ({
+                        send: env.RESEND_API_KEY && env.REPORT_FROM && env.REPORT_TO
+                            ? resendReportMailer ({ apiKey: env.RESEND_API_KEY, from: env.REPORT_FROM, to: env.REPORT_TO }) : null,
+                        log: (line) => console.log (line),
+                    }),
                 }),
             };
         }

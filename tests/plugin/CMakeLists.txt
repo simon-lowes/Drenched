@@ -24,6 +24,7 @@ add_executable(drenched_plugin_tests
     ParameterWatchTests.cpp
     MessageLoopTests.cpp
     PageMessageTests.cpp
+    CrashReportTests.cpp
     WebViewTests.cpp)
 
 target_link_libraries(drenched_plugin_tests PRIVATE Drenched Catch2::Catch2)

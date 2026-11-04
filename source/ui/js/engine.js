@@ -479,7 +479,7 @@ var ACT_HELP={freeze:'<b>Freeze</b> holds the tail as it sounds now, for as long
  dside:'<b>The side</b> the graph and its values edit; the other shows faintly.',
  pos:'<b>A captured position.</b> Hear this room from where that recording was made; the old position rings out as the new one takes the sound.',
  posmenu:function(s){var CP=positionsOf(s);return '<b>Captured positions.</b> This room was recorded from '+(CP?CP.n:'several')+' places or microphone setups. Choose one to hear the room from there.';},
- report:'<b>Report a bug</b> copies the details a report needs: version, host, computer, audio settings, space and look.',
+ report:'<b>Report a bug</b> sends what happened to the developer, with the details a report needs: version, host, computer, audio settings, space and look.',
  licence:'<b>Activate</b> Drenched with its licence number, or see how long the trial has left.',
  lock:function(s,p){var k=p.k,on=!!(k&&s.locks[k]);return '<b>Lock '+(k&&P[k]?P[k].l:'')+'.</b> '+(on?'Held when you change space. Click to let it follow each space again.':'Keeps this value when you change space.');},
  toggle:function(s,p){var k=p.k;return k&&P[k]?'<b>'+P[k].l+' '+esc(fmt(s,k))+'.</b> '+P[k].l+' '+P[k].help:'';}};
@@ -497,7 +497,7 @@ function textKey(t){var h=5381;for(var i=0;i<t.length;i++)h=((h*33)^t.charCodeAt
 function days(n){return n+' day'+(n===1?'':'s');}
 /* the trial, in the strip beside the hint until Drenched is activated */
 function licChip(s){var L=s.licence;if(!L||L.state==='licensed')return '';
- if(L.state==='beta')return '<button class="licchip" data-act="report" title="Copy the details a bug report needs">Beta'+(s.bits===32?' \u00b7 32-bit':'')+'. <u>Report a bug</u></button>';
+ if(L.state==='beta')return '<button class="licchip" data-act="report" title="Tell the developer what went wrong">Beta'+(s.bits===32?' \u00b7 32-bit':'')+'. <u>Report a bug</u></button>';
  return '<button class="licchip'+(L.state==='ended'?' end':'')+'" data-act="licence" aria-haspopup="dialog">'+(L.state==='ended'?'Trial ended, reverb muted. <u>Activate</u>':'Trial: '+days(L.daysLeft)+' left. <u>Activate</u>')+'</button>';}
 function dbText(v){return v<=-60?'\u2212\u221e':v.toFixed(1).replace('-','\u2212');}
 function meterPct(v){return clamp(1+v/60,0,1)*100;}
@@ -559,7 +559,7 @@ function browserHTML(s){var R=browseResults(s),n=R.rows.length,cur=clamp(s.brwCu
  var lost=spOf(s)&&spOf(s).missing?spOf(s):null;
  var tools=(lost?tool('findir','mload','Find '+esc(lost.name)+'\u2026','Keeps your settings'):'')+tool('loadir','mload','Load your own IR\u2026','WAV, AIFF, FLAC, SOFA')+tool('capture','mcap','Capture a space\u2026','Sweep or clap, and record')+tool('speakers','mspk','Reverb speakers\u2026','Level and delay each')+
   tool('eq','meq','Wet EQ\u2026',eqFlat(s)?'Six bands, flat':eqUsed(s)+(eqUsed(s)===1?' band':' bands')+' in use')+tool('wf','mwf','Waterfall\u2026','Decay and live spectrum')+tool('scenes','mscn','Scenes\u2026',s.scenes&&s.scenes.length?s.scenes.length+' stored':'For each shot')+
-  (LIBRARY.length?tool('credits','mcred','Recording credits\u2026',LIBRARY.length+' recorded'):'')+tool('report','mrep','Report a bug','Copy this setup\u2019s details')+(s.licence&&s.licence.state==='beta'?'':tool('licence','mlic','Licence\u2026',s.licence&&s.licence.state==='licensed'?'Activated':s.licence&&s.licence.state==='ended'?'Trial ended':'Trial'));
+  (LIBRARY.length?tool('credits','mcred','Recording credits\u2026',LIBRARY.length+' recorded'):'')+tool('report','mrep','Report a bug\u2026','Send what went wrong')+(s.licence&&s.licence.state==='beta'?'':tool('licence','mlic','Licence\u2026',s.licence&&s.licence.state==='licensed'?'Activated':s.licence&&s.licence.state==='ended'?'Trial ended':'Trial'));
  return '<div class="cap brw'+(R.ref?' sim':'')+'" role="dialog" aria-modal="true" aria-labelledby="brw-h" tabindex="-1" data-fid="dlg-brw"><div class="cbox"><div class="chd"><h2 id="brw-h">Spaces</h2><span class="brw-n">'+SPACES.length+' to choose from. Type to search, the arrow keys move, Enter picks, and Shift with Enter lists the ones that sound like the highlighted space.</span><button class="cx" data-act="browse" aria-label="Close">Close</button></div>'+
   '<div class="brw-top"><input id="brw-q" data-fid="brw-q" type="text" value="'+esc(q)+'" placeholder="Search by name, place, kind or microphone" autocomplete="off" spellcheck="false" role="combobox" aria-label="Search the spaces" aria-autocomplete="list" aria-expanded="true" aria-controls="brw-list"'+(n?' aria-activedescendant="brw-r'+cur+'"':'')+'>'+simb+'</div>'+
   '<div class="brw-kinds" role="group" aria-label="Kind">'+chips+'</div>'+

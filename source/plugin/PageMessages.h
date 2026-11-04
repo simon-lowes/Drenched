@@ -4,6 +4,7 @@
 #include "HeldControls.h"
 #include "ParameterWatch.h"
 #include "PluginProcessor.h"
+#include "ReportSender.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -26,12 +27,13 @@ namespace PageEvents
     inline const juce::Identifier spectrum { "spectrum" };
     inline const juce::Identifier pasted { "pasted" };
     inline const juce::Identifier dropFailed { "dropFailed" };
+    inline const juce::Identifier report { "report" };
 
     /** Every one, for the record the interface tests check the page against. */
     inline juce::StringArray all()
     {
         return { state.toString(), meters.toString(), capture.toString(), licence.toString(), matched.toString(),
-                 analysis.toString(), spectrum.toString(), pasted.toString(), dropFailed.toString() };
+                 analysis.toString(), spectrum.toString(), pasted.toString(), dropFailed.toString(), report.toString() };
     }
 }
 
@@ -80,8 +82,10 @@ public:
         virtual juce::String clipboardText() = 0;
     };
 
-    /** importFolder is where copies of dropped impulse responses are kept. */
-    PageMessages (DrenchedProcessor&, LicenceManager&, ParameterWatch&, Window&, juce::File importFolder);
+    /** importFolder is where copies of dropped impulse responses are kept, crashFolder
+        where crash reports wait to be sent (crashReports). */
+    PageMessages (DrenchedProcessor&, LicenceManager&, ReportSender&, ParameterWatch&, Window&,
+                  juce::File importFolder, juce::File crashFolder);
 
     /** Every event name the page may send, which the window listens for. */
     static juce::StringArray names();
@@ -98,6 +102,14 @@ public:
     /** Interface state keys the page may set (each a UiIDs property). */
     static juce::StringArray interfaceKeys();
 
+    /** What the report window shows: the sender's status, and whether a crash report is
+        waiting (crash: its time, crashText: the report). With details, also exactly what
+        a report would send about this setup. */
+    juce::var reportInfo (bool withDetails) const;
+
+    /** The report as plain text, for Copy instead (and the clipboard when sending fails). */
+    juce::String reportText (const juce::String& description, bool crash) const;
+
 private:
     void onReady (const juce::var&);
     void onParams (const juce::var&);
@@ -106,20 +118,24 @@ private:
     void onDropIr (const juce::var&);
     void onScene (const juce::String& action, const juce::var&);
     void onPasteText (const juce::var&);
+    void onReportSend (const juce::var&);
+    void noteStep (const juce::String& name, const juce::var&);
 
     using Handler = std::function<void (PageMessages&, const juce::var&)>;
     static const std::vector<std::pair<const char*, Handler>>& table();
 
     DrenchedProcessor& processor;
     LicenceManager& licence;
+    ReportSender& reports;
     juce::AudioProcessorValueTreeState& state;
     ParameterWatch& watch;
     Window& window;
-    const juce::File importFolder;
+    const juce::File importFolder, crashFolder;
 
     HeldControls held { state };
     DroppedFile dropped;
     bool settingInterface = false;
+    juce::String lastStep;
 
     JUCE_DECLARE_NON_COPYABLE (PageMessages)
 };

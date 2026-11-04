@@ -49,6 +49,15 @@ namespace
     on Linux and Windows. */
 int main (int argc, char* argv[])
 {
+    // Plugins made by the tests leave crash reports alone (CrashReportTests.cpp sets the
+    // handler up in child processes of its own). DRENCHED_CRASH_REPORTS=1 turns them on.
+   #if JUCE_WINDOWS
+    if (std::getenv ("DRENCHED_CRASH_REPORTS") == nullptr)
+        _putenv_s ("DRENCHED_CRASH_REPORTS", "0");
+   #else
+    setenv ("DRENCHED_CRASH_REPORTS", "0", 0);
+   #endif
+
     // Never deleted: the leak detector reports once main has returned.
     static auto* const log = new AssertionLog();
     juce::Logger::setCurrentLogger (log);

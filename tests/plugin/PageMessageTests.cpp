@@ -7,10 +7,12 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <atomic>
 #include <cmath>
 #include <cstdlib>
 #include <map>
 #include <memory>
+#include <mutex>
 
 using namespace drenched;
 using Catch::Matchers::ContainsSubstring;
@@ -81,8 +83,8 @@ namespace
     /** A plugin, a window and the messages between them. */
     struct Bridge
     {
-        Bridge() : watch (plugin->getState()), messages (*plugin, *licence.manager, watch, window, importFolder) {}
-        ~Bridge() { importFolder.getParentDirectory().deleteRecursively(); }
+        Bridge() : watch (plugin->getState()), messages (*plugin, *licence.manager, reports, watch, window, importFolder, crashFolder) {}
+        ~Bridge() { importFolder.getParentDirectory().deleteRecursively(); crashFolder.getParentDirectory().deleteRecursively(); }
 
         bool send (const juce::String& name, const juce::String& json = "{}") { return messages.handle (name, testing::fromPage (json)); }
 
@@ -96,6 +98,18 @@ namespace
         testing::FakeWindow window;
         juce::File importFolder = juce::File::getSpecialLocation (juce::File::tempDirectory)
                                       .getNonexistentChildFile ("drenched-page-drops", {}, false).getChildFile ("Imported");
+        juce::File crashFolder = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                     .getNonexistentChildFile ("drenched-page-crashes", {}, false).getChildFile ("Crash reports");
+        // The relay, answering 200 to everything; what it was sent is kept.
+        std::shared_ptr<juce::StringArray> posted = std::make_shared<juce::StringArray>();
+        std::shared_ptr<std::atomic<int>> relayStatus = std::make_shared<std::atomic<int>> (200);
+        ReportSender reports { [posted = posted, status = relayStatus] (const juce::String& json)
+                               {
+                                   static std::mutex lock;
+                                   const std::lock_guard guard (lock);
+                                   posted->add (json);
+                                   return status->load();
+                               } };
         PageMessages messages;
     };
 
@@ -230,7 +244,7 @@ TEST_CASE ("A drag takes its controls once and lets them go when it ends, or whe
     SECTION ("the window closes mid-drag")
     {
         {
-            PageMessages other (*b.plugin, *b.licence.manager, b.watch, b.window, b.importFolder);
+            PageMessages other (*b.plugin, *b.licence.manager, b.reports, b.watch, b.window, b.importFolder, b.crashFolder);
             other.handle ("gesture", testing::fromPage (R"({"ids": ["size"], "begin": true})"));
             CHECK (host.holding[ParamIDs::size] == 1);
         }
@@ -370,9 +384,10 @@ TEST_CASE ("The window's own messages go to the window", "[bridge]")
     b.send ("copyText", R"({"text": "ABC-123"})");
     CHECK (b.window.clipboard == "ABC-123");
 
+    b.send ("copyReport", R"({"description": "Froze the tail"})");
+    CHECK (b.window.clipboard.startsWith ("What I was doing:\nFroze the tail\n\nSetup:\n" + b.plugin->bugReportDetails() + "\n\n"));
     b.send ("copyReport");
-    CHECK (b.window.clipboard == b.plugin->bugReportDetails());
-    CHECK (b.window.clipboard.startsWith ("Drenched"));
+    CHECK (b.window.clipboard.startsWith ("What I was doing:\n(not written)\n\nSetup:\nDrenched "));
 
     b.window.clipboard = juce::String::repeatedString ("x", 5000);
     b.send ("pasteText", R"({"target": "licKey"})");
@@ -383,6 +398,93 @@ TEST_CASE ("The window's own messages go to the window", "[bridge]")
 
     b.send ("licencePage");
     CHECK (b.window.opened == juce::StringArray { b.licence.manager->status()["page"].toString() });
+}
+
+TEST_CASE ("Report a bug shows what a report sends, and sends it to the relay", "[bridge][report][messageloop]")
+{
+    DRENCHED_NEEDS_MESSAGE_LOOP();
+    Bridge b;
+
+    // Opening the window says exactly what would be sent about this setup.
+    b.send ("reportOpen");
+    REQUIRE (b.window.sent.size() == 1);
+    CHECK (b.window.sent[0].first == "report");
+    const auto info = b.window.sent[0].second;
+    CHECK (info["state"] == "idle");
+    CHECK (info["details"] == b.plugin->bugReportDetails());
+    CHECK (info["crash"] == juce::var (false));
+    CHECK (info["steps"].toString().contains ("reportOpen"));
+
+    // Nothing written, nothing sent.
+    b.send ("reportSend", R"({"description": "  "})");
+    CHECK (b.posted->isEmpty());
+
+    b.send ("params", R"({"mix": 40})");
+    b.send ("reportSend", R"({"description": "Freeze stuck on", "replyTo": "tester@example.org"})");
+    CHECK (b.reports.status()["state"] == "sending");
+    REQUIRE (testing::pumpUntil ([&] { return b.reports.status()["state"] == "sent"; }));
+    REQUIRE (b.posted->size() == 1);
+
+    const auto report = juce::JSON::parse ((*b.posted)[0]);
+    CHECK (report["kind"] == "bug");
+    CHECK (report["description"] == "Freeze stuck on");
+    CHECK (report["replyTo"] == "tester@example.org");
+    CHECK (report["details"] == b.plugin->bugReportDetails());
+    CHECK (report["steps"].toString().contains ("changed mix"));
+    CHECK_FALSE (report.hasProperty ("crash"));
+    CHECK (b.reports.status()["message"].toString().startsWith ("Sent."));
+
+    // The relay can't be reached: the page is told, in words.
+    b.relayStatus->store (0);
+    b.send ("reportSend", R"({"description": "Again"})");
+    REQUIRE (testing::pumpUntil ([&] { return b.reports.status()["state"] == "failed"; }));
+    CHECK (b.reports.status()["message"].toString().startsWith ("Couldn't reach the report server"));
+
+    // Opening the window again forgets the last answer.
+    b.send ("reportOpen");
+    CHECK (b.reports.status()["state"] == "idle");
+}
+
+TEST_CASE ("A waiting crash report is offered, sent with the report, then let go", "[bridge][report][messageloop]")
+{
+    DRENCHED_NEEDS_MESSAGE_LOOP();
+    Bridge b;
+    REQUIRE (b.crashFolder.createDirectory());
+    const auto file = b.crashFolder.getChildFile ("crash-1800000000.txt");
+    REQUIRE (file.replaceWithText ("Drenched crashed: signal 11 (SIGSEGV)"));
+
+    const auto shown = b.messages.reportInfo (false);
+    CHECK (shown["crash"].toString().contains ("2027"));
+    CHECK_FALSE (shown.hasProperty ("crashText"));
+
+    b.send ("reportOpen");
+    CHECK (b.window.sent.back().second["crashText"] == "Drenched crashed: signal 11 (SIGSEGV)");
+
+    b.send ("copyReport", R"({"crash": true})");
+    CHECK (b.window.clipboard.endsWith ("Crash:\nDrenched crashed: signal 11 (SIGSEGV)"));
+
+    // A crash report needs no description, and it is deleted once it has arrived.
+    b.relayStatus->store (502);
+    b.send ("reportSend", R"({"crash": true})");
+    REQUIRE (testing::pumpUntil ([&] { return b.reports.status()["state"] == "failed"; }));
+    CHECK (file.existsAsFile());
+
+    b.relayStatus->store (200);
+    b.send ("reportSend", R"({"crash": true, "description": "Loading a big IR"})");
+    REQUIRE (testing::pumpUntil ([&] { return b.reports.status()["state"] == "sent"; }));
+    const auto report = juce::JSON::parse (b.posted->strings.getLast());
+    CHECK (report["kind"] == "crash");
+    CHECK (report["crash"] == "Drenched crashed: signal 11 (SIGSEGV)");
+    CHECK (report["description"] == "Loading a big IR");
+    CHECK_FALSE (file.existsAsFile());
+    CHECK (b.messages.reportInfo (false)["crash"] == juce::var (false));
+
+    // Or the person lets it go without sending it.
+    REQUIRE (file.replaceWithText ("another"));
+    b.send ("reportDismissCrash");
+    CHECK_FALSE (file.existsAsFile());
+    CHECK (b.window.sent.back().first == "report");
+    CHECK (b.window.sent.back().second["crash"] == juce::var (false));
 }
 
 TEST_CASE ("Capture messages start and stop a capture, and the window shows it", "[bridge]")

@@ -78,11 +78,12 @@ DrenchedEditor::DrenchedEditor (DrenchedProcessor& p)
     : AudioProcessorEditor (p),
       processor (p),
       state (p.getState()),
-      messages (p, p.getLicence(), watch, *this, settings::importedFolder()),
+      messages (p, p.getLicence(), *reports, watch, *this, settings::importedFolder(), settings::crashFolder()),
       web (makeOptions())
 {
     state.state.addListener (this);
     processor.getLicence().addChangeListener (this);
+    reports->addChangeListener (this);
 
     web.onFile = [safe = juce::Component::SafePointer<DrenchedEditor> (this)] (const juce::File& file)
     {
@@ -123,6 +124,7 @@ DrenchedEditor::~DrenchedEditor()
 {
     stopTimer();
     cancelPendingUpdate();
+    reports->removeChangeListener (this);
     processor.getLicence().removeChangeListener (this);
     state.state.removeListener (this);
 }
@@ -145,6 +147,7 @@ juce::WebBrowserComponent::Options DrenchedEditor::makeOptions()
     initial->setProperty ("params", parameterValues (false));
     initial->setProperty ("ui", uiValues());
     initial->setProperty ("licence", processor.getLicence().status());
+    initial->setProperty ("report", messages.reportInfo (false));
     initial->setProperty ("bits", static_cast<int> (sizeof (void*) * 8));
     initial->setProperty ("library", library::forInterface());
     options = options.withInitialisationData ("drenched", juce::var (initial.release()));
@@ -432,8 +435,15 @@ void DrenchedEditor::sendLicenceStatus()
         web.emitEventIfBrowserIsVisible (PageEvents::licence, processor.getLicence().status());
 }
 
-void DrenchedEditor::changeListenerCallback (juce::ChangeBroadcaster*)
+void DrenchedEditor::changeListenerCallback (juce::ChangeBroadcaster* source)
 {
+    if (source == &reports.get())
+    {
+        if (pageLoaded)
+            web.emitEventIfBrowserIsVisible (PageEvents::report, messages.reportInfo (false));
+        return;
+    }
+
     sendLicenceStatus();
 }
 

@@ -88,3 +88,30 @@ the server can't drift apart.
 5. Build release plugins with `-DDRENCHED_LICENCE_SERVER=https://<that domain>`.
 6. In Paddle, add a notification destination for `transaction.completed`,
    `adjustment.created` and `adjustment.updated` at `https://<domain>/v1/paddle`.
+
+## Bug and crash reports
+
+The plugin's **Report a bug** window POSTs a report to `/v1/report`
+(`src/reports.js`): what the tester wrote, an optional reply address, the
+setup lines from `DrenchedProcessor::bugReportDetails()`, the last steps
+Drenched took, and for a crash the crash file it saved. The server turns it
+into a plain-text email and sends it through Resend, with the tester as
+Reply-To. Where it goes is `REPORT_TO`, which only ever lives in the
+server's environment: never in this repository or the plugin, and no answer
+mentions it. Reports are capped in size, six per address per ten minutes,
+and 200 a day in all. Without `REPORT_TO`, `REPORT_FROM` and
+`RESEND_API_KEY` the route answers 503 and the plugin offers Copy instead.
+
+The plugin sends to `DRENCHED_REPORT_SERVER` (CMake, default
+`https://simonlowes.cloud`). The Worker serves `/v1/report` too, so a release
+can point there once the activation server is deployed.
+
+**On the VPS** the relay runs on its own, as `reports/relay.mjs` (Node, no
+dependencies) in the Dokploy app `report-relay` of the project Drenched,
+routed at `https://simonlowes.cloud/v1/report`. Its environment holds
+`REPORT_TO`, `REPORT_FROM` (an address on a domain verified in Resend) and
+`RESEND_API_KEY` (sending access only). To deploy a change, zip
+`reports/Dockerfile` (as `Dockerfile`), `src/reports.js` and
+`reports/relay.mjs` and send the zip to Dokploy's
+`application.dropDeployment`. `GET /health` answers `{"ok":true}`.
+
