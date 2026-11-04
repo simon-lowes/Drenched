@@ -325,9 +325,37 @@ function renderLive(){if(rendering){renderAgain=true;return;}rendering=true;try{
 // A look can show a value twice (a readout at the top and the field under its knob). Each copy
 // gets its own focus id (ro-decay, ro-decay~2), so a redraw gives focus back to the one being edited.
 function uniqueFids(h){var seen={};return h.replace(/ data-fid="([^"]*)"/g,function(m,f){var n=seen[f]=(seen[f]||0)+1;return n===1?m:' data-fid="'+f+'~'+n+'"';});}
+// Named areas for screen readers to jump between (space, decay, controls), per look and for Stage.
+var REGIONS={anodised:[['.an-top','Space'],['.an-win','Decay'],['.an-deck','Controls']],
+ section:[['.se-head','Space'],['.se-right>div:first-child','Decay'],['.se-sched','Controls'],['.se-acts','Actions']],
+ catalogue:[['.ca-nav','Space'],['.ca-fig','Decay'],['.ca-list','Controls'],['.ca-mix','Mix and actions']],
+ field:[['.fi-sp','Space'],['.fi-heat','Decay'],['.fi-rail','Controls']],
+ vitrine:[['.vi-nav','Space'],['.vi-lens','Decay'],['.vi-rail','Controls']],
+ signal:[['.si-space','Space'],['.si-bars','Decay'],['.si-rail','Controls'],['.si-vals','More controls']],
+ aperture:[['.ap-name','Space'],['.ap-graph','Decay'],['.ap-bar','Controls']],
+ contact:[['.co-print','Space'],['.co-fad','Decay'],['.co-list','Controls'],['.co-mix','Mix and actions']],
+ strata:[['.st-photo','Space'],['.st-ridges','Decay'],['.st-ctl','Controls'],['.st-acts','Actions']],
+ rotunda:[['.rt-nav','Space'],['.rt-round','Decay'],['.rt-mix','Mix'],['.rt-grid','Controls'],['.rt-acts','Actions']],
+ material:[['.ma-head','Space'],['.ma-graph','Decay'],['.ma-ctl','Controls']],
+ folio:[['.fo-hero','Space'],['.fo-fig','Decay'],['.fo-page>.fo-col:last-child','Controls']],
+ stage:[['.stg-top','Space'],['.stg-nums','Readouts'],['.stg-met','Output meters'],['.stg-dec','Decay'],['.stg-ct','Controls']]};
+function landmarks(){var sc=live.querySelector('.screen');if(!sc)return;(REGIONS[sc.classList.contains('stage')?'stage':st.skin]||[]).forEach(function(r){var n=sc.querySelector(':scope>'+r[0])||sc.querySelector(r[0]);if(n&&!n.hasAttribute('role')){n.setAttribute('role','region');n.setAttribute('aria-label',r[1]);}});}
+// Text that a person sets wider or taller (text spacing, a bigger system font) must not run over its
+// neighbours on the fixed 1200 x 760 screen. Each entry is [box, text in it]: while the box overflows,
+// the text is set smaller, down to 60 %. A column that still overflows scrolls instead of spilling.
+// At the designed sizes nothing overflows, so none of this changes how a look is drawn.
+var FIT=[['.si-space','.si-space .nm','h'],['.rt-side','.rt-side h3','h'],['.ma-head h3','.ma-head h3','w'],['input.ro','input.ro','w']],
+ SPILL='.rt-side,.co-right,.fo-col,.si-rail,.vi-rail,.ma-ctl,.fi-rail';
+function over(e,m){return m!=='h'&&e.scrollWidth>e.clientWidth+1||m!=='w'&&e.scrollHeight>e.clientHeight+1;}
+function fitText(){var sc=live.querySelector('.screen');if(!sc)return;
+ sc.querySelectorAll('[data-fitted]').forEach(function(t){t.style.fontSize='';t.removeAttribute('data-fitted');});
+ FIT.forEach(function(f){sc.querySelectorAll(f[0]).forEach(function(box){if(!over(box,f[2]))return;var t=box.matches(f[1])?box:box.querySelector(f[1]);if(!t)return;
+  var fs=parseFloat(getComputedStyle(t).fontSize),min=fs*0.6;while(over(box,f[2])&&fs>min){fs*=0.93;t.style.fontSize=fs.toFixed(2)+'px';t.setAttribute('data-fitted','');}});});
+ sc.querySelectorAll(SPILL).forEach(function(c){c.classList.toggle('spill',c.scrollHeight>c.clientHeight+1);});}
+if(document.fonts&&document.fonts.addEventListener)document.fonts.addEventListener('loadingdone',function(){fitText();});
 function drawLive(){var a=document.activeElement,fid=a&&live.contains(a)?a.getAttribute('data-fid'):null,bl=live.querySelector('.brw-list'),blt=bl?bl.scrollTop:0;
  var html=screenHTML(st.skin,st);if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.wf)html=html.slice(0,-6)+wfHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';html=uniqueFids(html);
- var kept=!!fid&&keepFocused(a,fid,html);if(!kept)live.innerHTML=html;fit();syncDisplays();cutNote();
+ var kept=!!fid&&keepFocused(a,fid,html);if(!kept)live.innerHTML=html;landmarks();fitText();fit();syncDisplays();cutNote();
  if(blt){var bl2=live.querySelector('.brw-list');if(bl2)bl2.scrollTop=blt;}
  var dl=topDialog();modal(dl);
  if(fid&&!kept){var n=live.querySelector('[data-fid="'+fid+'"]');if(n&&!n.closest('[inert]')){n.focus({preventScroll:true});if(n.matches('input,textarea'))n.selectionStart=n.selectionEnd=n.value.length;}}
@@ -460,7 +488,7 @@ document.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,A
   else if(ek==='Home'||ek==='End'){var nx=ek==='End'?EQ_N-1:0;st.eqCur=nx;renderLive();var nn=live.querySelector('[data-fid="eqn-'+nx+'"]');if(nn)nn.focus({preventScroll:true});e.preventDefault();return;}
   else return;st.note=null;e.preventDefault();schedule();}
  else if(t.matches('[data-node]')){var i=+t.getAttribute('data-node');if(e.key==='ArrowLeft'||e.key==='ArrowRight'){var ni=clamp(i+(e.key==='ArrowRight'?1:-1),0,7);st.lastBand=ni;e.preventDefault();renderLive();var n2=live.querySelector('[data-fid="nd-'+ni+'"]');if(n2)n2.focus({preventScroll:true});return;}
-  if(e.key==='ArrowUp'||e.key==='ArrowDown'){var cb=curBands(st);cb[i]=clamp(Math.round((cb[i]+(e.key==='ArrowUp'?1:-1)*(e.shiftKey?0.01:0.1))*100)/100,0.1,20);st.lastBand=i;st.hint='decay';st.note=null;e.preventDefault();schedule();}}
+  var dk={ArrowUp:0.1,ArrowDown:-0.1,PageUp:1,PageDown:-1}[e.key];if(dk||e.key==='Home'||e.key==='End'){var cb=curBands(st);cb[i]=e.key==='Home'?0.1:e.key==='End'?20:clamp(Math.round((cb[i]+(e.shiftKey&&Math.abs(dk)<1?dk/10:dk))*100)/100,0.1,20);st.lastBand=i;st.hint='decay';st.note=null;e.preventDefault();schedule();}}
  else if(t.matches('[data-drag="src"]')){if(e.key==='ArrowLeft'||e.key==='ArrowRight')st.sx=clamp(st.sx+(e.key==='ArrowRight'?3:-3),6,94);else if(e.key==='Home'||e.key==='End')st.sx=e.key==='Home'?6:94;else return;st.hint='sx';st.note=null;e.preventDefault();schedule();}
  else if(t.matches('[data-drag]')){if(e.key==='ArrowUp'||e.key==='ArrowDown')st.dist=clamp(st.dist+(e.key==='ArrowDown'?2:-2),0,100);else if(e.key==='ArrowLeft'||e.key==='ArrowRight')st.lx=clamp(st.lx+(e.key==='ArrowRight'?3:-3),6,94);else if(e.key==='Home'||e.key==='End')st.dist=e.key==='Home'?0:100;else return;st.hint='dist';st.note=null;e.preventDefault();schedule();}});
 /* The numbers in what someone typed, however they write them: "1,5" or "1.5", ".5", a minus
