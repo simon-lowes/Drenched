@@ -70,6 +70,7 @@ const std::vector<std::pair<const char*, PageMessages::Handler>>& PageMessages::
                 m.window.send (PageEvents::report, m.reportInfo (false));
             } },
         { "pasteText",  [] (M& m, V v) { m.onPasteText (v); } },
+        { "tipsSeen",   [] (M& m, V)   { m.window.tipsSeen(); } },
     };
 
     return handlers;

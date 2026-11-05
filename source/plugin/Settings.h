@@ -38,6 +38,21 @@ namespace settings
         file.saveIfNeeded();
     }
 
+    /** Whether the tips (the tour the interface offers the first time it opens) have been
+        seen on this computer, so they are offered once. */
+    inline bool loadTipsSeen()
+    {
+        juce::PropertiesFile file (options());
+        return file.getBoolValue ("tipsSeen", false);
+    }
+
+    inline void saveTipsSeen()
+    {
+        juce::PropertiesFile file (options());
+        file.setValue ("tipsSeen", true);
+        file.saveIfNeeded();
+    }
+
     /** The folder impulse responses were last loaded from, so the file chooser opens there. */
     inline juce::File loadIrFolder()
     {

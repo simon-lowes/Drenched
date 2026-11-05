@@ -21,6 +21,7 @@ namespace testing
         void chooseImpulseResponse (bool keep) override { chosen.push_back (keep ? "keep" : "new"); }
         void chooseRecordingToMatch() override { chosen.push_back ("match"); }
         void lookChosen (const juce::String& skin) override { looks.add (skin); }
+        void tipsSeen() override { ++tips; }
         void openInBrowser (const juce::URL& url) override { opened.add (url.toString (true)); }
         void copyToClipboard (const juce::String& text) override { clipboard = text; }
         juce::String clipboardText() override { return clipboard; }
@@ -28,12 +29,12 @@ namespace testing
         /** How many times anything at all was asked. */
         size_t calls() const
         {
-            return sent.size() + static_cast<size_t> (ready + interface + capture) + displays.size() + chosen.size()
+            return sent.size() + static_cast<size_t> (ready + interface + capture + tips) + displays.size() + chosen.size()
                  + static_cast<size_t> (looks.size() + opened.size()) + (clipboard.isEmpty() ? 0u : 1u);
         }
 
         std::vector<std::pair<juce::String, juce::var>> sent;
-        int ready = 0, interface = 0, capture = 0;
+        int ready = 0, interface = 0, capture = 0, tips = 0;
         std::vector<bool> displays;
         std::vector<juce::String> chosen;
         juce::StringArray looks, opened;
