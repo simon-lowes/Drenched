@@ -383,7 +383,9 @@ TEST_CASE ("eqSolo listens to one EQ band alone until the page lets go, reloads,
     CHECK (host.changes.empty());
     juce::MemoryBlock session;
     b.plugin->getStateInformation (session);
-    CHECK_FALSE (juce::String::fromUTF8 (static_cast<const char*> (session.getData()), static_cast<int> (session.getSize())).containsIgnoreCase ("solo"));
+    const auto xml = juce::AudioProcessor::getXmlFromBinary (session.getData(), static_cast<int> (session.getSize()));
+    REQUIRE (xml != nullptr);
+    CHECK_FALSE (xml->toString().containsIgnoreCase ("solo"));
 
     b.send ("eqSolo", R"({"band": -1})");
     CHECK (b.plugin->eqSoloBand() == WetEqualiser::noSolo);
