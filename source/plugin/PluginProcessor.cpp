@@ -91,10 +91,10 @@ DrenchedProcessor::DrenchedProcessor()
     {
         params.eqFrequency[band] = raw (ParamIDs::eqFrequency[band]);
         params.eqGain[band] = raw (ParamIDs::eqGain[band]);
-    }
-
-    for (size_t band = 0; band < params.eqQ.size(); ++band)
         params.eqQ[band] = raw (ParamIDs::eqQ[band]);
+        params.eqShape[band] = raw (ParamIDs::eqShape[band]);
+        params.eqOn[band] = raw (ParamIDs::eqOn[band]);
+    }
 
     // A new instance opens on the first recorded space, with the graph on its measured decay.
     if (const auto& recordings = library::spaces(); ! recordings.empty())
@@ -1734,11 +1734,13 @@ void DrenchedProcessor::render (juce::AudioBuffer<float>& buffer, bool bypassed)
     {
         auto& eq = controls.eq[band];
         eq.frequencyHz = params.eqFrequency[band].load();
-        eq.gainDb = params.eqGain[band].load();
-
-        if (WetEqualiser::shapeOf (band) == WetEqualiser::Shape::bell)
-            eq.q = params.eqQ[band - 1].load();
+        eq.gainDb = params.eqOn[band].load() >= 0.5f ? params.eqGain[band].load() : 0.0f; // off: flat
+        eq.q = params.eqQ[band].load();
+        eq.shape = static_cast<WetEqualiser::Shape> (std::clamp (juce::roundToInt (params.eqShape[band].load()), 0, 2));
     }
+
+    // Soloing a band is for listening at the window; a bounce plays everything.
+    controls.soloBand = isNonRealtime() ? WetEqualiser::noSolo : eqSoloBand();
 
     for (size_t k = 0; k < maxChannels; ++k)
     {

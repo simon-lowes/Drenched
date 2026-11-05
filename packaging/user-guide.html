@@ -171,7 +171,7 @@ th, td, h1 { border-color: #3a3e43; } a { color: #8cb8ec; }
 <p>The screen has four parts:</p>
 <ul>
 <li><strong>The space</strong>: its name and a picture or drawing. Click its description to open the Spaces browser; the arrows beside it step through spaces.</li>
-<li><strong>The decay graph</strong>: decay time in eight octave bands, 63 Hz to 8 kHz.</li>
+<li><strong>The decay graph</strong>: decay time in eight octave bands, 63 Hz to 8 kHz. <strong>EQ</strong> beside it puts the wet EQ on the display instead (see <a href="#wet-eq">Wet EQ</a>); <strong>Decay</strong> brings the graph back.</li>
 <li><strong>The main controls</strong>: Mix, Decay, Pre-delay, Size, Brightness, Early/Late and Distance, plus <strong>Freeze</strong>, <strong>Match a room</strong>, <strong>All parameters</strong>, <strong>Wet EQ</strong> and <strong>Waterfall</strong> (some looks say More, Match or EQ).</li>
 <li><strong>The strip along the bottom</strong>: a line about the control under the pointer, the <strong>In</strong> and <strong>Out</strong> meters and a <strong>Beta</strong> label.</li>
 </ul>
@@ -543,12 +543,16 @@ th, td, h1 { border-color: #3a3e43; } a { color: #8cb8ec; }
 <p>Click <strong>Link</strong> to unlink the two sides. Each side then keeps its own curve: choose <strong>Left</strong> or <strong>Right</strong> to pick the one you edit, and the other is drawn faintly behind it. Unlinking starts the right side on the curve it was already playing, so nothing changes until you drag. On surround, side and rear speakers follow their side and centre speakers play the average. Click <strong>Link</strong> again and both sides go back to the left curve.</p>
 <h1 id="windows-1">Windows</h1>
 <h2 id="wet-eq">Wet EQ</h2>
-<p>Six bands on the reverb alone, after the wet low and high cuts: a low shelf, four bells and a high shelf. The dry sound is not touched, and a band at 0 dB does nothing, so it starts flat. When any band is in use, the Wet EQ button shows a small marker.</p>
+<p>Up to twelve bands on the reverb alone, after the wet low and high cuts. Each band is a low shelf, a bell or a high shelf. The dry sound is not touched, and a band at 0 dB does nothing, so it starts flat: a low shelf at 100 Hz, bells at 250 Hz, 700 Hz, 2 kHz and 5 kHz, and a high shelf at 10 kHz. When any band is in use, the Wet EQ button shows a small marker.</p>
+<p>The EQ is worked in two places with the same points: on the main display, where <strong>EQ</strong> beside the decay graph puts it in the graph’s place (every look draws it its own way; <strong>Decay</strong> brings the graph back), and in the <strong>Wet EQ</strong> window, which adds a table for typing values.</p>
 <ul>
 <li>Drag a point sideways for frequency and up or down for gain. Scroll over a bell, or drag it with Alt held, to change its Q. Shift gives fine steps.</li>
-<li>Double-click a point to return it to 0 dB.</li>
-<li>The table below the curve lets you type Frequency, Gain and Q for each band (the shelves have a fixed slope).</li>
-<li><strong>Reset to flat</strong> zeroes every band.</li>
+<li>Double-click a point to return it to 0 dB. Double-click an empty part of the graph to add a bell there; <strong>Add band</strong> adds one at 1 kHz. There are twelve bands in all.</li>
+<li>Click a point and the buttons under the graph act on it: <strong>Shape</strong> (a low shelf, a bell or a high shelf), <strong>Solo</strong>, and <strong>Remove</strong>, which takes the band off the graph and sets its gain to 0 dB.</li>
+<li><strong>Solo</strong> plays that band’s part of the reverb alone, with the dry sound muted, for as long as it is on. It is a thing of the window, not the session: closing the window, loading the session again or bouncing plays everything.</li>
+<li>From the keyboard, a point takes the arrow keys (frequency and gain), Page Up and Page Down (a bell’s Q), Backspace (0 dB), S (solo), Delete (remove) and Home and End (the first and last band).</li>
+<li>The table in the Wet EQ window lets you type Frequency, Gain and Q for each band, and choose its shape.</li>
+<li><strong>Reset to flat</strong> zeroes every band and puts the first six back where they started.</li>
 <li>The live spectrum of the reverb is drawn faintly behind the curve.</li>
 </ul>
 <h2 id="waterfall">Waterfall</h2>
@@ -872,57 +876,62 @@ th, td, h1 { border-color: #3a3e43; } a { color: #8cb8ec; }
 <td>Off</td>
 </tr>
 <tr class="even">
-<td>EQ low frequency</td>
-<td>20 to 20000 Hz</td>
-<td>100 Hz</td>
+<td>EQ low frequency, EQ low gain, EQ low Q</td>
+<td>20 to 20000 Hz; -18 to +18 dB; 0.1 to 10</td>
+<td>100 Hz; 0 dB; 0.71</td>
 </tr>
 <tr class="odd">
-<td>EQ low gain</td>
-<td>-18 to +18 dB</td>
-<td>0 dB</td>
-</tr>
-<tr class="even">
 <td>EQ 2 frequency, EQ 2 gain, EQ 2 Q</td>
-<td>20 to 20000 Hz; -18 to +18 dB; 0.1 to 10</td>
+<td>as EQ low</td>
 <td>250 Hz; 0 dB; 0.9</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>EQ 3 frequency, EQ 3 gain, EQ 3 Q</td>
-<td>as EQ 2</td>
+<td>as EQ low</td>
 <td>700 Hz; 0 dB; 0.9</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>EQ 4 frequency, EQ 4 gain, EQ 4 Q</td>
-<td>as EQ 2</td>
+<td>as EQ low</td>
 <td>2000 Hz; 0 dB; 0.9</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>EQ 5 frequency, EQ 5 gain, EQ 5 Q</td>
-<td>as EQ 2</td>
+<td>as EQ low</td>
 <td>5000 Hz; 0 dB; 0.9</td>
 </tr>
+<tr class="odd">
+<td>EQ high frequency, EQ high gain, EQ high Q</td>
+<td>as EQ low</td>
+<td>10000 Hz; 0 dB; 0.71</td>
+</tr>
 <tr class="even">
-<td>EQ high frequency</td>
-<td>20 to 20000 Hz</td>
-<td>10000 Hz</td>
+<td>EQ 7 to EQ 12 frequency, gain and Q</td>
+<td>as EQ low</td>
+<td>150 Hz, 400 Hz, 1200 Hz, 3000 Hz, 7000 Hz, 14000 Hz; 0 dB; 0.9</td>
 </tr>
 <tr class="odd">
-<td>EQ high gain</td>
-<td>-18 to +18 dB</td>
-<td>0 dB</td>
+<td>EQ low shape, EQ 2 shape … EQ 12 shape</td>
+<td>Low shelf, Bell, High shelf</td>
+<td>Low shelf; Bell for EQ 2 to EQ 5 and EQ 7 to EQ 12; High shelf for EQ high</td>
 </tr>
 <tr class="even">
+<td>EQ low on, EQ 2 on … EQ 12 on</td>
+<td>Off, On</td>
+<td>On for EQ low to EQ high; Off for EQ 7 to EQ 12</td>
+</tr>
+<tr class="odd">
 <td>Decay linked</td>
 <td>Off, On</td>
 <td>On</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>Right decay 63 Hz, Right decay 125 Hz, Right decay 250 Hz, Right decay 500 Hz, Right decay 1 kHz, Right decay 2 kHz, Right decay 4 kHz, Right decay 8 kHz</td>
 <td>0.1 to 20 s</td>
 <td>The space’s measured decay (heard only while Decay linked is off)</td>
 </tr>
 </tbody>
 </table>
-<p>In the Wet EQ window, EQ low is the Low shelf, EQ 2 to EQ 5 are Band 2 to Band 5, and EQ high is the High shelf.</p>
+<p>On the graph and in the Wet EQ window the bands are Band 1 to Band 12: EQ low is Band 1 and EQ high is Band 6. A band that is off is flat whatever its gain; a shelf’s Q is heard once it is made a bell. Solo is not a parameter.</p>
 </body>
 </html>

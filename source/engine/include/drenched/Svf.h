@@ -47,6 +47,13 @@ public:
         return make (warp (sampleRate, frequency) * std::sqrt (A), k, A * A, k * (1.0 - A) * A, 1.0 - A * A);
     }
 
+    /** Passes `frequency` at full level and falls away either side, `q` setting how fast. */
+    static Coefficients bandPass (double sampleRate, double frequency, double q) noexcept
+    {
+        const auto k = 1.0 / q;
+        return make (warp (sampleRate, frequency), k, 0.0, k, 0.0);
+    }
+
     /** A bell around `frequency`: `gainDb` at the centre, `q` its narrowness. */
     static Coefficients peak (double sampleRate, double frequency, double gainDb, double q) noexcept
     {

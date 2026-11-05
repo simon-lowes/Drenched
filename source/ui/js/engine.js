@@ -88,19 +88,31 @@ var P={
  moveRate:{l:'Movement rate',min:0.05,max:5,st:0.01,log:1,help:'sets how fast the living tail drifts.'},
  cpu:{l:'Low CPU',min:0,max:1,st:1,help:'runs the reverb on about a third of the processing by playing everything 21 ms late. Your DAW makes up the delay, so it stays in time; leave it off when you play live through the reverb.'}
 };
-/* The wet EQ: six bands on the reverb alone, a low shelf, four bells and a high shelf. Keys are
-   eq<n>f, eq<n>g and, for the bells, eq<n>q; the plugin ids are eq<n>Freq, eq<n>Gain, eq<n>Q.
-   A band at 0 dB does nothing, so the flat defaults play as the plugin did before the EQ. */
-var EQ_N=6,EQ_DEF=[[100,0.71],[250,0.9],[700,0.9],[2000,0.9],[5000,0.9],[10000,0.71]],EQ_NAME=['Low shelf','Band 2','Band 3','Band 4','Band 5','High shelf'];
-function eqBell(i){return i>0&&i<EQ_N-1;}
-for(var eqi=0;eqi<EQ_N;eqi++){var eqn=eqi+1,eqs=eqi===0?'below':eqi===EQ_N-1?'above':'around';
- P['eq'+eqn+'f']={l:'EQ '+eqn+' frequency',min:20,max:20000,st:1,log:1,help:eqBell(eqi)?'sets the centre of band '+eqn+' of the wet EQ.':'sets where the '+EQ_NAME[eqi].toLowerCase()+' of the wet EQ turns over.'};
- P['eq'+eqn+'g']={l:'EQ '+eqn+' gain',min:-18,max:18,st:0.1,help:'lifts or cuts the reverb '+eqs+' this frequency. The dry sound is not changed, and at 0 dB the band does nothing.'};
- if(eqBell(eqi))P['eq'+eqn+'q']={l:'EQ '+eqn+' Q',min:0.1,max:10,st:0.01,log:1,help:'sets how narrow band '+eqn+' is. Higher is narrower.'};}
-function eqDefaults(o){for(var i=0;i<EQ_N;i++){o['eq'+(i+1)+'f']=EQ_DEF[i][0];o['eq'+(i+1)+'g']=0;if(eqBell(i))o['eq'+(i+1)+'q']=EQ_DEF[i][1];}return o;}
-function eqActive(s,i){return Math.abs(s['eq'+(i+1)+'g'])>=0.01;}
+/* The wet EQ: twelve bands on the reverb alone, each a low shelf, a bell or a high shelf.
+   Keys are eq<n>f, eq<n>g, eq<n>q, eq<n>s (shape: 0 low shelf, 1 bell, 2 high shelf) and
+   eq<n>o (on); the plugin ids are eq<n>Freq, eq<n>Gain, eq<n>Q, eq<n>Shape, eq<n>On. The
+   first six start on, as a low shelf, four bells and a high shelf; the rest wait to be added
+   on the graph. A band off, or at 0 dB, does nothing, so the defaults play as the plugin did
+   before the EQ. */
+var EQ_N=12,EQ_DEF=[[100,0.71,0],[250,0.9,1],[700,0.9,1],[2000,0.9,1],[5000,0.9,1],[10000,0.71,2],[150,0.9,1],[400,0.9,1],[1200,0.9,1],[3000,0.9,1],[7000,0.9,1],[14000,0.9,1]];
+var EQ_SHAPES=['Low shelf','Bell','High shelf'];
+function eqName(i){return 'Band '+(i+1);}
+function eqShape(s,i){return clamp(Math.round(s['eq'+(i+1)+'s']),0,2);}
+function eqBell(s,i){return eqShape(s,i)===1;}
+function eqOn(s,i){return s['eq'+(i+1)+'o']>=0.5;}
+for(var eqi=0;eqi<EQ_N;eqi++){var eqn=eqi+1;
+ P['eq'+eqn+'f']={l:'EQ '+eqn+' frequency',min:20,max:20000,st:1,log:1,help:'sets where band '+eqn+' of the wet EQ sits: the centre of a bell, or where a shelf turns over.'};
+ P['eq'+eqn+'g']={l:'EQ '+eqn+' gain',min:-18,max:18,st:0.1,help:'lifts or cuts the reverb at band '+eqn+'. The dry sound is not changed, and at 0 dB the band does nothing.'};
+ P['eq'+eqn+'q']={l:'EQ '+eqn+' Q',min:0.1,max:10,st:0.01,log:1,help:'sets how narrow band '+eqn+' is. Higher is narrower. A shelf has a fixed slope.'};
+ P['eq'+eqn+'s']={l:'EQ '+eqn+' shape',min:0,max:2,st:1,help:'makes band '+eqn+' a low shelf, a bell or a high shelf.'};
+ P['eq'+eqn+'o']={l:'EQ '+eqn+' on',min:0,max:1,st:1,help:'puts band '+eqn+' on the graph. Off, it does nothing.'};}
+function eqDefaults(o){for(var i=0;i<EQ_N;i++){o['eq'+(i+1)+'f']=EQ_DEF[i][0];o['eq'+(i+1)+'g']=0;o['eq'+(i+1)+'q']=EQ_DEF[i][1];o['eq'+(i+1)+'s']=EQ_DEF[i][2];o['eq'+(i+1)+'o']=i<6?1:0;}return o;}
+function eqActive(s,i){return eqOn(s,i)&&Math.abs(s['eq'+(i+1)+'g'])>=0.01;}
 function eqFlat(s){for(var i=0;i<EQ_N;i++)if(eqActive(s,i))return false;return true;}
 function eqUsed(s){var n=0;for(var i=0;i<EQ_N;i++)if(eqActive(s,i))n++;return n;}
+/* the bands on the graph, in order of frequency; and the first band waiting to be added */
+function eqShown(s){var out=[];for(var i=0;i<EQ_N;i++)if(eqOn(s,i))out.push(i);return out.sort(function(a,b){return s['eq'+(a+1)+'f']-s['eq'+(b+1)+'f'];});}
+function eqFree(s){for(var i=0;i<EQ_N;i++)if(!eqOn(s,i))return i;return -1;}
 var DEEP=['lx','sx','output','preSync','rev','gate','attack','dLvl','dDel','dCol','xover','living','move','moveRate','locut','hicut','width','cloud','xfeed','duck','mono','cpu'];
 var TOGGLES=['preSync','rev','cpu'];
 var MAIN=['decay','pre','size','bright','el','dist'];
@@ -172,7 +184,7 @@ function eqp(el){var a=el/100*Math.PI/2;function d(x){return x<0.001?'\u2212\u22
 function hzText(v){return v<1000?Math.round(v)+TS+'Hz':(+(v/1000).toFixed(2))+TS+'kHz';}
 function dbSigned(v){return (v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+TS+'dB';}
 function fmt(s,k,v){if(v==null)v=getV(s,k);
- if(/^eq\d[fgq]$/.test(k)){var ek=k.charAt(3);return ek==='f'?hzText(v):ek==='g'?dbSigned(v):v.toFixed(2);}
+ if(/^eq\d+[fgqso]$/.test(k)){var ek=k.charAt(k.length-1);return ek==='f'?hzText(v):ek==='g'?dbSigned(v):ek==='s'?EQ_SHAPES[clamp(Math.round(v),0,2)]:ek==='o'?(v>=0.5?'On':'Off'):v.toFixed(2);}
  switch(k){
  case 'mix':return Math.round(v)+'%';case 'decay':return f1(v)+TS+'s';case 'pre':return Math.round(v)+TS+'ms';case 'size':return Math.round(v)+'%';
  case 'bright':return dbSigned(v);case 'el':return (100-Math.round(v))+' / '+Math.round(v);
@@ -264,40 +276,73 @@ function nodeAria(s,i,v){return 'aria-label="'+bandLabel(s,i)+'" aria-valuemin="
 /* a word in the plot naming the side the solid curve and its values belong to */
 function sideCap(s,x,y,anchor){return s.link?'':'<text class="sd" x="'+x+'" y="'+y+'"'+(anchor?' text-anchor="'+anchor+'"':'')+'>'+sideName(s)+'</text>';}
 /* the Link control: one curve for both sides, or a side to edit with the other shown faintly */
+/* which graph the main display draws: the decay by frequency, or the wet EQ to edit in place */
+function graphCtl(s){var eq=s.graph==='eq';return '<span class="dsd gsw" role="group" aria-label="Graph"><button data-act="graph" data-v="decay" aria-pressed="'+!eq+'">Decay</button><button data-act="graph" data-v="eq" aria-pressed="'+eq+'">EQ'+eqMark(s)+'</button></span>';}
+function gt(s,decay,eq){return s.graph==='eq'?eq:decay;}
 function linkCtl(s,cls){var on=!!s.link;
- return '<span class="dlk '+(cls||'')+'"><button class="dlb" data-act="dlink" aria-pressed="'+on+'" title="'+(on?'One decay for both sides. Click to give the left and right their own.':'The left and right decay at their own curves. Click to link them again.')+'">Link</button>'+
+ if(s.graph==='eq')return '<span class="dlk '+(cls||'')+'">'+graphCtl(s)+'</span>';
+ return '<span class="dlk '+(cls||'')+'">'+graphCtl(s)+'<button class="dlb" data-act="dlink" aria-pressed="'+on+'" title="'+(on?'One decay for both sides. Click to give the left and right their own.':'The left and right decay at their own curves. Click to link them again.')+'">Link</button>'+
   (on?'':'<span class="dsd" role="group" aria-label="Side to edit"><button data-act="dside" data-v="L" aria-pressed="'+(s.side!=='R')+'">Left</button><button data-act="dside" data-v="R" aria-pressed="'+(s.side==='R')+'">Right</button></span>')+'</span>';}
 
 /* wet EQ response: the Audio EQ Cookbook shelves (slope 1) and peaking bell, as the engine
    designs them (source/engine/include/drenched/Biquad.h), evaluated at 48 kHz */
 var EQ_SR=48000,EQ_MIN=20,EQ_MAX=20000,EQ_DB=18;
-function eqCoef(i,f,g,q){var A=Math.pow(10,g/40),w=2*Math.PI*clamp(f,1,EQ_SR*0.49)/EQ_SR,c=Math.cos(w),sn=Math.sin(w),b0,b1,b2,a0,a1,a2;
- if(eqBell(i)){var al=sn/(2*q);b0=1+al*A;b1=-2*c;b2=1-al*A;a0=1+al/A;a1=-2*c;a2=1-al/A;}
- else{var sh=2*Math.sqrt(A)*(sn/(2*Math.SQRT1_2)),lo=i===0,p=A+1,m=A-1;
+function eqCoef(shape,f,g,q){var A=Math.pow(10,g/40),w=2*Math.PI*clamp(f,1,EQ_SR*0.49)/EQ_SR,c=Math.cos(w),sn=Math.sin(w),b0,b1,b2,a0,a1,a2;
+ if(shape===1){var al=sn/(2*q);b0=1+al*A;b1=-2*c;b2=1-al*A;a0=1+al/A;a1=-2*c;a2=1-al/A;}
+ else{var sh=2*Math.sqrt(A)*(sn/(2*Math.SQRT1_2)),lo=shape===0,p=A+1,m=A-1;
   if(lo){b0=A*(p-m*c+sh);b1=2*A*(m-p*c);b2=A*(p-m*c-sh);a0=p+m*c+sh;a1=-2*(m+p*c);a2=p+m*c-sh;}
   else{b0=A*(p+m*c+sh);b1=-2*A*(m+p*c);b2=A*(p+m*c-sh);a0=p-m*c+sh;a1=2*(m-p*c);a2=p-m*c-sh;}}
  return [b0/a0,b1/a0,b2/a0,a1/a0,a2/a0];}
 function eqMagDb(c,f){var w=2*Math.PI*f/EQ_SR,c1=Math.cos(w),s1=Math.sin(w),c2=Math.cos(2*w),s2=Math.sin(2*w);
  var nr=c[0]+c[1]*c1+c[2]*c2,ni=-(c[1]*s1+c[2]*s2),dr=1+c[3]*c1+c[4]*c2,di=-(c[3]*s1+c[4]*s2);return 10*Math.log10((nr*nr+ni*ni)/(dr*dr+di*di));}
-function eqBandCoef(s,i){var n=i+1;return eqCoef(i,s['eq'+n+'f'],s['eq'+n+'g'],eqBell(i)?s['eq'+n+'q']:Math.SQRT1_2);}
-/* the whole EQ's response at f, in dB; bands at 0 dB are skipped as the engine skips them */
+function eqBandCoef(s,i){var n=i+1;return eqCoef(eqShape(s,i),s['eq'+n+'f'],s['eq'+n+'g'],eqBell(s,i)?s['eq'+n+'q']:Math.SQRT1_2);}
+/* the whole EQ's response at f, in dB; bands off or at 0 dB are skipped as the engine skips them */
 function eqResponse(s,f,only){var t=0;for(var i=0;i<EQ_N;i++){if(only!=null&&i!==only)continue;if(!eqActive(s,i))continue;t+=eqMagDb(eqBandCoef(s,i),f);}return t;}
-function eqSVG(s,w,h,cur){var L=36,R=14,T=14,B=22,pw=w-L-R,ph=h-T-B,span=Math.log(EQ_MAX/EQ_MIN);
+/* The EQ graph: the response curve over the live spectrum, a point per band to drag, and for
+   the chosen band its shape, Solo and Remove. In a window (the Wet EQ dialog) and on the main
+   display of every look (o.main); Rotunda draws it round the room (o.polar: {cx,cy,r0,r1},
+   frequency as angle and gain as radius). o.m are the margins, o.big larger points. */
+var EQ_POL_A0=-225,EQ_POL_SPAN=270;
+function eqSVG(s,w,h,cur,o){o=o||{};var pol=o.polar,m=o.m||[36,14,14,22],L=m[0],R=m[1],T=m[2],B=m[3],pw=w-L-R,ph=h-T-B,span=Math.log(EQ_MAX/EQ_MIN),nr=o.big?11:o.main?10:9;
  function X(f){return L+pw*Math.log(f/EQ_MIN)/span;}function Y(g){return T+ph*(EQ_DB-g)/(2*EQ_DB);}
- function curve(only){var d='';for(var k=0;k<=160;k++){var f=EQ_MIN*Math.exp(span*k/160),y=clamp(Y(eqResponse(s,f,only)),T-3,T+ph+3);d+=(k?'L':'M')+X(f).toFixed(1)+' '+y.toFixed(1);}return d;}
- var out='<svg class="eqg" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" data-eqg="1" data-l="'+L+'" data-t="'+T+'" data-pw="'+pw+'" data-ph="'+ph+'" data-w="'+w+'" role="group" aria-label="Wet EQ response, 20 Hz to 20 kHz, plus or minus 18 dB. Drag a point sideways for frequency and up or down for gain, or focus it and use the arrow keys.">';
- for(var g=-EQ_DB;g<=EQ_DB;g+=6){var yy=Y(g).toFixed(1);out+='<line class="'+(g===0?'zero':'gr')+'" x1="'+L+'" x2="'+(L+pw)+'" y1="'+yy+'" y2="'+yy+'"/><text x="'+(L-6)+'" y="'+(+yy+4)+'" text-anchor="end">'+(g>0?'+':g<0?'\u2212':'')+Math.abs(g)+'</text>';}
- [20,50,100,200,500,1000,2000,5000,10000,20000].forEach(function(f){var xx=X(f).toFixed(1);if(f>20&&f<20000)out+='<line class="gr" x1="'+xx+'" x2="'+xx+'" y1="'+T+'" y2="'+(T+ph)+'"/>';
-  out+='<text x="'+xx+'" y="'+(h-6)+'" text-anchor="'+(f===20?'start':f===20000?'end':'middle')+'">'+(f>=1000?(f/1000)+'k':f)+(f===20000?' Hz':'')+'</text>';});
- /* the wet low cut and high cut come first, so the EQ has nothing left to shape beyond them */
- if(s.locut>EQ_MIN){var xl=X(s.locut).toFixed(1);out+='<line class="cut" x1="'+xl+'" x2="'+xl+'" y1="'+T+'" y2="'+(T+ph)+'"/><text class="cutt" x="'+(+xl-5)+'" y="'+(T+10)+'" text-anchor="end">Low cut</text>';}
- if(s.hicut<EQ_MAX){var xh=X(s.hicut).toFixed(1);out+='<line class="cut" x1="'+xh+'" x2="'+xh+'" y1="'+T+'" y2="'+(T+ph)+'"/><text class="cutt" x="'+(+xh+5)+'" y="'+(T+10)+'">High cut</text>';}
- var sum=curve(null);out+='<path class="fill" d="'+sum+'L'+(L+pw)+' '+Y(0).toFixed(1)+'L'+L+' '+Y(0).toFixed(1)+'Z"/>';
- if(cur!=null&&eqActive(s,cur))out+='<path class="one" d="'+curve(cur)+'"/>';
+ function A(f){return (EQ_POL_A0+EQ_POL_SPAN*Math.log(f/EQ_MIN)/span)*Math.PI/180;}function RD(g){return pol.r0+(pol.r1-pol.r0)*(g+EQ_DB)/(2*EQ_DB);}
+ function P2(f,g){if(!pol)return [X(f),Y(g)];var a=A(f),r=RD(clamp(g,-EQ_DB,EQ_DB));return [pol.cx+r*Math.cos(a),pol.cy+r*Math.sin(a)];}
+ function curve(only){var d='';for(var k=0;k<=160;k++){var f=EQ_MIN*Math.exp(span*k/160),g=clamp(eqResponse(s,f,only),-EQ_DB-1,EQ_DB+1),p=P2(f,g);d+=(k?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1);}return d;}
+ var shown=eqShown(s),free=eqFree(s),solo=s.eqSolo,onCur=cur!=null&&eqOn(s,cur);
+ var out='<svg class="eqg'+(o.main?' main':'')+(pol?' pol':'')+'" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" data-eqg="1" data-l="'+L+'" data-t="'+T+'" data-pw="'+pw+'" data-ph="'+ph+'" data-w="'+w+'"'+(pol?' data-polar="1" data-cx="'+pol.cx+'" data-cy="'+pol.cy+'" data-r0="'+pol.r0+'" data-r1="'+pol.r1+'"':'')+' role="group" aria-label="Wet EQ, 20 Hz to 20 kHz, plus or minus 18 dB. Drag a point sideways for frequency and up or down for gain, or focus it and use the arrow keys. Double-click an empty spot to add a band.">';
+ /* the live spectrum of the reverb, behind everything, a bar per third-octave band; app.js moves the bars in place */
+ out+='<g class="spec" data-spec="'+(pol?'pol':'lin')+'" aria-hidden="true">';
+ for(var j=0;j<31;j++){var bf=BANDS31[j];if(pol){var ba=A(bf)*180/Math.PI,bw=(pol.r1-pol.r0)*0.04;out+='<rect data-sb="'+j+'" x="'+(-bw/2).toFixed(1)+'" y="'+(-pol.r0).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="0" transform="translate('+pol.cx+' '+pol.cy+') rotate('+(ba+90).toFixed(1)+')"/>';}
+  else{var bx=X(bf),ew=pw/30*0.55;out+='<rect data-sb="'+j+'" x="'+(bx-ew/2).toFixed(1)+'" y="'+(T+ph)+'" width="'+ew.toFixed(1)+'" height="0"/>';}}
+ out+='</g>';
+ if(pol){for(var g=-EQ_DB;g<=EQ_DB;g+=6){var rr=RD(g).toFixed(1);/* the dB scale runs down the gap at the bottom, where no frequency is */out+='<circle class="'+(g===0?'zero':'gr')+'" cx="'+pol.cx+'" cy="'+pol.cy+'" r="'+rr+'"/><text x="'+pol.cx+'" y="'+(pol.cy+(+rr)+4).toFixed(1)+'" text-anchor="middle">'+(g>0?'+':g<0?'\u2212':'')+Math.abs(g)+'</text>';}
+  [20,50,100,200,500,1000,2000,5000,10000,20000].forEach(function(f){var a=A(f),p0=P2(f,-EQ_DB),p1=P2(f,EQ_DB),rl=pol.r1+16;out+='<line class="gr" x1="'+p0[0].toFixed(1)+'" y1="'+p0[1].toFixed(1)+'" x2="'+p1[0].toFixed(1)+'" y2="'+p1[1].toFixed(1)+'"/><text x="'+(pol.cx+rl*Math.cos(a)).toFixed(1)+'" y="'+(pol.cy+rl*Math.sin(a)+4).toFixed(1)+'" text-anchor="middle">'+(f>=1000?(f/1000)+'k':f)+(f===20000?' Hz':'')+'</text>';});}
+ else{for(var g2=-EQ_DB;g2<=EQ_DB;g2+=6){var yy=Y(g2).toFixed(1);out+='<line class="'+(g2===0?'zero':'gr')+'" x1="'+L+'" x2="'+(L+pw)+'" y1="'+yy+'" y2="'+yy+'"/><text x="'+(L-6)+'" y="'+(+yy+4)+'" text-anchor="end">'+(g2>0?'+':g2<0?'\u2212':'')+Math.abs(g2)+'</text>';}
+  [20,50,100,200,500,1000,2000,5000,10000,20000].forEach(function(f){var xx=X(f).toFixed(1);if(f>20&&f<20000)out+='<line class="gr" x1="'+xx+'" x2="'+xx+'" y1="'+T+'" y2="'+(T+ph)+'"/>';
+   out+='<text x="'+xx+'" y="'+(T+ph+B-6)+'" text-anchor="'+(f===20?'start':f===20000?'end':'middle')+'">'+(f>=1000?(f/1000)+'k':f)+(f===20000?' Hz':'')+'</text>';});
+  /* the wet low cut and high cut come first, so the EQ has nothing left to shape beyond them */
+  if(s.locut>EQ_MIN){var xl=X(s.locut).toFixed(1);out+='<line class="cut" x1="'+xl+'" x2="'+xl+'" y1="'+T+'" y2="'+(T+ph)+'"/><text class="cutt" x="'+(+xl-5)+'" y="'+(T+ph-6)+'" text-anchor="end">Low cut</text>';}
+  if(s.hicut<EQ_MAX){var xh=X(s.hicut).toFixed(1);out+='<line class="cut" x1="'+xh+'" x2="'+xh+'" y1="'+T+'" y2="'+(T+ph)+'"/><text class="cutt" x="'+(+xh+5)+'" y="'+(T+ph-6)+'">High cut</text>';}}
+ var sum=curve(null);
+ if(pol){var z=curve(null);/* filled between the curve and the 0 dB ring */var ring='';for(var k=160;k>=0;k--){var pf=EQ_MIN*Math.exp(span*k/160),pz=P2(pf,0);ring+='L'+pz[0].toFixed(1)+' '+pz[1].toFixed(1);}out+='<path class="fill" d="'+z+ring+'Z"/>';}
+ else out+='<path class="fill" d="'+sum+'L'+(L+pw)+' '+Y(0).toFixed(1)+'L'+L+' '+Y(0).toFixed(1)+'Z"/>';
+ /* always one path here (empty when no band is picked out), so the points after it keep their places in the morph */
+ var soloed=solo!=null&&eqOn(s,solo);
+ out+='<path class="one'+(soloed?' solo':'')+'" d="'+(soloed?curve(solo):onCur&&eqActive(s,cur)?curve(cur):'')+'"/>';
  out+='<path class="sum" d="'+sum+'"/>';
- for(var i=0;i<EQ_N;i++){var n=i+1,f=s['eq'+n+'f'],gn=s['eq'+n+'g'],q=eqBell(i)?s['eq'+n+'q']:null,cx=X(f).toFixed(1),cy=Y(gn).toFixed(1);
-  out+='<g class="eqn'+(eqActive(s,i)?' on':'')+(i===cur?' cur':'')+'" data-eqn="'+i+'" data-fid="eqn-'+i+'" tabindex="0" role="slider" aria-label="'+EQ_NAME[i]+(eqBell(i)?', bell':'')+'. Left and right move the frequency, up and down the gain'+(eqBell(i)?', Page Up and Page Down the Q':'')+'." aria-valuemin="-18" aria-valuemax="18" aria-valuenow="'+gn.toFixed(1)+'" aria-valuetext="'+dbSigned(gn)+' at '+hzText(f)+(q?', Q '+q.toFixed(2):'')+'" transform="translate('+cx+' '+cy+')"><circle class="hit" r="14"/><circle r="8"/><text y="3.5">'+n+'</text></g>';}
+ shown.forEach(function(i){var n=i+1,f=s['eq'+n+'f'],gn=s['eq'+n+'g'],bell=eqBell(s,i),q=bell?s['eq'+n+'q']:null,p=P2(f,gn),sh=EQ_SHAPES[eqShape(s,i)].toLowerCase();
+  out+='<g class="eqn'+(eqActive(s,i)?' on':'')+(i===cur?' cur':'')+(i===solo?' solo':'')+'" data-eqn="'+i+'" data-fid="eqn-'+i+'" tabindex="0" role="slider" aria-label="'+eqName(i)+', '+sh+'. Left and right move the frequency, up and down the gain'+(bell?', Page Up and Page Down the Q':'')+'; S listens to it alone, Delete removes it." aria-valuemin="-18" aria-valuemax="18" aria-valuenow="'+gn.toFixed(1)+'" aria-valuetext="'+dbSigned(gn)+' at '+hzText(f)+(q?', Q '+q.toFixed(2):'')+(i===solo?', solo':'')+'" transform="translate('+p[0].toFixed(1)+' '+p[1].toFixed(1)+')"><circle class="hit" r="'+(nr+6)+'"/><circle r="'+nr+'"/><text y="3.5">'+n+'</text></g>';});
+ /* the band's tools, along the top of the plot: shape, Solo, Remove; and Add band while one is free */
+ var pills=[],px=pol?pol.cx-pol.r1+8:L+6,py=pol?pol.cy+pol.r1-6:T+6;
+ function pill(label,act,v,i,pressed,cls){var wd=Math.round(label.length*6.4)+16;pills.push('<g class="eqp'+(cls?' '+cls:'')+'" role="button" tabindex="0" data-act="'+act+'"'+(v!=null?' data-v="'+v+'"':'')+(i!=null?' data-i="'+i+'"':'')+(pressed!=null?' aria-pressed="'+pressed+'"':'')+' aria-label="'+label+(i!=null?', band '+(i+1):'')+'" transform="translate('+px+' '+py+')"><rect rx="9" width="'+wd+'" height="18"/><text x="'+(wd/2)+'" y="12.5" text-anchor="middle">'+label+'</text></g>');px+=wd+4;}
+ if(onCur){EQ_SHAPES.forEach(function(nm,k){pill(nm,'eqshape',k,cur,eqShape(s,cur)===k);});px+=6;pill('Solo','eqsolo',null,cur,solo===cur,'sl');pill('Remove','eqremove',null,cur,null,'rm');px+=6;}
+ if(free>=0&&(!onCur||!pol))pill('Add band','eqadd',null,null,null,'ad');
+ out+='<g class="eqtb">'+pills.join('')+'</g>';
+ if(!shown.length)out+='<text class="empty" x="'+(pol?pol.cx:L+pw/2)+'" y="'+(pol?pol.cy-pol.r0+30:T+ph/2)+'" text-anchor="middle">No bands. Double-click to add one.</text>';
  return out+'</svg>';}
+/* the main display's graph: the decay (as each look draws it) or the wet EQ in its place */
+function graphSVG(sysId,s,w,h,o){o=o||{};if(s.graph!=='eq')return decaySVG(sysId,s,w,h,o);var m=o.m||[44,16,18,26];
+ return eqSVG(s,w,h,s.eqCur,{main:true,big:o.big,m:[Math.max(m[0],36),Math.max(m[1],14),Math.max(m[2],22),Math.max(m[3],22)]});}
 
 /* the measured decay of the playing response: the broadband Schroeder curve from 0 dB down to
    -60 dB, drawn from the plugin's analysis (a: {decay, decayStep, seconds}) */
@@ -467,6 +512,11 @@ var ACT_HELP={freeze:'<b>Freeze</b> holds the tail as it sounds now, for as long
  match:'<b>Match a room</b> listens to a recording made in a room and sets the decay to match it.',
  adv:'<b>All parameters</b> opens every setting in place: direct sound, gate, reverse, living tail, width and more.',
  eq:'<b>Wet EQ</b> shapes the reverb alone. The dry sound is not changed.',
+ graph:function(s,p){return p.v==='eq'?'<b>EQ</b> puts the wet EQ on the main display: drag its points, double-click to add a band, S to listen to one alone.':'<b>Decay</b> shows the decay time by frequency.';},
+ eqadd:'<b>Add band</b> puts a new bell on the graph at 1 kHz. Double-clicking an empty spot adds one there.',
+ eqshape:'<b>Shape</b> makes the band a low shelf, a bell or a high shelf.',
+ eqsolo:'<b>Solo</b> plays this band\u2019s part of the reverb alone, with the dry sound muted, while it is on. Never saved.',
+ eqremove:'<b>Remove</b> takes the band off the graph. Its gain goes to 0 dB.',
  wf:'<b>Waterfall</b> shows the tail decaying, frequency by time.',
  browse:'<b>Spaces</b> lists every recorded room, modelled hall and your own impulse responses.',
  prev:'<b>Previous space.</b> Locked values stay as they are.',next:'<b>Next space.</b> Locked values stay as they are.',
@@ -485,7 +535,7 @@ var ACT_HELP={freeze:'<b>Freeze</b> holds the tail as it sounds now, for as long
  toggle:function(s,p){var k=p.k;return k&&P[k]?'<b>'+P[k].l+' '+esc(fmt(s,k))+'.</b> '+P[k].l+' '+P[k].help:'';}};
 function peekText(s,p){if(!p)return '';
  if(p.band!=null){var i=p.band,b=curBands(s)[i],nb=spOf(s).bands[i];return '<b>'+bandLabel(s,i)+' '+b.toFixed(2)+TS+'s</b>'+(Math.abs(b-nb)>0.004?', captured '+nb.toFixed(2)+TS+'s':', as captured')+'. Drag the point up or down, or use the arrow keys.';}
- if(p.eq!=null){var n=p.eq+1;return '<b>Wet EQ band '+n+'.</b> Drag it to set the frequency and gain. The wheel sets Q, and a double click returns it to 0 dB.';}
+ if(p.eq!=null){var n=p.eq+1,sh=EQ_SHAPES[eqShape(s,p.eq)].toLowerCase();return '<b>Wet EQ band '+n+', '+sh+'.</b> Drag it to set the frequency and gain'+(sh==='bell'?'; the wheel, or Alt and a drag, sets Q':'')+'. Double-click returns it to 0 dB; S listens to it alone, Delete removes it.';}
  if(p.k&&P[p.k]){var k=p.k,ov=isOver(s,k),nv=natV(s,k),lb=k==='decay'&&!s.link?sideName(s)+' decay':P[k].l;return '<b>'+lb+' '+esc(fmt(s,k))+'</b>'+(nv==null?'':ov?', captured '+esc(fmt(s,k,nv)):', as captured')+'. '+P[k].l+' '+P[k].help+(k==='decay'&&!s.link?' The other side shows faintly.':'');}
  if(p.act){var h=ACT_HELP[p.act];if(typeof h==='function')h=h(s,p);return h||'';}
  return '';}
@@ -587,7 +637,7 @@ function stageHTML(id,s){var sp=spOf(s),e=eqp(s.el);
  return '<div class="stg-top">'+wordmark(s,'wm',wm,true)+prevNext(s)+'<span style="font-size:13px">'+esc(sp.name)+'</span><span style="flex:1"></span>'+segMode(s)+segAB(s)+'</div>'+
  '<div class="stg"><div class="stg-nums">'+tile('RT60','decay',roEl(s,'decay'))+tile('Pre-delay','pre',roEl(s,'pre'))+tile('Early','el','<span class="big">'+e.e+'<small> dB</small></span>')+tile('Tail',null,'<span class="big">'+e.t+'<small> dB</small></span>')+tile('Mix','mix',roEl(s,'mix'))+'</div>'+
  '<div class="stg-met"><div class="ph"><span class="lbl">Output, '+esc(layoutText(s))+'</span><span class="lbl">Peak dBFS</span></div><div class="mtrs" style="grid-template-columns:repeat('+Math.max(12,outputsOf(s).length)+',minmax(0,1fr))">'+outputsOf(s).map(function(c,ci){var lv=chLevel(s,ci),p=meterPct(lv);return '<div class="mt"><em data-smt="'+ci+'">'+dbText(lv)+'</em><div class="tr"><s></s><i data-sm="'+ci+'" style="height:'+p.toFixed(0)+'%"></i><b style="bottom:'+Math.min(98,p+4).toFixed(0)+'%"></b></div><span>'+esc(c.name||String(ci+1))+'</span></div>';}).join('')+'</div></div>'+
- '<div class="stg-bot"><div class="stg-dec"><span class="lbl">Decay by frequency'+linkCtl(s,'end')+'</span>'+decaySVG(id,s,536,250,{bars:id==='signal',dims:id==='section'})+'</div><div class="stg-ct">'+MAIN.map(function(k){return '<div class="row"><span>'+P[k].l+ovrEl(s,k)+'</span>'+roEl(s,k)+'</div>';}).join('')+'<div class="row"><span>Freeze</span><button class="lk" data-act="freeze" aria-pressed="'+s.freeze+'" style="width:auto;padding:0 8px;font-size:11px">'+(s.freeze?'On':'Off')+'</button></div><div class="row"><span>Wet EQ'+eqMark(s)+'</span><button class="lk" data-act="eq" aria-haspopup="dialog" aria-expanded="'+!!s.eq+'" style="width:auto;padding:0 8px;font-size:11px">'+(eqFlat(s)?'Flat':'In use')+'</button></div><div class="row"><span>Waterfall</span><button class="lk" data-act="wf" aria-haspopup="dialog" aria-expanded="'+!!s.wf+'" style="width:auto;padding:0 8px;font-size:11px">Open</button></div></div><div class="stg-th">'+th+'<div class="cap"><b>'+esc(sp.name)+'</b><span>'+vol(sp)+', listener '+esc(fmt(s,'dist'))+'</span>'+pos+'</div></div></div></div>'+
+ '<div class="stg-bot"><div class="stg-dec"><span class="lbl"><span>'+gt(s,'Decay by frequency','Wet EQ')+'</span>'+linkCtl(s,'end')+'</span>'+graphSVG(id,s,536,250,{bars:id==='signal',dims:id==='section'})+'</div><div class="stg-ct">'+MAIN.map(function(k){return '<div class="row"><span>'+P[k].l+ovrEl(s,k)+'</span>'+roEl(s,k)+'</div>';}).join('')+'<div class="row"><span>Freeze</span><button class="lk" data-act="freeze" aria-pressed="'+s.freeze+'" style="width:auto;padding:0 8px;font-size:11px">'+(s.freeze?'On':'Off')+'</button></div><div class="row"><span>Wet EQ'+eqMark(s)+'</span><button class="lk" data-act="eq" aria-haspopup="dialog" aria-expanded="'+!!s.eq+'" style="width:auto;padding:0 8px;font-size:11px">'+(eqFlat(s)?'Flat':'In use')+'</button></div><div class="row"><span>Waterfall</span><button class="lk" data-act="wf" aria-haspopup="dialog" aria-expanded="'+!!s.wf+'" style="width:auto;padding:0 8px;font-size:11px">Open</button></div></div><div class="stg-th">'+th+'<div class="cap"><b>'+esc(sp.name)+'</b><span>'+vol(sp)+', listener '+esc(fmt(s,'dist'))+'</span>'+pos+'</div></div></div></div>'+
  '<div class="stg-strip">'+hintText(s)+meters()+'</div>';}
 
 /* ---- the six studio compositions ---- */
@@ -597,7 +647,7 @@ var COMPOSE={
   var top='<div class="an-top">'+wordmark(s,'an-wm','DRENCHED')+prevNext(s)+'<button class="an-sel" data-act="browse" aria-expanded="'+s.browse+'"><span class="st"><b>'+esc(sp.name)+'</b><small>'+esc(sp.place)+', '+vol(sp)+'</small></span><span class="vh">, choose a space</span>'+ICON.down+'</button><span style="flex:1"></span>'+segMode(s)+segAB(s)+'</div>';
   var win='<div class="an-win">'+photoEl(s,0,0,'position:absolute;inset:0')+'<div class="scrim"></div><div class="an-name"><b>'+esc(sp.name)+'</b><span>'+esc(sp.mat)+', '+vol(sp)+', captured '+esc(sp.date)+'</span></div>'+(CP?posCtl(s,CP,'an-cp'):'')+
    '<div class="an-ro"><div>'+roEl(s,'decay')+'<span>RT60'+(isOver(s,'decay')?', changed':'')+'</span></div><div>'+roEl(s,'pre')+'<span>Pre-delay</span></div><div><span class="ro an-rov">'+e.e+' dB</span><span>Early</span></div><div><span class="ro an-rov">'+e.t+' dB</span><span>Tail</span></div></div>'+
-   '<div class="an-graph">'+decaySVG('anodised',s,568,292,{m:[40,20,14,26]})+'</div><div class="an-link">'+linkCtl(s)+'</div>'+
+   '<div class="an-graph">'+graphSVG('anodised',s,568,292,{m:[40,20,14,26]})+'</div><div class="an-link">'+linkCtl(s)+'</div>'+
    '<div class="an-bands">'+bandInputs(s,sp,false)+'</div><div class="glass"></div></div>';
   var deck=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="an-deck"><div class="an-mix">'+roEl(s,'mix')+knobEl(s,'mix',128,'anodised')+'<span class="an-lab">Mix '+lockBtn(s,'mix','Mix')+'</span></div>'+MAIN.map(ctl).join('')+
    '<div class="an-acts" role="group" aria-label="Actions"><button class="an-btn" data-act="freeze" aria-pressed="'+s.freeze+'"><i></i>Freeze</button><button class="an-btn" data-act="match"><i></i>Match a room</button><button class="an-btn" data-act="adv" aria-expanded="'+s.adv+'"><i></i>All parameters</button>'+eqBtn(s,'an-btn','<i></i>Wet EQ')+wfBtn(s,'an-btn','<i></i>Waterfall')+'</div></div>';
@@ -609,7 +659,7 @@ var COMPOSE={
   var head='<div class="se-head">'+wordmark(s,'se-title','Drenched')+'<span class="se-sub" style="color:var(--tx);font-size:12px">'+esc(sp.name.toUpperCase())+'</span><span class="se-sub">PLAN AND SECTION, SHEET '+esc(sp.no.replace(/\D/g,''))+'</span>'+prevNext(s)+'<button class="ca-link" data-act="browse" aria-expanded="'+s.browse+'" style="font:11px var(--fnum);letter-spacing:.08em;color:var(--tx2)">CHANGE SPACE</button><span style="flex:1"></span><div class="se-box"><span class="cap">VIEW</span><button data-act="mode" data-v="studio" aria-pressed="'+(s.mode==='studio')+'">STUDIO</button><button data-act="mode" data-v="stage" aria-pressed="'+(s.mode==='stage')+'">STAGE</button></div><div class="se-box"><span class="cap">REV</span><button data-act="slot" data-v="A" aria-pressed="'+(s.slot==='A')+'">A</button><button data-act="slot" data-v="B" aria-pressed="'+(s.slot==='B')+'">B</button></div></div>';
   var plan='<div class="se-plan"><div class="legend"><div class="se-box" style="height:24px;margin-right:6px"><button data-act="view" data-v="plan" aria-pressed="'+(s.view==='plan')+'">PLAN</button><button data-act="view" data-v="section" aria-pressed="'+(s.view==='section')+'">SECTION</button></div><span><i></i>S1 source</span><span><i class="r"></i>R1 listener. Drag either to move it</span>'+(CP?'<span><i class="st"></i>Captured position, click to go</span>':'')+'</div>'+planView(s,664,620)+sched+'<div class="se-photo">'+photoEl(s,212,132)+'<span>SITE PHOTOGRAPH, '+esc(sp.date.toUpperCase())+'</span></div></div>';
   var row=function(k){return '<div class="se-row"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+lockBtn(s,k,P[k].l)+'</div>';};
-  var right=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="se-right"><div><div class="se-h"><span>SECTION A-A, DECAY TIME BY FREQUENCY</span><span>SOLID AS SET, DASHED AS CAPTURED</span></div><div class="se-lk">'+(s.link?'':'<span>FAINT, THE OTHER SIDE</span>')+linkCtl(s)+'</div>'+decaySVG('section',s,454,214,{dims:true,m:[40,16,16,24]})+'</div>'+
+  var right=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="se-right"><div><div class="se-h"><span>'+gt(s,'SECTION A-A, DECAY TIME BY FREQUENCY','SECTION B-B, WET EQ')+'</span><span>'+gt(s,'SOLID AS SET, DASHED AS CAPTURED','DRAG A POINT, DOUBLE-CLICK TO ADD')+'</span></div><div class="se-lk">'+(s.link||s.graph==='eq'?'':'<span>FAINT, THE OTHER SIDE</span>')+linkCtl(s)+'</div>'+graphSVG('section',s,454,214,{dims:true,m:[40,16,16,24]})+'</div>'+
    '<div class="se-sched"><div class="se-row hd"><span>Parameter</span><span>Value</span><span style="text-align:right">Typed</span><span></span></div>'+row('mix')+MAIN.map(row).join('')+'</div>'+
    '<div class="se-acts"><button data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button data-act="match">Match a room</button><button data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'')+wfBtn(s,'')+'</div>'+
    '<div class="se-tb"><div><small>Sheet</small><b>'+esc(sp.no)+'</b></div><div><small>RT60 mid</small><b>'+esc(fmt(s,'decay'))+'</b></div><div><small>Early / tail</small><b>'+e.e+' / '+e.t+' dB</b></div><div><small>Captured</small><b>'+esc(sp.date)+'</b></div></div></div>';
@@ -621,7 +671,7 @@ var COMPOSE={
    '<div class="ca-no">'+esc(sp.no)+'</div><h3 class="ca-name'+(sp.name.length>12?' ca-long':'')+'">'+esc(parts.join(' '))+(parts.length?' ':'')+'<em>'+esc(last)+'</em></h3>'+
    '<div class="ca-nav">'+prevNext(s)+'<button class="ca-link" data-act="browse" aria-expanded="'+s.browse+'">Browse the collection</button></div>'+
    '<dl class="ca-dl"><dt>Listener</dt><dd>'+esc(fmt(s,'dist'))+' from the source, early '+e.e+' dB, tail '+e.t+' dB</dd>'+(CP?'<dt>Heard from</dt><dd>'+posCtl(s,CP,'ca-cp')+'</dd>':'')+'</dl>'+
-   '<div class="ca-fig"><div class="fh"><b>Fig. 1</b><span>Decay time by frequency</span>'+linkCtl(s,'end')+'</div>'+decaySVG('catalogue',s,488,226,{m:[36,14,12,24]})+'<p class="fc">Solid line as set, dashed as captured'+(s.link?'. Drag a point to change one band.':', faint the other side. Drag a point to change one band.')+'</p></div>'+
+   '<div class="ca-fig"><div class="fh"><b>Fig. 1</b><span>'+gt(s,'Decay time by frequency','Wet EQ')+'</span>'+linkCtl(s,'end')+'</div>'+graphSVG('catalogue',s,488,226,{m:[36,14,12,24]})+'<p class="fc">'+gt(s,'Solid line as set, dashed as captured'+(s.link?'. Drag a point to change one band.':', faint the other side. Drag a point to change one band.'),'The reverb alone, shaped band by band. Double-click to add a band.')+'</p></div>'+
    '<div class="ca-list">'+MAIN.map(row).join('')+'</div>'+
    '<div class="ca-mix">'+knobEl(s,'mix',56,'catalogue')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div><div class="ca-acts"><button class="ca-link" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="ca-link" data-act="match">Match a room</button><button class="ca-link" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'ca-link')+wfBtn(s,'ca-link')+'</div></div></div>';
   var label='<div class="ca-label"><b>'+esc(sp.no)+'</b><span>'+esc(sp.place)+'</span><span>'+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</span><span>'+esc(sp.rec)+', '+esc(sp.date)+'</span></div>';
@@ -630,8 +680,8 @@ var COMPOSE={
  field:function(s){var sp=spOf(s),e=eqp(s.el),CP=positionsOf(s);
   var fr=function(k,cls){return '<div class="fr '+(cls||'')+'">'+knobEl(s,k,cls?44:34,'field')+'<div class="t"><span>'+P[k].l+ovrEl(s,k)+(k==='mix'?lockBtn(s,'mix','Mix'):'')+'</span>'+roEl(s,k)+'</div></div>';};
   var rail=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="fi-rail">'+fr('mix','mix')+MAIN.map(function(k){return fr(k);}).join('')+'<div class="segs">'+segMode(s)+segAB(s)+'</div><div class="acts"><button class="fi-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="fi-btn" data-act="match">'+ICON.match+'Match a room</button><button class="fi-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'All parameters</button>'+eqBtn(s,'fi-btn',null,true)+wfBtn(s,'fi-btn',null,true)+'</div></div>';
-  return '<div class="fi-heat">'+decaySVG('field',s,1200,760,{heat:true,cols:88,rows:44,m:[72,280,150,96],big:true,cb:true,xy:712})+'</div>'+
-   '<div class="fi-big">'+roEl(s,'decay').replace('class="ro "','class="ro "')+'<div class="what"><b>RT60, mid band'+(s.link?'':', '+sideName(s).toLowerCase())+(isOver(s,'decay')?', changed':'')+'</b><span>Energy decay, frequency by time, \u221260 dB floor</span></div></div>'+
+  return '<div class="fi-heat">'+graphSVG('field',s,1200,760,{heat:true,cols:88,rows:44,m:[72,280,150,96],big:true,cb:true,xy:712})+'</div>'+
+   '<div class="fi-big">'+roEl(s,'decay').replace('class="ro "','class="ro "')+'<div class="what"><b>RT60, mid band'+(s.link?'':', '+sideName(s).toLowerCase())+(isOver(s,'decay')?', changed':'')+'</b><span>'+gt(s,'Energy decay, frequency by time, \u221260 dB floor','Wet EQ, the reverb alone, \u00b118 dB')+'</span></div></div>'+
    '<div class="fi-sp">'+prevNext(s).replace('</button><button','</button><button class="ca-link" data-act="browse" aria-expanded="'+s.browse+'" style="font:13px var(--fui);color:var(--tx);text-decoration:none"><span class="nm">'+esc(sp.name)+', '+vol(sp)+', pre-delay '+esc(fmt(s,'pre'))+'</span></button><button')+linkCtl(s)+(CP?posCtl(s,CP,'fi-cp'):'')+'</div>'+
    '<div class="fi-th">'+photoEl(s,120,74)+'<span>'+esc(sp.place)+'</span></div>'+rail+
    '<div class="fi-bands">'+[0,1,2,3,4,5,6,7].map(function(i){return bandInput(s,sp,i);}).join('')+'</div>'+
@@ -644,7 +694,7 @@ var COMPOSE={
    '<div class="vi-top">'+wordmark(s,'vi-wm','Drenched')+segMode(s)+segAB(s)+'</div>'+
    '<div class="vi-name"><h3>'+esc(sp.name)+'</h3><span>'+esc(sp.place)+', '+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</span></div>'+
    '<div class="vi-nav"><button data-act="prev" aria-label="Previous space, '+esc(pv.name)+'" title="Previous: '+esc(pv.name)+'">'+ICON.prev+'</button><button data-act="browse" aria-expanded="'+s.browse+'">All spaces'+ICON.down+'</button><button data-act="next" aria-label="Next space, '+esc(nx.name)+'" title="Next: '+esc(nx.name)+'">'+ICON.next+'</button></div>'+(CP?posCtl(s,CP,'vi-cp'):'')+
-   '<div class="vi-lens"><div class="lh"><span class="lt">Decay by frequency'+linkCtl(s)+'</span><span class="vv"><span><b>RT60</b>'+roEl(s,'decay')+'</span><span><b>Pre-delay</b>'+roEl(s,'pre')+'</span><span><b>Distance</b>'+roEl(s,'dist')+'</span></span></div>'+decaySVG('vitrine',s,748,250,{mist:true,m:[40,20,14,26],big:true})+'</div>'+rail+
+   '<div class="vi-lens"><div class="lh"><span class="lt">'+gt(s,'Decay by frequency','Wet EQ')+linkCtl(s)+'</span><span class="vv"><span><b>RT60</b>'+roEl(s,'decay')+'</span><span><b>Pre-delay</b>'+roEl(s,'pre')+'</span><span><b>Distance</b>'+roEl(s,'dist')+'</span></span></div>'+graphSVG('vitrine',s,748,250,{mist:true,m:[40,20,14,26],big:true})+'</div>'+rail+
    '<div class="vi-strip">'+hintText(s)+meters()+'</div>';},
 
  signal:function(s){var sp=spOf(s),ss=s.size/100,e=eqp(s.el),CP=positionsOf(s);
@@ -656,7 +706,7 @@ var COMPOSE={
   return '<div class="si-grid"></div><div class="si-top">'+wordmark(s,'si-wm','<i></i>DRENCHED')+segMode(s)+segAB(s)+'</div>'+
    '<div class="si-space"><div class="nm"><button data-act="browse" aria-expanded="'+s.browse+'" aria-label="Choose a space, current '+esc(sp.name)+'">'+esc(sp.name)+'</button></div><div class="meta">'+prevNext(s)+'<span>'+esc(sp.place)+'</span><span>'+vol(sp)+'</span></div></div>'+
    '<div class="si-room"><div class="si-mh"><span>Room</span><span>'+f1(sp.W*ss)+' \u00d7 '+f1(sp.D*ss)+' \u00d7 '+f1(sp.H*ss)+' m</span></div>'+photoEl(s,398,140)+pixelRoom(s,398,CP?222:260)+pos+'</div>'+
-   '<div class="si-bars"><div class="si-mh"><span>Decay by band</span><span class="mr">'+linkCtl(s)+'<span>'+(s.link?'Seconds, * edited':'* edited')+'</span></span></div>'+decaySVG('signal',s,402,494,{bars:true})+'</div>'+rail+
+   '<div class="si-bars"><div class="si-mh"><span>'+gt(s,'Decay by band','Wet EQ')+'</span><span class="mr">'+linkCtl(s)+'<span>'+gt(s,s.link?'Seconds, * edited':'* edited','dB')+'</span></span></div>'+graphSVG('signal',s,402,494,{bars:true})+'</div>'+rail+
    '<div class="si-vals">'+blk('size')+blk('bright')+blk('el')+blk('dist')+vb('Early',e.e,'dB')+vb('Tail',e.t,'dB')+vb('Listener',f1(distM(s)),'m')+'</div>'+
    '<div class="si-strip">'+hintText(s)+meters()+'</div>';},
  aperture:function(s){var sp=spOf(s),CP=positionsOf(s),GL=36,GW=1120-2*GL;
@@ -668,13 +718,13 @@ var COMPOSE={
   return '<div class="ap-photo">'+photoEl(s,0,0,'position:absolute;inset:0')+'</div><div class="ap-grade"></div>'+
    '<div class="ap-top">'+wordmark(s,'ap-wm','Drenched')+segMode(s)+segAB(s)+acts+'</div>'+
    '<div class="ap-name"><h3>'+esc(sp.name)+'</h3><span>'+prevNext(s)+'<button class="ap-link" data-act="browse" aria-expanded="'+s.browse+'">'+esc(sp.place)+', '+vol(sp)+'</button></span>'+(CP?posCtl(s,CP,'ap-cp'):'')+'</div>'+
-   '<div class="ap-lk">'+linkCtl(s)+'</div><div class="ap-graph">'+decaySVG('aperture',s,1120,236,{m:[GL,GL,16,4],noY:true,big:true})+'</div>'+bar+
+   '<div class="ap-lk">'+linkCtl(s)+'</div><div class="ap-graph">'+graphSVG('aperture',s,1120,236,{m:[GL,GL,16,4],noY:true,big:true})+'</div>'+bar+
    '<div class="ap-strip">'+hintText(s)+meters()+'</div>';},
 
  contact:function(s){var sp=spOf(s),e=eqp(s.el),CP=positionsOf(s);
   var strip=CP?posCtl(s,CP,'co-cp'):'';
   var row=function(k){return '<div class="co-row"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+lockBtn(s,k,P[k].l)+'</div>';};
-  var right=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="co-right"><div class="co-h"><span>Decay by frequency, seconds</span><span class="mr">'+linkCtl(s)+'<span>'+(s.link?'Ticks mark the capture':'Outlines, other side')+'</span></span></div><div class="co-fad">'+decaySVG('contact',s,506,340,{bars:true,bw:18,track:true,m:[14,14,30,26]})+'</div>'+
+  var right=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="co-right"><div class="co-h"><span>'+gt(s,'Decay by frequency, seconds','Wet EQ, dB')+'</span><span class="mr">'+linkCtl(s)+'<span>'+gt(s,s.link?'Ticks mark the capture':'Outlines, other side','The reverb alone')+'</span></span></div><div class="co-fad">'+graphSVG('contact',s,506,340,{bars:true,bw:18,track:true,m:[14,14,30,26]})+'</div>'+
    '<div class="co-list">'+MAIN.map(row).join('')+'</div>'+
    '<div class="co-mix">'+knobEl(s,'mix',48,'contact')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix '+lockBtn(s,'mix','Mix')+'</span></div><div class="co-acts"><button class="co-btn" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="co-btn" data-act="match">Match a room</button><button class="co-btn" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'co-btn')+wfBtn(s,'co-btn')+'</div></div></div>';
   return '<div class="co-top">'+wordmark(s,'co-wm','DRENCHED')+segMode(s)+segAB(s)+'</div>'+
@@ -687,7 +737,7 @@ var COMPOSE={
   var ctl=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="st-ctl">'+c('mix')+MAIN.map(c).join('')+'</div><div class="st-acts"><button class="st-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="st-btn" data-act="match">'+ICON.match+'Match a room</button><button class="st-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'All parameters</button>'+eqBtn(s,'st-btn',null,true)+wfBtn(s,'st-btn',null,true)+'</div>';
   return '<div class="st-photo">'+photoEl(s,440,760)+'<div class="st-name">'+layers+'<h3>'+esc(parts.join(' '))+(parts.length?' ':'')+'<em>'+esc(last)+'</em></h3><span>'+esc(sp.place)+', '+vol(sp)+', '+esc(sp.mat.toLowerCase())+'</span><div class="nav">'+prevNext(s)+'<button class="st-link" data-act="browse" aria-expanded="'+s.browse+'">All spaces</button></div></div></div>'+
    '<div class="st-top">'+wordmark(s,'st-wm','Drenched')+linkCtl(s)+segMode(s)+segAB(s)+'</div>'+
-   '<div class="st-ridges">'+ridgesSVG(s,690,420)+'</div>'+ctl+
+   '<div class="st-ridges">'+(s.graph==='eq'?eqSVG(s,690,420,s.eqCur,{main:true,m:[64,40,56,28]}):ridgesSVG(s,690,420))+'</div>'+ctl+
    '<div class="st-strip">'+hintText(s)+meters()+'</div>';},
 
  rotunda:function(s){var sp=spOf(s),e=eqp(s.el),CP=positionsOf(s);
@@ -696,7 +746,7 @@ var COMPOSE={
    '<div class="rt-mix">'+knobEl(s,'mix',64,'rotunda')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div></div><div class="rt-grid">'+MAIN.map(c).join('')+'</div>'+
    '<div class="rt-acts"><button class="rt-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="rt-btn" data-act="match">'+ICON.match+'Match</button><button class="rt-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'More</button>'+eqBtn(s,'rt-btn','EQ',true)+wfBtn(s,'rt-btn','Waterfall',true)+'</div></div>';
   return '<div class="rt-top">'+wordmark(s,'rt-wm','Drenched')+segMode(s)+segAB(s)+'</div>'+
-   '<div class="rt-round"><div class="rt-ph">'+photoEl(s,340,340)+'</div>'+polarSVG('rotunda',s,620,{r0:188,r1:276})+'<div class="rt-lk">'+linkCtl(s)+'</div></div>'+side+
+   '<div class="rt-round"><div class="rt-ph">'+photoEl(s,340,340)+'</div>'+(s.graph==='eq'?eqSVG(s,620,620,s.eqCur,{main:true,polar:{cx:310,cy:310,r0:188,r1:276}}):polarSVG('rotunda',s,620,{r0:188,r1:276}))+'<div class="rt-lk">'+linkCtl(s)+'</div></div>'+side+
    '<div class="rt-strip">'+hintText(s)+meters()+'</div>';},
 
  material:function(s){var sp=spOf(s),ss=s.size/100,CP=positionsOf(s);
@@ -704,7 +754,7 @@ var COMPOSE={
   var ctl=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="ma-ctl">'+c('mix')+MAIN.map(c).join('')+'<div class="ma-acts"><button class="ma-btn" data-act="freeze" aria-pressed="'+s.freeze+'">'+ICON.freeze+'Freeze</button><button class="ma-btn" data-act="match">'+ICON.match+'Match a room</button><button class="ma-btn" data-act="adv" aria-expanded="'+s.adv+'">'+ICON.more+'All parameters</button>'+eqBtn(s,'ma-btn',null,true)+wfBtn(s,'ma-btn',null,true)+'</div></div>';
   return '<div class="ma-top">'+wordmark(s,'ma-wm','DRENCHED')+segMode(s)+segAB(s)+'</div>'+
    '<div class="ma-head"><h3'+(sp.name.length>18?' class="lg"':'')+' title="'+esc(sp.name)+'">'+esc(sp.name)+'</h3><span class="sub"><i></i>'+esc(sp.mat)+', '+vol(sp)+', '+f1(sp.W*ss)+' \u00d7 '+f1(sp.D*ss)+' \u00d7 '+f1(sp.H*ss)+' m</span><div class="nav">'+prevNext(s)+'<button class="ma-link" data-act="browse" aria-expanded="'+s.browse+'">All spaces</button></div></div>'+
-   '<div class="ma-graph"><span class="lbl">Decay by frequency'+linkCtl(s)+'<span style="margin-left:auto">RT60 '+esc(fmt(s,'decay'))+', pre-delay '+esc(fmt(s,'pre'))+'</span></span>'+decaySVG('material',s,538,296,{m:[44,18,10,26]})+'</div>'+
+   '<div class="ma-graph"><span class="lbl">'+gt(s,'Decay by frequency','Wet EQ')+linkCtl(s)+'<span style="margin-left:auto">RT60 '+esc(fmt(s,'decay'))+', pre-delay '+esc(fmt(s,'pre'))+'</span></span>'+graphSVG('material',s,538,296,{m:[44,18,10,26]})+'</div>'+
    '<div class="ma-photo">'+photoEl(s,0,0,'position:absolute;inset:0')+'<span class="tag">'+esc(sp.place.toUpperCase())+', '+esc(sp.date.toUpperCase())+'</span>'+(CP?posCtl(s,CP,'ma-cp'):'')+'</div>'+
    '<div class="ma-sw">'+swatchWindow(s).map(function(i){var x=SPACES[i],m=MAT[x.kind],hall=sp.name.split(',')[0],nm=x.name.indexOf(hall+',')===0?x.name.slice(hall.length+1).trim():x.name;return '<button data-act="pick" data-v="'+i+'" aria-current="'+(i===s.sp)+'" title="'+esc(x.name)+'"><i style="background:linear-gradient(135deg,'+m.g+' 50%,'+m.ac+' 50%)"></i><span>'+esc(nm)+'<small>'+f1(decayOf(x.bands))+' s</small></span></button>';}).join('')+'</div>'+ctl+
    '<div class="ma-strip">'+hintText(s)+meters()+'</div>';},
@@ -712,7 +762,7 @@ var COMPOSE={
  folio:function(s){var sp=spOf(s),e=eqp(s.el),parts=sp.name.split(' '),last=parts.pop(),CP=positionsOf(s);
   var row=function(k){return '<div class="fo-row"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+lockBtn(s,k,P[k].l)+'</div>';};
   var page=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="fo-page"><div class="fo-col"><span class="hd">'+esc(sp.no)+'</span><p><b>'+esc(sp.place)+'.</b> '+esc(sp.mat)+', '+vol(sp)+'. Captured '+esc(sp.date)+' with '+esc(sp.rec.toLowerCase())+'.</p><div class="dl"><span>Listener</span><span>'+esc(fmt(s,'dist'))+' from the source</span><span>Early</span><span>'+e.e+' dB</span><span>Tail</span><span>'+e.t+' dB</span><span>Pre-delay</span><span>'+esc(fmt(s,'pre'))+'</span></div></div>'+
-   '<div class="fo-col fo-fig"><span class="hd">Fig. 1, decay time by frequency'+linkCtl(s,'end')+'</span>'+decaySVG('folio',s,468,236,{m:[48,14,12,24]})+'<p class="fc">Solid as set, dashed as captured'+(s.link?'':', faint the other side')+'. Drag a point to change one band.</p></div>'+
+   '<div class="fo-col fo-fig"><span class="hd">'+gt(s,'Fig. 1, decay time by frequency','Fig. 1, wet EQ')+linkCtl(s,'end')+'</span>'+graphSVG('folio',s,468,236,{m:[48,14,12,24]})+'<p class="fc">'+gt(s,'Solid as set, dashed as captured'+(s.link?'':', faint the other side')+'. Drag a point to change one band.','The reverb alone, shaped band by band. Double-click to add a band.')+'</p></div>'+
    '<div class="fo-col"><span class="hd">Settings</span>'+MAIN.map(row).join('')+'<div class="fo-mix">'+knobEl(s,'mix',44,'folio')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div><div class="fo-acts"><button class="fo-btn" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="fo-btn" data-act="match">Match</button><button class="fo-btn" data-act="adv" aria-expanded="'+s.adv+'">More</button>'+eqBtn(s,'fo-btn','EQ')+wfBtn(s,'fo-btn')+'</div></div></div></div>';
   return '<div class="fo-hero">'+photoEl(s,0,0,'position:absolute;inset:0')+'<div class="fo-top">'+wordmark(s,'fo-wm','Drenched')+segMode(s)+segAB(s)+'</div><div class="fo-title"><div><span class="kick">'+esc(sp.place)+'</span><h3>'+esc(parts.join(' '))+(parts.length?' ':'')+'<em>'+esc(last)+'</em></h3></div><div class="fo-side">'+(CP?posCtl(s,CP,'fo-cp'):'')+'<div class="nav">'+prevNext(s)+'<button class="fo-link" data-act="browse" aria-expanded="'+s.browse+'">All spaces</button></div></div></div></div>'+page+
    '<div class="fo-foot"><span class="no">DRENCHED, '+esc(sp.no.toUpperCase())+'</span>'+hintText(s)+meters()+'</div>';}

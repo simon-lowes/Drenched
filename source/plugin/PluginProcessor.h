@@ -246,6 +246,11 @@ public:
         of them carry reverberation (all but the LFE). Message thread only. */
     juce::var outputSpeakerNames() const;
 
+    /** Hears one EQ band's part of the reverberation alone (WetEqualiser::noSolo: all of it).
+        A listening aid for the window: not saved, and bounces play every band. */
+    void setEqSolo (int band) noexcept { eqSolo.store (band, std::memory_order_relaxed); }
+    int eqSoloBand() const noexcept { return eqSolo.load (std::memory_order_relaxed); }
+
 private:
     void timerCallback() override;
 
@@ -364,9 +369,12 @@ private:
         Setting scene;
         Setting decayLink;
         std::array<Setting, 8> decay {}, decayRight {};
-        std::array<Setting, 6> eqFrequency {}, eqGain {};
-        std::array<Setting, 4> eqQ {};
+        std::array<Setting, 12> eqFrequency {}, eqGain {}, eqQ {}, eqShape {}, eqOn {};
     } params;
+
+    // The EQ band the window is listening to alone (WetEqualiser::noSolo: none). Not a
+    // parameter: it is a listening aid, never saved, and ignored while bouncing.
+    std::atomic<int> eqSolo { -1 };
 
     // The session as the message thread last saw it, for hosts that save from a thread of
     // their own: the state's value tree belongs to the message thread. The timer copies it

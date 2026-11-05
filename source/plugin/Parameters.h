@@ -67,25 +67,49 @@ namespace ParamIDs
     inline constexpr std::array<const char*, 8> decayRightShortNames { "RDcy 63", "RDcy 125", "RDcy 250", "RDcy 500",
                                                                        "RDcy 1k", "RDcy 2k",  "RDcy 4k",  "RDcy 8k" };
 
-    // The wet EQ: a low shelf, four bells and a high shelf. The shelves have no Q.
-    inline constexpr std::array<const char*, 6> eqFrequency { "eq1Freq", "eq2Freq", "eq3Freq", "eq4Freq", "eq5Freq", "eq6Freq" };
-    inline constexpr std::array<const char*, 6> eqGain { "eq1Gain", "eq2Gain", "eq3Gain", "eq4Gain", "eq5Gain", "eq6Gain" };
-    inline constexpr std::array<const char*, 4> eqQ { "eq2Q", "eq3Q", "eq4Q", "eq5Q" };
-    inline constexpr std::array<const char*, 6> eqNames { "EQ low", "EQ 2", "EQ 3", "EQ 4", "EQ 5", "EQ high" };
-    inline constexpr std::array<const char*, 6> eqShortNames { "EQ L", "EQ 2", "EQ 3", "EQ 4", "EQ 5", "EQ H" };
+    // The wet EQ: twelve bands, each a low shelf, a bell or a high shelf, with a frequency,
+    // gain and Q. The first six started as a low shelf, four bells and a high shelf (the
+    // shelves got a Q, and every band a shape and an on switch, when the display became
+    // editable); the other six are off until the person adds them on the graph.
+    inline constexpr std::array<const char*, 12> eqFrequency { "eq1Freq", "eq2Freq", "eq3Freq", "eq4Freq", "eq5Freq", "eq6Freq",
+                                                               "eq7Freq", "eq8Freq", "eq9Freq", "eq10Freq", "eq11Freq", "eq12Freq" };
+    inline constexpr std::array<const char*, 12> eqGain { "eq1Gain", "eq2Gain", "eq3Gain", "eq4Gain", "eq5Gain", "eq6Gain",
+                                                          "eq7Gain", "eq8Gain", "eq9Gain", "eq10Gain", "eq11Gain", "eq12Gain" };
+    inline constexpr std::array<const char*, 12> eqQ { "eq1Q", "eq2Q", "eq3Q", "eq4Q", "eq5Q", "eq6Q",
+                                                       "eq7Q", "eq8Q", "eq9Q", "eq10Q", "eq11Q", "eq12Q" };
+    inline constexpr std::array<const char*, 12> eqShape { "eq1Shape", "eq2Shape", "eq3Shape", "eq4Shape", "eq5Shape", "eq6Shape",
+                                                           "eq7Shape", "eq8Shape", "eq9Shape", "eq10Shape", "eq11Shape", "eq12Shape" };
+    inline constexpr std::array<const char*, 12> eqOn { "eq1On", "eq2On", "eq3On", "eq4On", "eq5On", "eq6On",
+                                                        "eq7On", "eq8On", "eq9On", "eq10On", "eq11On", "eq12On" };
+    inline constexpr std::array<const char*, 12> eqNames { "EQ low", "EQ 2", "EQ 3", "EQ 4", "EQ 5", "EQ high",
+                                                           "EQ 7", "EQ 8", "EQ 9", "EQ 10", "EQ 11", "EQ 12" };
+    inline constexpr std::array<const char*, 12> eqShortNames { "EQ L", "EQ 2", "EQ 3", "EQ 4", "EQ 5", "EQ H",
+                                                                "EQ 7", "EQ 8", "EQ 9", "EQ 10", "EQ 11", "EQ 12" };
+    inline constexpr std::array<const char*, 3> eqShapeNames { "Low shelf", "Bell", "High shelf" };
+
+    /** The bands that start out in use: the first six. */
+    inline constexpr bool eqOnByDefault (std::size_t band) noexcept { return band < 6; }
 
     /** Every id, in a fixed order, for code that keeps per-parameter state. */
-    inline constexpr std::array<const char*, 63> ordered { mix, output, predelay, size, brightness, earlyLate, distance, freeze,
+    inline constexpr std::array<const char*, 107> ordered { mix, output, predelay, size, brightness, earlyLate, distance, freeze,
                                                            predelaySync, crossover, wetLowCut, wetHighCut, width, ducking, monoBelow,
                                                            decay[0], decay[1], decay[2], decay[3], decay[4], decay[5], decay[6], decay[7],
                                                            living, movement, movementRate, reverse, gate, attack, directLevel, directDelay,
                                                            directColour, crossFeed, lowCpu, cloudSize, listenerX, sourceX, scene,
                                                            eqFrequency[0], eqGain[0],
-                                                           eqFrequency[1], eqGain[1], eqQ[0], eqFrequency[2], eqGain[2], eqQ[1],
-                                                           eqFrequency[3], eqGain[3], eqQ[2], eqFrequency[4], eqGain[4], eqQ[3],
+                                                           eqFrequency[1], eqGain[1], eqQ[1], eqFrequency[2], eqGain[2], eqQ[2],
+                                                           eqFrequency[3], eqGain[3], eqQ[3], eqFrequency[4], eqGain[4], eqQ[4],
                                                            eqFrequency[5], eqGain[5], decayLink,
                                                            decayRight[0], decayRight[1], decayRight[2], decayRight[3],
-                                                           decayRight[4], decayRight[5], decayRight[6], decayRight[7] };
+                                                           decayRight[4], decayRight[5], decayRight[6], decayRight[7],
+                                                           eqQ[0], eqQ[5],
+                                                           eqFrequency[6], eqGain[6], eqQ[6], eqFrequency[7], eqGain[7], eqQ[7],
+                                                           eqFrequency[8], eqGain[8], eqQ[8], eqFrequency[9], eqGain[9], eqQ[9],
+                                                           eqFrequency[10], eqGain[10], eqQ[10], eqFrequency[11], eqGain[11], eqQ[11],
+                                                           eqShape[0], eqShape[1], eqShape[2], eqShape[3], eqShape[4], eqShape[5],
+                                                           eqShape[6], eqShape[7], eqShape[8], eqShape[9], eqShape[10], eqShape[11],
+                                                           eqOn[0], eqOn[1], eqOn[2], eqOn[3], eqOn[4], eqOn[5],
+                                                           eqOn[6], eqOn[7], eqOn[8], eqOn[9], eqOn[10], eqOn[11] };
 
     /** The same, as strings. */
     inline const juce::StringArray& all()
@@ -107,6 +131,7 @@ namespace UiIDs
     inline const juce::Identifier locks { "locks" };
     inline const juce::Identifier mode { "mode" };
     inline const juce::Identifier view { "view" };
+    inline const juce::Identifier graph { "graph" };   // what the main display draws: "decay" or "eq"
     inline const juce::Identifier skin { "skin" };
     inline const juce::Identifier width { "width" };
 
@@ -174,6 +199,19 @@ public:
         {
             return typed::isOn (text) ? 1.0f : 0.0f;
         }
+        else if constexpr (std::is_same_v<Base, juce::AudioParameterChoice>)
+        {
+            // A choice by name ("bell", "high shelf", or a part of one), or by its number.
+            const auto typedText = text.trim();
+
+            for (int i = 0; i < this->choices.size(); ++i)
+                if (typedText.isNotEmpty() && (typedText.containsIgnoreCase (this->choices[i]) || this->choices[i].containsIgnoreCase (typedText)))
+                    return this->convertTo0to1 (static_cast<float> (i));
+
+            const auto values = typed::numbers (text, false);
+            return values.isEmpty() ? static_cast<const juce::AudioProcessorParameter*> (this)->getDefaultValue()
+                                    : this->convertTo0to1 (std::round (values.getLast()));
+        }
         else
         {
             const auto& bounds = this->getNormalisableRange();
@@ -213,6 +251,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     using Float = Hosted<AudioParameterFloat>;
     using Bool = Hosted<AudioParameterBool>;
     using Int = Hosted<AudioParameterInt>;
+    using Choice = Hosted<AudioParameterChoice>;
 
     const auto percent = AudioParameterFloatAttributes().withLabel ("%");
     const auto decibels = AudioParameterFloatAttributes().withLabel ("dB");
@@ -335,8 +374,10 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
         AudioParameterIntAttributes()
             .withStringFromValueFunction ([] (int v, int) { return v == 0 ? String ("Off") : "Scene " + String (v); })));
 
-    // The wet EQ, flat by default (how every earlier version played).
-    for (size_t band = 0; band < WetEqualiser::numBands; ++band)
+    // The wet EQ, flat by default (how every earlier version played). The first six bands'
+    // frequency, gain and (bells') Q came first; the rest were added later, so they follow
+    // every earlier parameter.
+    for (size_t band = 0; band < 6; ++band)
     {
         const auto& flat = WetEqualiser::flat[band];
         const String name (ParamIDs::eqNames[band]), shortName (ParamIDs::eqShortNames[band]);
@@ -348,7 +389,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
                                              flat.gainDb, decibels));
 
         if (WetEqualiser::shapeOf (band) == WetEqualiser::Shape::bell)
-            layout.add (std::make_unique<Float> (shortName + " Q", ParameterID { ParamIDs::eqQ[band - 1], 1 }, name + " Q",
+            layout.add (std::make_unique<Float> (shortName + " Q", ParameterID { ParamIDs::eqQ[band], 1 }, name + " Q",
                                                  logRange (WetEqualiser::minQ, WetEqualiser::maxQ, 0.01f), flat.q));
     }
 
@@ -359,6 +400,54 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     for (size_t band = 0; band < ParamIDs::decayRight.size(); ++band)
         layout.add (std::make_unique<Float> (ParamIDs::decayRightShortNames[band], ParameterID { ParamIDs::decayRight[band], 1 }, ParamIDs::decayRightNames[band],
                                              logRange (0.1f, 20.0f, 0.01f), defaultDecay[band], seconds));
+
+    // The rest of the EQ: the shelves' Q (heard once a shelf is made a bell), six more bands,
+    // and every band's shape and on switch. A band off is flat, like a band at 0 dB, so the
+    // defaults (the first six on, the rest off, every shape as it was) play as before.
+    const auto eqQParameter = [&] (size_t band)
+    {
+        const String name (ParamIDs::eqNames[band]), shortName (ParamIDs::eqShortNames[band]);
+        return std::make_unique<Float> (shortName + " Q", ParameterID { ParamIDs::eqQ[band], 1 }, name + " Q",
+                                        logRange (WetEqualiser::minQ, WetEqualiser::maxQ, 0.01f), WetEqualiser::flat[band].q);
+    };
+
+    layout.add (eqQParameter (0));
+    layout.add (eqQParameter (5));
+
+    for (size_t band = 6; band < WetEqualiser::numBands; ++band)
+    {
+        const auto& flat = WetEqualiser::flat[band];
+        const String name (ParamIDs::eqNames[band]), shortName (ParamIDs::eqShortNames[band]);
+
+        layout.add (std::make_unique<Float> (shortName + " Hz", ParameterID { ParamIDs::eqFrequency[band], 1 }, name + " frequency",
+                                             logRange (20.0f, 20000.0f, 1.0f), flat.frequencyHz, hertz));
+        layout.add (std::make_unique<Float> (shortName + " dB", ParameterID { ParamIDs::eqGain[band], 1 }, name + " gain",
+                                             NormalisableRange<float> (WetEqualiser::minGainDb, WetEqualiser::maxGainDb, 0.1f),
+                                             flat.gainDb, decibels));
+        layout.add (eqQParameter (band));
+    }
+
+    // A shape's name is cut to the room the host has ("High she"), which getValueForText reads back.
+    const StringArray shapeNames (ParamIDs::eqShapeNames.data(), static_cast<int> (ParamIDs::eqShapeNames.size()));
+    const auto shapeText = AudioParameterChoiceAttributes().withStringFromValueFunction ([shapeNames] (int index, int maximumStringLength)
+    {
+        const auto text = shapeNames[jlimit (0, shapeNames.size() - 1, index)];
+        return maximumStringLength > 0 ? text.substring (0, maximumStringLength) : text;
+    });
+
+    for (size_t band = 0; band < WetEqualiser::numBands; ++band)
+    {
+        const String name (ParamIDs::eqNames[band]), shortName (ParamIDs::eqShortNames[band]);
+        layout.add (std::make_unique<Choice> (shortName + " Sh", ParameterID { ParamIDs::eqShape[band], 1 }, name + " shape",
+                                              shapeNames, static_cast<int> (WetEqualiser::shapeOf (band)), shapeText));
+    }
+
+    for (size_t band = 0; band < WetEqualiser::numBands; ++band)
+    {
+        const String name (ParamIDs::eqNames[band]), shortName (ParamIDs::eqShortNames[band]);
+        layout.add (std::make_unique<Bool> (shortName + " On", ParameterID { ParamIDs::eqOn[band], 1 }, name + " on",
+                                            ParamIDs::eqOnByDefault (band)));
+    }
 
     return layout;
 }

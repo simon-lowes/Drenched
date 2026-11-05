@@ -85,6 +85,7 @@ struct ReverbControls
     float movement = 0.0f;       // 0 .. 1, how far the living tail drifts
     float movementRateHz = 0.7f; // how fast it drifts
     WetEqualiser::Bands eq = WetEqualiser::flat; // after the cuts and brightness
+    int soloBand = WetEqualiser::noSolo;         // hear one EQ band's part of the reverberation alone, dry muted
 
     // Each output speaker's reverb level and delay (see SpeakerTrim), in
     // the output layout's order.

@@ -123,6 +123,7 @@ DrenchedEditor::DrenchedEditor (DrenchedProcessor& p)
 DrenchedEditor::~DrenchedEditor()
 {
     stopTimer();
+    processor.setEqSolo (WetEqualiser::noSolo); // a solo is a thing of the window
     cancelPendingUpdate();
     reports->removeChangeListener (this);
     processor.getLicence().removeChangeListener (this);
@@ -221,6 +222,7 @@ juce::var DrenchedEditor::uiValues()
     object->setProperty ("locks", ui.getProperty (UiIDs::locks, "").toString());
     object->setProperty ("mode", ui.getProperty (UiIDs::mode, "studio").toString());
     object->setProperty ("view", ui.getProperty (UiIDs::view, "plan").toString());
+    object->setProperty ("graph", ui.getProperty (UiIDs::graph, "decay").toString());
     object->setProperty ("skin", ui.getProperty (UiIDs::skin, settings::loadDefaultSkin()).toString());
     object->setProperty ("speakers", ui.getProperty (UiIDs::speakers, "").toString());
     object->setProperty ("outputs", processor.outputSpeakerNames());

@@ -594,6 +594,41 @@ TEST_CASE ("A frozen tail reaches a CLAP host as endless, not as none", "[plugin
     }
 }
 
+TEST_CASE ("A soloed EQ band is heard alone while the window shows it, and never in a bounce", "[plugin][host]")
+{
+    // Solo mutes the dry sound and keeps one band of the reverberation, for listening while
+    // a band is set. It is a thing of the window, not the session: a bounce ignores it, so a
+    // mix rendered after the window is closed never comes out with the dry sound missing.
+    constexpr int block = 512;
+    std::vector<float> click (static_cast<size_t> (block * 40), 0.0f);
+    const auto at = static_cast<size_t> (block * 4);
+    click[at] = 1.0f;
+
+    const auto dryClick = [&] (const std::vector<float>& out) { return out[at] == 1.0f && energy (out, at + 1) < 1.0e-9; };
+
+    testing::Plugin live;
+    prepare (*live, 48000.0, block);
+    setParameter (*live, ParamIDs::mix, 0.0f);
+    REQUIRE (dryClick (play (*live, click, [] (int) { return block; })));
+
+    live->setEqSolo (2);
+    const auto soloed = play (*live, click, [] (int) { return block; });
+    CHECK (soloed[at] < 0.5f);
+    CHECK (energy (soloed, at + 1) > 1.0e-6);
+
+    // Solo off: the dry is back (fresh prepared, so the soloed click's tail is gone).
+    live->setEqSolo (WetEqualiser::noSolo);
+    prepare (*live, 48000.0, block);
+    CHECK (dryClick (play (*live, click, [] (int) { return block; })));
+
+    testing::Plugin bounce;
+    bounce->setNonRealtime (true);
+    prepare (*bounce, 48000.0, block);
+    setParameter (*bounce, ParamIDs::mix, 0.0f);
+    bounce->setEqSolo (2);
+    CHECK (dryClick (play (*bounce, click, [] (int) { return block; })));
+}
+
 TEST_CASE ("A session the host loads on a thread of its own plays in a bounce started at once", "[plugin][host]")
 {
     // A host can load a project or preset on a worker thread and bounce straight away,
