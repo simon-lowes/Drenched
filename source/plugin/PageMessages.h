@@ -77,6 +77,9 @@ public:
         /** A look was chosen: new windows open in it. */
         virtual void lookChosen (const juce::String& skin) = 0;
 
+        /** The tips have been seen (closed, however): they are not offered again. */
+        virtual void tipsSeen() = 0;
+
         virtual void openInBrowser (const juce::URL&) = 0;
         virtual void copyToClipboard (const juce::String&) = 0;
         virtual juce::String clipboardText() = 0;

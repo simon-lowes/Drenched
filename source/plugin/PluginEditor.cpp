@@ -149,6 +149,7 @@ juce::WebBrowserComponent::Options DrenchedEditor::makeOptions()
     initial->setProperty ("licence", processor.getLicence().status());
     initial->setProperty ("report", messages.reportInfo (false));
     initial->setProperty ("bits", static_cast<int> (sizeof (void*) * 8));
+    initial->setProperty ("tipsSeen", settings::loadTipsSeen());
     initial->setProperty ("library", library::forInterface());
     options = options.withInitialisationData ("drenched", juce::var (initial.release()));
 
@@ -283,6 +284,11 @@ void DrenchedEditor::displaysOpened (bool open)
 void DrenchedEditor::lookChosen (const juce::String& skin)
 {
     settings::saveDefaultSkin (skin);
+}
+
+void DrenchedEditor::tipsSeen()
+{
+    settings::saveTipsSeen();
 }
 
 void DrenchedEditor::openInBrowser (const juce::URL& url)
