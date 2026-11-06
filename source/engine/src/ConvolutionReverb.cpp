@@ -805,7 +805,10 @@ const ReverbControls& ConvolutionReverb::finiteControls (const ReverbControls& a
         keep (asked.eq[band].frequencyHz, kept.eq[band].frequencyHz);
         keep (asked.eq[band].gainDb, kept.eq[band].gainDb);
         keep (asked.eq[band].q, kept.eq[band].q);
+        kept.eq[band].shape = asked.eq[band].shape;
     }
+
+    kept.soloBand = asked.soloBand;
 
     for (std::size_t k = 0; k < maxChannels; ++k)
     {
@@ -826,9 +829,18 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
 
     installIncoming();
     equaliser.setBands (c.eq);
+    equaliser.setSolo (c.soloBand);
     updateFreeze (c);
 
-    const auto mix = equalPowerMix (c.mix);
+    auto mix = equalPowerMix (c.mix);
+
+    // Soloing an EQ band listens to the reverberation alone, and loud enough
+    // to hear however dry the mix was set.
+    if (c.soloBand != WetEqualiser::noSolo)
+    {
+        mix.dry = 0.0f;
+        mix.wet = std::max (mix.wet, equalPowerMix (0.5f).wet);
+    }
     const auto targetDelay = static_cast<float> (std::clamp (static_cast<double> (c.predelayMs) * 0.001, 0.0, maxPredelaySeconds) * sampleRate);
     const auto width = std::clamp (c.widthPercent, 0.0f, 200.0f) / 100.0f;
     const auto duckDepthDb = 24.0f * std::clamp (c.ducking, 0.0f, 1.0f);

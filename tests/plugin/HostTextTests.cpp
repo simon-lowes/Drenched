@@ -111,6 +111,10 @@ TEST_CASE ("A value typed into a host means what it would in the plugin", "[plug
         { ParamIDs::scene, "Scene 4", 4.0f }, { ParamIDs::scene, "4", 4.0f }, { ParamIDs::scene, "Off", 0.0f }, { ParamIDs::scene, "40", 32.0f },
         { ParamIDs::freeze, "on", 1.0f }, { ParamIDs::freeze, " On ", 1.0f }, { ParamIDs::freeze, "yes", 1.0f }, { ParamIDs::freeze, "1", 1.0f },
         { ParamIDs::freeze, "off", 0.0f }, { ParamIDs::freeze, "0", 0.0f }, { ParamIDs::freeze, "maybe", 0.0f },
+        { ParamIDs::eqShape[0], "bell", 1.0f }, { ParamIDs::eqShape[0], "High shelf", 2.0f }, { ParamIDs::eqShape[0], "low shelf", 0.0f },
+        { ParamIDs::eqShape[3], "shelf", 0.0f }, { ParamIDs::eqShape[3], "2", 2.0f }, { ParamIDs::eqShape[3], "9", 2.0f },
+        { ParamIDs::eqShape[3], "", 1.0f }, { ParamIDs::eqShape[3], "wedge", 1.0f }, { ParamIDs::eqShape[5], "", 2.0f },
+        { ParamIDs::eqOn[7], "on", 1.0f }, { ParamIDs::eqOn[7], "", 0.0f }, { ParamIDs::eqQ[0], "2,5", 2.5f },
     };
 
     for (const auto& c : cases)
@@ -145,5 +149,10 @@ TEST_CASE ("Hosts with little room still tell every control apart", "[plugin][ho
     // With room, every name is whole.
     CHECK (find (*p, ParamIDs::decayRight[3]).getName (1024) == "Right decay 500 Hz");
     CHECK (find (*p, ParamIDs::eqGain[5]).getName (1024) == "EQ high gain");
+    CHECK (find (*p, ParamIDs::eqShape[11]).getName (1024) == "EQ 12 shape");
+    CHECK (find (*p, ParamIDs::eqShape[11]).getName (8) == "EQ 12 Sh");
+    CHECK (find (*p, ParamIDs::eqShape[1]).getCurrentValueAsText() == "Bell");
+    CHECK (find (*p, ParamIDs::eqOn[7]).getName (8) == "EQ 8 on");   // the whole name fits
+    CHECK (find (*p, ParamIDs::eqOn[11]).getName (7) == "EQ 12 O");
     CHECK (find (*p, ParamIDs::mix).getName (8) == "Mix");
 }

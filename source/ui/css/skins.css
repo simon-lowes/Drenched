@@ -139,36 +139,64 @@ body{font:14px system-ui,sans-serif;color:#eee}
 .scn .scr[aria-current="true"] .lsm[data-act="screcall"]{border-color:var(--ac);color:var(--ac)}
 .scn .lsm:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
 .scn .sce{color:var(--tx2);margin:14px 0 4px}
-/* The wet EQ: a response curve with a point per band, then each band's values to type. */
+/* The wet EQ graph: the response curve over the live spectrum, a point per band, and the
+   chosen band's shape, Solo and Remove as pills along the top. The same drawing serves the
+   Wet EQ window and the main display of every look, in the look's own tokens. */
+.sys .eqg{display:block;touch-action:none;overflow:visible;cursor:crosshair}
+.sys .eqg text{font:11px var(--fnum,var(--fui));fill:var(--tx2)}
+.sys .eqg .gr{stroke:var(--ln);stroke-width:1;fill:none}
+.sys .eqg .zero{stroke:var(--tx2);stroke-width:1;fill:none;opacity:.7}
+.sys .eqg .fill{fill:var(--ac);opacity:.14;stroke:none;pointer-events:none}
+.sys .eqg .sum{fill:none;stroke:var(--ac);stroke-width:2;stroke-linejoin:round;pointer-events:none}
+.sys .eqg .one{fill:none;stroke:var(--tx2);stroke-width:1;stroke-dasharray:3 3;pointer-events:none}
+.sys .eqg .one.solo{stroke:var(--tx);stroke-width:1.5;stroke-dasharray:none}
+.sys .eqg .cut{stroke:var(--tx2);stroke-width:1;stroke-dasharray:2 4;opacity:.7}
+.sys .eqg .cutt{font-size:10px;opacity:.8}
+.sys .eqg .spec rect{fill:var(--tx);opacity:.12;pointer-events:none}
+.sys .eqg .empty{font-size:12px;fill:var(--tx2)}
+.sys .eqn{cursor:move}
+.sys .eqn circle{fill:var(--p);stroke:var(--ac);stroke-width:2}
+.sys .eqn .hit{fill:transparent;stroke:none}
+.sys .eqn text{font:600 10px var(--fnum,var(--fui));fill:var(--ac);text-anchor:middle;pointer-events:none}
+.sys .eqn.on circle{fill:var(--ac)}.sys .eqn.on text{fill:var(--onac,#111)}
+.sys .eqn.cur circle{stroke-width:3}
+.sys .eqn.solo circle{stroke:var(--tx);stroke-width:3}
+.sys .eqn:focus{outline:none}
+/* the pills: an SVG button each */
+.sys .eqp{cursor:pointer}
+.sys .eqp rect{fill:var(--p);stroke:var(--ln);stroke-width:1}
+.sys .eqp text{font:500 11px var(--fui);fill:var(--tx2);pointer-events:none}
+.sys .eqp:hover text{fill:var(--tx)}
+.sys .eqp[aria-pressed="true"] rect{fill:var(--r);stroke:var(--ac)}.sys .eqp[aria-pressed="true"] text{fill:var(--tx)}
+.sys .eqp.sl[aria-pressed="true"] rect{fill:var(--ac);stroke:var(--ac)}.sys .eqp.sl[aria-pressed="true"] text{fill:var(--onac,#111)}
+.sys .eqp:focus{outline:none}
+/* the graph switch sits with the decay link, drawn the way each look draws that */
+.dlk .gsw{display:inline-flex;border:1px solid var(--ln);border-radius:var(--rad);overflow:hidden}
+.dlk .gsw button{border:0;border-radius:0}
+.dlk .gsw button+button{border-left:1px solid var(--ln)}
+.dlk .gsw button[aria-pressed="true"]{background:var(--r);color:var(--tx)}
+.dlk .gsw .ovr{margin-left:5px;width:5px;height:5px}
+/* the Wet EQ window: the graph, then a row per band */
 .eqd .cbox{width:780px}
-.eqd .eqg{display:block;margin-top:14px;touch-action:none;overflow:visible}
-.eqd .eqg text{font:11px var(--fnum,var(--fui));fill:var(--tx2)}
-.eqd .eqg .gr{stroke:var(--ln);stroke-width:1;fill:none}
-.eqd .eqg .zero{stroke:var(--tx2);stroke-width:1;fill:none;opacity:.7}
-.eqd .eqg .fill{fill:var(--ac);opacity:.14;stroke:none}
-.eqd .eqg .sum{fill:none;stroke:var(--ac);stroke-width:2;stroke-linejoin:round}
-.eqd .eqg .one{fill:none;stroke:var(--tx2);stroke-width:1;stroke-dasharray:3 3}
-.eqd .eqg .cut{stroke:var(--tx2);stroke-width:1;stroke-dasharray:2 4;opacity:.7}
-.eqd .eqg .cutt{font-size:10px;opacity:.8}
-.eqd .eqn{cursor:move}
-.eqd .eqn circle{fill:var(--p);stroke:var(--ac);stroke-width:2}
-.eqd .eqn .hit{fill:transparent;stroke:none}
-.eqd .eqn text{font:600 10px var(--fnum,var(--fui));fill:var(--ac);text-anchor:middle;pointer-events:none}
-.eqd .eqn.on circle{fill:var(--ac)}.eqd .eqn.on text{fill:var(--onac,#111)}
-.eqd .eqn.cur circle{stroke-width:3}
-.eqd .eqn:focus{outline:none}.eqd .eqn:focus-visible circle{stroke:var(--focus);stroke-width:3}
-.eqd .eqt{display:grid;grid-template-columns:76px repeat(6,minmax(0,1fr));gap:4px 8px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--ln)}
-.eqd .eqt>span{color:var(--tx2);font-size:12px}
-.eqd .eqt b{font-size:12px;font-weight:500;text-align:center;color:var(--tx2);white-space:nowrap}.eqd .eqt b.cur{color:var(--tx)}
-.eqd .eqt .ro{width:100%;height:26px;font-size:13px;text-align:center;border-color:var(--ln)}
-.eqd .eqt .ro:focus{border-color:var(--focus)}
-.eqd .eqt em{font:12px var(--fnum,var(--fui));color:var(--tx2);text-align:center;opacity:.6}
-.eqd .cft{margin-top:14px}
+.eqd .eqw{margin-top:14px}
+.eqd .eqt{display:flex;flex-direction:column;gap:3px;margin-top:10px;padding-top:8px;border-top:1px solid var(--ln);max-height:224px;overflow:auto;overscroll-behavior:contain}
+.eqd .eqr{display:grid;grid-template-columns:22px auto 92px 92px 74px auto auto;gap:6px;align-items:center;height:28px;flex:none}
+.eqd .eqr.hd{height:18px;color:var(--tx2);font-size:11px}
+.eqd .eqr.hd span{text-align:center}
+.eqd .eqr>b{font:600 12px var(--fnum,var(--fui));color:var(--tx2);text-align:center}.eqd .eqr.cur>b{color:var(--ac)}
+.eqd .eqr .ro{width:100%;height:26px;font-size:13px;text-align:center;border-color:var(--ln)}
+.eqd .eqr .ro:focus{border-color:var(--focus)}
+.eqd .eqr em{font:12px var(--fnum,var(--fui));color:var(--tx2);text-align:center;opacity:.6}
+.eqd .eqr .eqsh{padding:1px;gap:1px}.eqd .eqr .eqsh button{height:22px;padding:0 8px;font-size:11px}
+.eqd .eqsl,.eqd .eqrm{height:24px;padding:0 10px;border:1px solid var(--ln);border-radius:999px;background:transparent;color:var(--tx2);font:12px var(--fui)}
+.eqd .eqsl[aria-pressed="true"]{background:var(--ac);border-color:var(--ac);color:var(--onac,#111)}
+.eqd .eqrm:hover,.eqd .eqsl:hover{color:var(--tx)}
+.eqd .eqe{color:var(--tx2);font-size:12px;padding:6px 0}
+.eqd .cft{margin-top:14px;gap:10px}
 .eqd .ct{max-width:60ch}
-/* the live spectrum sits faintly behind the EQ curve, on the curve's own plot */
-.eqd .eqw{position:relative;margin-top:14px}
-.eqd .eqw .eqg{margin-top:0;position:relative}
-.eqd .eqs{position:absolute;left:36px;top:14px;width:678px;height:200px;pointer-events:none}
+/* on the main display the graph takes the decay graph's place in each look */
+.rt-round .eqg{position:absolute;left:0;top:0}
+.s-aperture .eqg text{fill:rgba(244,241,234,.75)}
 /* the way in: a diamond on the button while the EQ is in use */
 button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 /* The waterfall: the playing response analysed, with the live spectrum of the reverb. The
@@ -1123,10 +1151,11 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
    unsets everything gets the ring back. */
 .sys .dg .nd:focus-visible,.sys .dg .nd.ed:focus-visible,.sys .dg .nd.cur:focus-visible{stroke:var(--focus);stroke-width:5;filter:drop-shadow(0 0 1px var(--g)) drop-shadow(0 0 1px var(--g))}
 .sys .dg .bar:focus-visible,.sys .dg .bar.ed:focus-visible{stroke:var(--focus);stroke-width:3;filter:drop-shadow(0 0 1px var(--g)) drop-shadow(0 0 1px var(--g))}
-.sys .eqd .eqn:focus-visible circle{stroke:var(--focus);stroke-width:4;filter:drop-shadow(0 0 1px var(--g)) drop-shadow(0 0 1px var(--g))}
+.sys .eqn:focus-visible circle{stroke:var(--focus);stroke-width:4;filter:drop-shadow(0 0 1px var(--g)) drop-shadow(0 0 1px var(--g))}
+.sys .eqp:focus-visible rect{stroke:var(--focus);stroke-width:2;filter:drop-shadow(0 0 1px var(--g)) drop-shadow(0 0 1px var(--g))}
 .sys .si-space .nm button:focus-visible{outline:2px solid var(--focus);outline-offset:2px;box-shadow:0 0 0 2px var(--g)}
 /* inside a box that clips, the ring is drawn inside the control's edge */
-.sys .cap .seg button:focus-visible,.sys .brw .brw-pick:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;box-shadow:inset 0 0 0 4px var(--g)}
+.sys .cap .seg button:focus-visible,.sys .brw .brw-pick:focus-visible,.sys .dlk .dsd button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;box-shadow:inset 0 0 0 4px var(--g)}
 
 /* text set wider or taller than designed: rows wrap, columns that still overflow scroll (see fitText in app.js) */
 .ca-acts{flex-wrap:wrap;justify-content:flex-end;min-width:0;row-gap:4px}

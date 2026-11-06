@@ -1657,6 +1657,95 @@ test ('Signal: a two-line space name is set smaller so the room panel never cove
     assert.deepEqual (errors, []);
 });
 
+test ('The wet EQ on the main display: the graph switch, and adding, soloing and removing a band, in every look', async () =>
+{
+    await open ('aperture');
+    const looks = await page.evaluate (() => SKINS.map (s => s.id));
+
+    // A spot on the plot with no point on it: 35% along, 9 dB down (the points start at 0 dB).
+    const emptySpot = () => page.evaluate (() =>
+    {
+        const es = document.querySelector ('svg[data-eqg].main'), r = es.getBoundingClientRect(), k = r.width / +es.getAttribute ('data-w');
+        let x, y;
+        if (es.getAttribute ('data-polar') === '1')
+        {
+            const a = (EQ_POL_A0 + 0.35 * EQ_POL_SPAN) * Math.PI / 180, rad = +es.getAttribute ('data-r0') + 0.25 * (+es.getAttribute ('data-r1') - +es.getAttribute ('data-r0'));
+            x = +es.getAttribute ('data-cx') + rad * Math.cos (a); y = +es.getAttribute ('data-cy') + rad * Math.sin (a);
+        }
+        else { x = +es.getAttribute ('data-l') + 0.35 * +es.getAttribute ('data-pw'); y = +es.getAttribute ('data-t') + 0.75 * +es.getAttribute ('data-ph'); }
+        return [r.left + x * k, r.top + y * k];
+    });
+    const bands = () => page.$$eval ('svg[data-eqg].main [data-eqn]', ns => ns.map (n => +n.getAttribute ('data-eqn')));
+    const solos = () => page.evaluate (() => window.__sent.filter (([m]) => m === 'eqSolo').map (([, p]) => p.band));
+    const centre = async (sel) => { const b = await (await page.$ (sel)).boundingBox(); return [b.x + b.width / 2, b.y + b.height / 2]; };
+
+    for (const look of looks)
+    {
+        await page.goto ('about:blank');
+        await open (look);
+        await page.evaluate (() => { window.__sent.length = 0; });
+
+        // EQ beside the graph puts the EQ on the display, and the plugin keeps the choice.
+        await page.click ('[data-act="graph"][data-v="eq"]');
+        await page.waitForTimeout (50);
+        const ui = await sentWith ('ui', 'graph');
+        assert.equal (ui[ui.length - 1].graph, 'eq', look);
+        assert.ok (await page.$ ('svg[data-eqg].main'), look + ': no EQ graph on the display');
+        assert.deepEqual (await bands(), [0, 1, 2, 3, 4, 5], look + ': the six bands to start');
+
+        // A double click on an empty spot adds a band there, and the keyboard lands on it.
+        const [x, y] = await emptySpot();
+        await page.mouse.dblclick (x, y);
+        await page.waitForTimeout (50);
+        assert.deepEqual ((await bands()).sort ((a, b) => a - b), [0, 1, 2, 3, 4, 5, 6], look + ': double-click added no band');
+        assert.ok (await page.evaluate (() => !!st.eq7o), look + ': band 7 is not on');
+        const added = await page.evaluate (() => ({ f: st.eq7f, g: st.eq7g }));
+        assert.ok (added.f > 100 && added.f < 3000 && added.g < -3 && added.g > -15, look + ': band 7 at ' + JSON.stringify (added));
+        // The mouse added it, so the host keeps its keys (the keyboard reaches the band by Tab).
+        assert.equal (await page.evaluate (() => document.activeElement === document.body), true, look + ': a double-click held the keyboard');
+        const sentF = await sentWith ('params', 'eq7Freq');
+        assert.equal (sentF.length > 0 && sentF[sentF.length - 1].eq7On, 1, look + ': the plugin was not told band 7 is on');
+
+        // Solo tells the plugin which band, and only that; S from the keyboard toggles it.
+        await page.click ('[data-act="eqsolo"]');
+        await page.waitForTimeout (50);
+        assert.deepEqual (await solos(), [6], look + ': Solo');
+        assert.ok (await page.$ ('svg[data-eqg].main [data-eqn="6"].solo'), look + ': the soloed point is not marked');
+        await page.focus ('[data-eqn="6"]');
+        await page.keyboard.press ('s');
+        await page.waitForTimeout (50);
+        assert.deepEqual (await solos(), [6, -1], look + ': S again');
+
+        // Delete removes it, which ends a solo on it, and the keyboard moves to a band left.
+        await page.keyboard.press ('s');
+        await page.keyboard.press ('Delete');
+        await page.waitForTimeout (50);
+        assert.deepEqual (await bands(), [0, 1, 2, 3, 4, 5], look + ': Delete left the band');
+        assert.equal ((await solos()).slice (-1)[0], -1, look + ': removing a soloed band left it soloed');
+        assert.equal (await page.evaluate (() => (st.eq7o ? 'on' : 'off') + ' ' + st.eq7g), 'off 0', look + ': the removed band');
+        const next = await page.evaluate (() => document.activeElement.getAttribute ('data-eqn'));
+        assert.ok (next !== null && next !== '6', look + ': the keyboard is on ' + next + ' after Delete');
+
+        // Remove on the pills works the same, and Decay brings the graph back with no solo left.
+        await page.click ('[data-act="eqadd"]');
+        await page.waitForTimeout (50);
+        assert.equal ((await bands()).length, 7, look + ': Add band');
+        await page.click ('[data-act="eqremove"]');
+        await page.waitForTimeout (50);
+        assert.equal ((await bands()).length, 6, look + ': Remove');
+        await page.mouse.click (...await centre ('svg[data-eqg].main [data-eqn="3"] circle'));
+        await page.waitForTimeout (50);
+        await page.click ('[data-act="eqsolo"]');
+        await page.waitForTimeout (50);
+        assert.equal ((await solos()).slice (-1)[0], 3, look + ': Solo on band 4');
+        await page.click ('[data-act="graph"][data-v="decay"]');
+        await page.waitForTimeout (50);
+        assert.equal (await page.$ ('svg[data-eqg].main'), null, look + ': the EQ stayed on the display');
+        assert.equal ((await solos()).slice (-1)[0], -1, look + ': a solo outlived the display');
+        assert.deepEqual (errors, [], look);
+    }
+});
+
 test ('The tips light a control in every look, Studio and Stage, and are offered once', async (t) =>
 {
     await page.goto ('about:blank');

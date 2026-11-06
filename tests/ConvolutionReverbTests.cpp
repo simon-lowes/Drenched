@@ -363,6 +363,50 @@ TEST_CASE ("The wet EQ shapes the reverberation and never the dry sound", "[reve
     REQUIRE (render (0.0f, -12.0f) == render (0.0f, 0.0f));
 }
 
+TEST_CASE ("Soloing an EQ band mutes the dry sound and keeps only that band's reverberation", "[reverb][eq]")
+{
+    const auto render = [] (float mix, int solo)
+    {
+        ConvolutionReverb reverb;
+        reverb.prepare (48000.0);
+        reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (hall (48000.0))));
+
+        auto l = testing::noise (48000, 21), r = testing::noise (48000, 22);
+        ReverbControls c;
+        c.mix = mix;
+        c.highCutHz = 20000.0f;
+        c.eq[3] = { 2000.0f, 0.0f, 2.0f, WetEqualiser::Shape::bell };
+        c.soloBand = solo;
+        run (reverb, l, r, c);
+        return l;
+    };
+
+    // Fully dry, the solo still plays the reverberation (wet, at half mix at least),
+    // and nothing of the dry noise comes through: the output is far from the input.
+    const auto dryInput = testing::noise (48000, 21);
+    const auto soloed = render (0.0f, 3);
+    double diff = 0.0, same = 0.0;
+
+    for (std::size_t n = 24000; n < 48000; ++n)
+    {
+        diff += static_cast<double> (soloed[n] - dryInput[n]) * (soloed[n] - dryInput[n]);
+        same += static_cast<double> (dryInput[n]) * dryInput[n];
+    }
+
+    REQUIRE (diff > 0.5 * same);
+    REQUIRE (energy (soloed, 24000) > 0.0);
+
+    // Only the soloed band's region is left of the reverberation (at half mix: half the power).
+    const auto all = render (1.0f, WetEqualiser::noSolo);
+    const auto band = [] (const std::vector<float>& x, double centre) { return energy (octaveBand (x, 48000.0, centre), 24000); };
+    REQUIRE (band (soloed, 2000.0) > 0.2 * band (all, 2000.0));
+    REQUIRE (band (soloed, 125.0) < 0.05 * band (all, 125.0));
+    REQUIRE (band (soloed, 16000.0) < 0.05 * band (all, 16000.0));
+
+    // No solo plays as before.
+    REQUIRE (render (0.5f, WetEqualiser::noSolo) == render (0.5f, WetEqualiser::noSolo));
+}
+
 TEST_CASE ("The audio path never allocates, including kernel swaps", "[reverb][realtime]")
 {
     ConvolutionReverb reverb;

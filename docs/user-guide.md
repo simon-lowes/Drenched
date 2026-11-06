@@ -72,7 +72,7 @@ The first time Drenched opens on a computer it offers the **Tips**: eleven short
 The screen has four parts:
 
 - **The space**: its name and a picture or drawing. Click its description to open the Spaces browser; the arrows beside it step through spaces.
-- **The decay graph**: decay time in eight octave bands, 63 Hz to 8 kHz.
+- **The decay graph**: decay time in eight octave bands, 63 Hz to 8 kHz. **EQ** beside it puts the wet EQ on the display instead (see [Wet EQ](#wet-eq)); **Decay** brings the graph back.
 - **The main controls**: Mix, Decay, Pre-delay, Size, Brightness, Early/Late and Distance, plus **Freeze**, **Match a room**, **All parameters**, **Wet EQ** and **Waterfall** (some looks say More, Match or EQ).
 - **The strip along the bottom**: a line about the control under the pointer, the **In** and **Out** meters and a **Beta** label.
 
@@ -224,12 +224,17 @@ Click **Link** to unlink the two sides. Each side then keeps its own curve: choo
 
 ### Wet EQ
 
-Six bands on the reverb alone, after the wet low and high cuts: a low shelf, four bells and a high shelf. The dry sound is not touched, and a band at 0 dB does nothing, so it starts flat. When any band is in use, the Wet EQ button shows a small marker.
+Up to twelve bands on the reverb alone, after the wet low and high cuts. Each band is a low shelf, a bell or a high shelf. The dry sound is not touched, and a band at 0 dB does nothing, so it starts flat: a low shelf at 100 Hz, bells at 250 Hz, 700 Hz, 2 kHz and 5 kHz, and a high shelf at 10 kHz. When any band is in use, the Wet EQ button shows a small marker.
+
+The EQ is worked in two places with the same points: on the main display, where **EQ** beside the decay graph puts it in the graph's place (every look draws it its own way; **Decay** brings the graph back), and in the **Wet EQ** window, which adds a table for typing values.
 
 - Drag a point sideways for frequency and up or down for gain. Scroll over a bell, or drag it with Alt held, to change its Q. Shift gives fine steps.
-- Double-click a point to return it to 0 dB.
-- The table below the curve lets you type Frequency, Gain and Q for each band (the shelves have a fixed slope).
-- **Reset to flat** zeroes every band.
+- Double-click a point to return it to 0 dB. Double-click an empty part of the graph to add a bell there; **Add band** adds one at 1 kHz. There are twelve bands in all.
+- Click a point and the buttons on the graph act on it: **Shape** (a low shelf, a bell or a high shelf), **Solo**, and **Remove**, which takes the band off the graph and sets its gain to 0 dB.
+- **Solo** plays that band's part of the reverb alone, with the dry sound muted, for as long as it is on. It is a thing of the window, not the session: closing the window, loading the session again or bouncing plays everything.
+- From the keyboard, a point takes the arrow keys (frequency and gain), Page Up and Page Down (a bell's Q), Backspace (0 dB), S (solo), Delete (remove) and Home and End (the first and last band).
+- The table in the Wet EQ window lets you type Frequency, Gain and Q for each band, and choose its shape.
+- **Reset to flat** zeroes every band and puts the first six back where they started.
 - The live spectrum of the reverb is drawn faintly behind the curve.
 
 ### Waterfall
@@ -387,15 +392,16 @@ Names as your host shows them. 63 parameters.
 | Listener position | 50% left to 50% right | Centre |
 | Source position | 50% left to 50% right | Centre |
 | Scene | Off, Scene 1 to Scene 32 | Off |
-| EQ low frequency | 20 to 20000 Hz | 100 Hz |
-| EQ low gain | -18 to +18 dB | 0 dB |
-| EQ 2 frequency, EQ 2 gain, EQ 2 Q | 20 to 20000 Hz; -18 to +18 dB; 0.1 to 10 | 250 Hz; 0 dB; 0.9 |
-| EQ 3 frequency, EQ 3 gain, EQ 3 Q | as EQ 2 | 700 Hz; 0 dB; 0.9 |
-| EQ 4 frequency, EQ 4 gain, EQ 4 Q | as EQ 2 | 2000 Hz; 0 dB; 0.9 |
-| EQ 5 frequency, EQ 5 gain, EQ 5 Q | as EQ 2 | 5000 Hz; 0 dB; 0.9 |
-| EQ high frequency | 20 to 20000 Hz | 10000 Hz |
-| EQ high gain | -18 to +18 dB | 0 dB |
+| EQ low frequency, EQ low gain, EQ low Q | 20 to 20000 Hz; -18 to +18 dB; 0.1 to 10 | 100 Hz; 0 dB; 0.71 |
+| EQ 2 frequency, EQ 2 gain, EQ 2 Q | as EQ low | 250 Hz; 0 dB; 0.9 |
+| EQ 3 frequency, EQ 3 gain, EQ 3 Q | as EQ low | 700 Hz; 0 dB; 0.9 |
+| EQ 4 frequency, EQ 4 gain, EQ 4 Q | as EQ low | 2000 Hz; 0 dB; 0.9 |
+| EQ 5 frequency, EQ 5 gain, EQ 5 Q | as EQ low | 5000 Hz; 0 dB; 0.9 |
+| EQ high frequency, EQ high gain, EQ high Q | as EQ low | 10000 Hz; 0 dB; 0.71 |
+| EQ 7 to EQ 12 frequency, gain and Q | as EQ low | 150 Hz, 400 Hz, 1200 Hz, 3000 Hz, 7000 Hz, 14000 Hz; 0 dB; 0.9 |
+| EQ low shape, EQ 2 shape ... EQ 12 shape | Low shelf, Bell, High shelf | Low shelf; Bell for EQ 2 to EQ 5 and EQ 7 to EQ 12; High shelf for EQ high |
+| EQ low on, EQ 2 on ... EQ 12 on | Off, On | On for EQ low to EQ high; Off for EQ 7 to EQ 12 |
 | Decay linked | Off, On | On |
 | Right decay 63 Hz, Right decay 125 Hz, Right decay 250 Hz, Right decay 500 Hz, Right decay 1 kHz, Right decay 2 kHz, Right decay 4 kHz, Right decay 8 kHz | 0.1 to 20 s | The space's measured decay (heard only while Decay linked is off) |
 
-In the Wet EQ window, EQ low is the Low shelf, EQ 2 to EQ 5 are Band 2 to Band 5, and EQ high is the High shelf.
+On the graph and in the Wet EQ window the bands are Band 1 to Band 12: EQ low is Band 1 and EQ high is Band 6. A band that is off is flat whatever its gain; a shelf's Q is heard once it is made a bell. Solo is not a parameter.

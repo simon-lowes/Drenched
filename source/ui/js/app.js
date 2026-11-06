@@ -11,7 +11,7 @@ var JUCE=(window.__JUCE__&&window.__JUCE__.backend)?window.__JUCE__.backend:null
 var PID={mix:'mix',pre:'predelay',size:'size',bright:'brightness',el:'earlyLate',dist:'distance',output:'output',freeze:'freeze',
          preSync:'predelaySync',xover:'crossover',locut:'wetLowCut',hicut:'wetHighCut',width:'width',duck:'ducking',mono:'monoBelow',
          living:'living',move:'movement',moveRate:'movementRate',rev:'reverse',gate:'gate',attack:'attack',dLvl:'directLevel',dDel:'directDelay',dCol:'directColour',xfeed:'crossFeed',cpu:'lowCpu',cloud:'cloudSize',lx:'listenerX',sx:'sourceX'};
-for(var eb=1;eb<=EQ_N;eb++){PID['eq'+eb+'f']='eq'+eb+'Freq';PID['eq'+eb+'g']='eq'+eb+'Gain';if(eqBell(eb-1))PID['eq'+eb+'q']='eq'+eb+'Q';}
+for(var eb=1;eb<=EQ_N;eb++){PID['eq'+eb+'f']='eq'+eb+'Freq';PID['eq'+eb+'g']='eq'+eb+'Gain';PID['eq'+eb+'q']='eq'+eb+'Q';PID['eq'+eb+'s']='eq'+eb+'Shape';PID['eq'+eb+'o']='eq'+eb+'On';}
 var BAND_ID=['decay63','decay125','decay250','decay500','decay1k','decay2k','decay4k','decay8k'];
 /* the right side's curve, heard only while decayLink is 0; linked, the eight above serve both sides */
 var RBAND_ID=['decayR63','decayR125','decayR250','decayR500','decayR1k','decayR2k','decayR4k','decayR8k'],LINK_ID='decayLink';
@@ -19,10 +19,14 @@ function keyOf(id){for(var k in PID)if(PID[k]===id)return k;return null;}
 /* the parameter id of band i on the side being edited */
 function bandId(s,i){return !s.link&&s.side==='R'?RBAND_ID[i]:BAND_ID[i];}
 function paramValues(s){var o={};for(var k in PID)o[PID[k]]=k==='freeze'?(s.freeze?1:0):s[k];s.bands.forEach(function(b,i){o[BAND_ID[i]]=b;});s.rbands.forEach(function(b,i){o[RBAND_ID[i]]=b;});o[LINK_ID]=s.link?1:0;return o;}
-function uiState(s){return {spaceId:SPACES[s.sp]?SPACES[s.sp].id:'',locks:Object.keys(s.locks).filter(function(k){return s.locks[k];}).join(','),mode:s.mode,view:s.view,skin:s.skin,speakers:speakersText(s)};}
+function uiState(s){return {spaceId:SPACES[s.sp]?SPACES[s.sp].id:'',locks:Object.keys(s.locks).filter(function(k){return s.locks[k];}).join(','),mode:s.mode,view:s.view,graph:s.graph,skin:s.skin,speakers:speakersText(s)};}
 
 var lastSent={},lastUi={};
-function sync(){var cur=paramValues(st),out={},n=0,stale=false;for(var id in cur){if(lastSent[id]!==cur[id]){out[id]=cur[id];lastSent[id]=cur[id];n++;stale=stale||rebuilds(id);}}if(n&&JUCE)JUCE.emitEvent('params',out);if(stale&&JUCE)staleAnalysis();}
+function sync(){var cur=paramValues(st),out={},n=0,stale=false;for(var id in cur){if(lastSent[id]!==cur[id]){out[id]=cur[id];lastSent[id]=cur[id];n++;stale=stale||rebuilds(id);}}if(n&&JUCE)JUCE.emitEvent('params',out);if(stale&&JUCE)staleAnalysis();syncSolo();}
+/* A solo is heard only while the EQ is in view, and is never saved: the plugin is told each change. */
+var lastSolo=-1; /* the plugin starts with no solo (and forgets one when the page reloads) */
+function soloVisible(){return !!(st.eq||st.graph==='eq');}
+function syncSolo(){if(st.eqSolo!=null&&(!soloVisible()||!eqOn(st,st.eqSolo)))st.eqSolo=null;var v=st.eqSolo==null?-1:st.eqSolo;if(v===lastSolo)return;lastSolo=v;if(JUCE)JUCE.emitEvent('eqSolo',{band:v});}
 function syncUi(){var cur=uiState(st),out={},n=0;for(var k in cur){if(lastUi[k]!==cur[k]){out[k]=cur[k];lastUi[k]=cur[k];n++;}}if(n&&JUCE)JUCE.emitEvent('ui',out);if(out.spaceId!=null&&JUCE)staleAnalysis();}
 /* a change that rebuilds the response: the displays keep the last analysis, dimmed, until the new one arrives */
 function staleAnalysis(){if(!anaStale&&ana){anaStale=true;wfNote();}}
@@ -49,6 +53,7 @@ function applyFromHost(msg){if(!msg)return;var p=msg.params||{},u=msg.ui||{},fro
  if(u.locks!=null){st.locks={};String(u.locks).split(',').forEach(function(k){if(k&&P[k])st.locks[k]=true;});lastUi.locks=uiState(st).locks;}
  if(u.mode==='studio'||u.mode==='stage'){st.mode=u.mode;lastUi.mode=u.mode;}
  if(u.view==='plan'||u.view==='section'){st.view=u.view;lastUi.view=u.view;}
+ if(u.graph==='decay'||u.graph==='eq'){st.graph=u.graph;lastUi.graph=u.graph;}
  if(u.skin&&SKINS.some(function(x){return x.id===u.skin;})){st.skin=u.skin;lastUi.skin=u.skin;}
  if(Array.isArray(u.outputs)&&u.outputs.length)st.outputs=u.outputs.map(function(o){return {name:String(o&&o.name||''),wet:!!(o&&o.wet)};});
  if(u.layout!=null)st.layout=String(u.layout);
@@ -146,24 +151,42 @@ function speakersHTML(){var rows=st.outputs.map(function(o,i){var v=speakerOf(st
   '<div class="sph"><span>Speaker</span><span>Output</span><span>Level</span><span>Delay</span></div><div class="spl">'+rows+'</div>'+
   '<div class="cft"><button class="cgo stop" data-act="spkreset">Reset all</button><span class="ct">Levels from Off to +12 dB, delays up to 100 ms. Saved with the session.</span></div></div></div>';}
 
-/* ---- the wet EQ: six bands on the reverb, drawn as a response curve with a point per band ---- */
-st.eq=false;st.eqCur=null;var EQ_Q_SPAN=100;
+/* ---- the wet EQ window: the same graph as the main display, with each band's values to type,
+   its shape, Solo and Remove, and Add band. Twelve bands at most; a band off is not shown. ---- */
+st.eq=false;st.eqCur=null;st.eqSolo=null;st.graph='decay';var EQ_Q_SPAN=100;
 function eqKey(i,c){return 'eq'+(i+1)+c;}
-function eqHTML(){var cur=st.eqCur,cols=function(f){var o='';for(var i=0;i<EQ_N;i++)o+=f(i);return o;};
- var heads=cols(function(i){return '<b'+(i===cur?' class="cur"':'')+'>'+EQ_NAME[i]+'</b>';});
- var row=function(c){return cols(function(i){return eqBell(i)||c!=='q'?roEl(st,eqKey(i,c)):'<em title="The shelves have a fixed slope">\u2013</em>';});};
+function eqHTML(){var cur=st.eqCur,shown=eqShown(st),free=eqFree(st);
+ var rows=shown.map(function(i){var n=i+1,bell=eqBell(st,i),sh=eqShape(st,i);
+  return '<div class="eqr'+(i===cur?' cur':'')+(i===st.eqSolo?' solo':'')+'" data-eqr="'+i+'"><b>'+n+'</b><span class="seg eqsh" role="group" aria-label="Band '+n+' shape">'+EQ_SHAPES.map(function(nm,k){return '<button data-act="eqshape" data-v="'+k+'" data-i="'+i+'" aria-pressed="'+(sh===k)+'">'+nm+'</button>';}).join('')+'</span>'+
+   roEl(st,eqKey(i,'f'))+roEl(st,eqKey(i,'g'))+(bell?roEl(st,eqKey(i,'q')):'<em title="A shelf has a fixed slope">\u2013</em>')+
+   '<button class="eqsl" data-act="eqsolo" data-i="'+i+'" aria-pressed="'+(st.eqSolo===i)+'" aria-label="Solo band '+n+'">Solo</button><button class="eqrm" data-act="eqremove" data-i="'+i+'" aria-label="Remove band '+n+'">Remove</button></div>';}).join('');
  return '<div class="cap eqd" role="dialog" aria-modal="true" aria-labelledby="eq-h" tabindex="-1" data-fid="dlg-eq"><div class="cbox"><div class="chd"><h2 id="eq-h">Wet EQ</h2><button class="cx" data-act="eq" aria-label="Close">Close</button></div>'+
-  '<p>Six bands shape the reverb alone: a low shelf, four bells and a high shelf, after the wet low cut and high cut. The dry sound is not changed, and each value can be automated.</p>'+
-  '<div class="eqw"><canvas class="eqs" data-cv="eqspec" data-w="678" data-h="200" aria-hidden="true"></canvas>'+eqSVG(st,728,236,cur)+'</div>'+
-  '<div class="eqt" role="group" aria-label="Band values"><span></span>'+heads+'<span>Frequency</span>'+row('f')+'<span>Gain</span>'+row('g')+'<span>Q</span>'+row('q')+'</div>'+
-  '<div class="cft"><button class="cgo stop" data-act="eqreset"'+(eqFlat(st)?' disabled':'')+'>Reset to flat</button><span class="ct">Drag a point sideways for frequency and up or down for gain. Scroll over a bell, or drag it with Alt held, for Q. Shift gives fine steps; double-click a point to return it to 0 dB.</span></div></div></div>';}
+  '<p>Up to twelve bands shape the reverb alone, after the wet low cut and high cut: each a low shelf, a bell or a high shelf. The dry sound is not changed, and every value can be automated. Solo listens to one band\u2019s part of the reverb on its own.</p>'+
+  '<div class="eqw">'+eqSVG(st,728,236,cur)+'</div>'+
+  '<div class="eqt" role="group" aria-label="Bands"><div class="eqr hd"><b></b><span>Shape</span><span>Frequency</span><span>Gain</span><span>Q</span><span></span><span></span></div>'+(rows||'<div class="eqe">No bands. Add one, or double-click the graph.</div>')+'</div>'+
+  '<div class="cft"><button class="cgo" data-act="eqadd"'+(free<0?' disabled':'')+'>Add band</button><button class="cgo stop" data-act="eqreset"'+(eqFlat(st)&&shown.length===6?' disabled':'')+'>Reset to flat</button><span class="ct">Drag a point sideways for frequency and up or down for gain. Scroll over a bell, or drag it with Alt held, for Q. Shift gives fine steps; double-click a point to return it to 0 dB, an empty spot to add a band.</span></div></div></div>';}
 function eqSet(i,c,v){setParam(st,eqKey(i,c),v);st.eqCur=i;}
-function eqReset(){for(var i=0;i<EQ_N;i++){eqSet(i,'f',EQ_DEF[i][0]);eqSet(i,'g',0);if(eqBell(i))eqSet(i,'q',EQ_DEF[i][1]);}st.eqCur=null;st.hint=null;st.note='<b>Wet EQ flat.</b> The reverb plays as recorded.';}
+function eqReset(){for(var i=0;i<EQ_N;i++){eqSet(i,'f',EQ_DEF[i][0]);eqSet(i,'g',0);eqSet(i,'q',EQ_DEF[i][1]);eqSet(i,'s',EQ_DEF[i][2]);eqSet(i,'o',i<6?1:0);}st.eqCur=null;st.eqSolo=null;st.hint=null;st.note='<b>Wet EQ flat.</b> The reverb plays as recorded, with the first six bands back on the graph.';}
+/* a new band: the first one free, a bell where asked (or at 1 kHz, 0 dB), and it is the one chosen */
+function eqAdd(f,g){var i=eqFree(st);if(i<0){st.note='<b>All twelve bands are in use.</b> Remove one to add another.';return -1;}
+ eqSet(i,'f',f!=null?f:1000);eqSet(i,'g',g!=null?g:0);eqSet(i,'q',0.9);eqSet(i,'s',1);eqSet(i,'o',1);st.eqCur=i;st.note='<b>Band '+(i+1)+' added.</b> Drag it, or use its shape, Solo and Remove above the graph.';return i;}
+function eqRemove(i){eqSet(i,'o',0);eqSet(i,'g',0);eqSet(i,'f',EQ_DEF[i][0]);eqSet(i,'q',EQ_DEF[i][1]);eqSet(i,'s',EQ_DEF[i][2]);if(st.eqSolo===i)st.eqSolo=null;if(st.eqCur===i)st.eqCur=null;st.note='<b>Band '+(i+1)+' removed.</b>';}
+function eqSolo(i){st.eqSolo=st.eqSolo===i?null:i;st.eqCur=i;st.hint=null;st.note=st.eqSolo==null?null:'<b>Listening to band '+(i+1)+' alone.</b> The dry sound is muted while Solo is on. Solo is never saved.';}
 /* the ids a drag of one point touches: frequency and gain, or Q alone with Alt held */
-function eqIds(i,alt){return alt&&eqBell(i)?[PID[eqKey(i,'q')]]:[PID[eqKey(i,'f')],PID[eqKey(i,'g')]];}
-function applyEq(e){var d=drag,sc=d.w/d.rect.width,dx=(e.clientX-d.x0)*sc,dy=(e.clientY-d.y0)*sc,fine=e.shiftKey?0.1:1;
- if(d.alt){eqSet(d.i,'q',d.q0*Math.pow(EQ_Q_SPAN,-dy/d.ph*fine));}
- else{eqSet(d.i,'f',d.f0*Math.pow(EQ_MAX/EQ_MIN,dx/d.pw*fine));eqSet(d.i,'g',d.g0-dy/d.ph*2*EQ_DB*fine);}
+function eqIds(i,alt){return alt&&eqBell(st,i)?[PID[eqKey(i,'q')]]:[PID[eqKey(i,'f')],PID[eqKey(i,'g')]];}
+/* where a point on an EQ graph is, as frequency and gain (a polar graph reads angle and radius) */
+function eqAt(d,cx,cy){if(d.polar){var a=Math.atan2(cy-d.cy,cx-d.cx)*180/Math.PI,t=((a-EQ_POL_A0)%360+360)%360;if(t>EQ_POL_SPAN)t=t>(EQ_POL_SPAN+360)/2?0:EQ_POL_SPAN;
+  return {f:EQ_MIN*Math.pow(EQ_MAX/EQ_MIN,t/EQ_POL_SPAN),g:(Math.hypot(cx-d.cx,cy-d.cy)-d.r0)/(d.r1-d.r0)*2*EQ_DB-EQ_DB,t:t,r:Math.hypot(cx-d.cx,cy-d.cy)};}
+ return {f:EQ_MIN*Math.pow(EQ_MAX/EQ_MIN,(cx-d.l)/d.pw),g:EQ_DB-(cy-d.t)/d.ph*2*EQ_DB};}
+function eqGeom(es){var d={rect:es.getBoundingClientRect(),w:+es.getAttribute('data-w'),l:+es.getAttribute('data-l'),t:+es.getAttribute('data-t'),pw:+es.getAttribute('data-pw'),ph:+es.getAttribute('data-ph'),polar:es.getAttribute('data-polar')==='1'};
+ if(d.polar){d.cx=+es.getAttribute('data-cx');d.cy=+es.getAttribute('data-cy');d.r0=+es.getAttribute('data-r0');d.r1=+es.getAttribute('data-r1');}return d;}
+function applyEq(e){var d=drag,sc=d.w/d.rect.width,fine=e.shiftKey?0.1:1;
+ if(d.polar){var p0=eqAt(d,(d.x0-d.rect.left)*sc,(d.y0-d.rect.top)*sc),p1=eqAt(d,(e.clientX-d.rect.left)*sc,(e.clientY-d.rect.top)*sc),dt=p1.t-p0.t,dr=p1.r-p0.r;
+  if(d.alt)eqSet(d.i,'q',d.q0*Math.pow(EQ_Q_SPAN,dr/(d.r1-d.r0)*fine));
+  else{eqSet(d.i,'f',d.f0*Math.pow(EQ_MAX/EQ_MIN,dt/EQ_POL_SPAN*fine));eqSet(d.i,'g',d.g0+dr/(d.r1-d.r0)*2*EQ_DB*fine);}}
+ else{var dx=(e.clientX-d.x0)*sc,dy=(e.clientY-d.y0)*sc;
+  if(d.alt)eqSet(d.i,'q',d.q0*Math.pow(EQ_Q_SPAN,-dy/d.ph*fine));
+  else{eqSet(d.i,'f',d.f0*Math.pow(EQ_MAX/EQ_MIN,dx/d.pw*fine));eqSet(d.i,'g',d.g0-dy/d.ph*2*EQ_DB*fine);}}
  st.note=null;schedule();}
 
 /* ---- the waterfall window: the playing response analysed (energy over time per third-octave
@@ -188,7 +211,7 @@ function wfHTML(){if(!JUCE){var sig=st.sp+'|'+curBands(st).join(',');if(!ana||an
 function onAnalysis(m){if(!m||!Array.isArray(m.waterfall)||!Array.isArray(m.decay)||!Array.isArray(m.rt60))return;ana=m;anaStale=false;if(st.wf)schedule();}
 function onSpectrum(m){if(!m||!Array.isArray(m.levels))return;for(var i=0;i<31;i++){var v=+m.levels[i];if(!isFinite(v))v=-100;specCur[i]=Math.max(v,specCur[i]-SPEC_FALL);}drawSpectra();}
 /* the plugin only analyses and taps the reverb while a display is open */
-function syncDisplays(){var want=!!(st.wf||st.eq);if(want===dispOpen)return;dispOpen=want;if(JUCE)JUCE.emitEvent('displays',{open:want});
+function syncDisplays(){var want=!!(st.wf||st.eq||st.graph==='eq');if(want===dispOpen)return;dispOpen=want;if(JUCE)JUCE.emitEvent('displays',{open:want});
  if(!JUCE){if(want&&!previewTimer)previewTimer=setInterval(fakeSpectrum,40);else if(!want&&previewTimer){clearInterval(previewTimer);previewTimer=0;}}
  if(!want)for(var i=0;i<31;i++)specCur[i]=-100;}
 /* canvases are drawn at the page's real pixel size, so they stay crisp at any editor size */
@@ -196,7 +219,12 @@ function cvCtx(cv){var w=+cv.getAttribute('data-w'),h=+cv.getAttribute('data-h')
  if(cv.width!==bw||cv.height!==bh){cv.width=bw;cv.height=bh;}var c=cv.getContext('2d');c.setTransform(bw/w,0,0,bh/h,0,0);c.clearRect(0,0,w,h);return c;}
 function tok(el,name){return getComputedStyle(el).getPropertyValue(name).trim()||'#888';}
 function drawDisplays(){var wc=live.querySelector('canvas[data-cv="wf"]');if(wc)drawWaterfall(wc);drawSpectra();wfNote();}
-function drawSpectra(){var cs=live.querySelectorAll('canvas[data-cv="spec"],canvas[data-cv="eqspec"]');for(var i=0;i<cs.length;i++)drawSpectrum(cs[i],cs[i].getAttribute('data-cv')==='eqspec');}
+function drawSpectra(){var cs=live.querySelectorAll('canvas[data-cv="spec"]');for(var i=0;i<cs.length;i++)drawSpectrum(cs[i]);
+ /* behind an EQ curve the spectrum is bars in the graph itself, moved in place: on a polar graph each bar grows outward from the inner ring */
+ var gs=live.querySelectorAll('[data-spec]');for(var k=0;k<gs.length;k++){var g=gs[k],svg=g.closest('svg'),pol=g.getAttribute('data-spec')==='pol',T=+svg.getAttribute('data-t'),ph=+svg.getAttribute('data-ph'),r0=+svg.getAttribute('data-r0'),r1=+svg.getAttribute('data-r1'),bars=g.children;
+  for(var j=0;j<bars.length&&j<31;j++){var lv=clamp(1+specCur[j]/90,0,1),b=bars[j];
+   if(pol){var hh=(r1-r0)*lv;b.setAttribute('y',(-r0-hh).toFixed(1));b.setAttribute('height',hh.toFixed(1));}
+   else{var hl=ph*lv;b.setAttribute('y',(T+ph-hl).toFixed(1));b.setAttribute('height',hl.toFixed(1));}}}}
 function wfNote(){var el=live.querySelector('[data-wf="note"]');if(!el)return;var cv=live.querySelector('canvas[data-cv="wf"]');if(cv)cv.style.opacity=anaStale?'.5':'';
  el.textContent=!ana?'Waiting for the response to play.':anaStale?'Measuring the new response.':'Measured from the response now playing: '+f1(ana.seconds)+' s to \u221260 dB. The spectrum shows the reverb alone, whatever the mix.';
  if(el.textContent!==saidWf){saidWf=el.textContent;say(saidWf);}}
@@ -223,9 +251,7 @@ function drawWaterfall(cv){var a=ana,c=cvCtx(cv),w=+cv.getAttribute('data-w'),h=
  WF_LAB.forEach(function(l){c.fillText(l[1],X(0,l[0]),h-6);});}
 /* the live spectrum: a bar per third-octave band; behind the EQ curve it is drawn faintly on
    the curve's own frequency axis */
-function drawSpectrum(cv,eq){var c=cvCtx(cv),w=+cv.getAttribute('data-w'),h=+cv.getAttribute('data-h'),box=cv.closest('.cbox'),ac=tok(box,'--ac'),tx2=tok(box,'--tx2'),ln=tok(box,'--ln');
- if(eq){var span=Math.log(1000),ew=w/30*0.55;c.fillStyle=tok(box,'--tx');c.globalAlpha=0.12;
-  for(var j=0;j<31;j++){var ex=w*Math.log(BANDS31[j]/20)/span,ey=h*clamp(-specCur[j]/90,0,1);if(ey<h-0.5)c.fillRect(ex-ew/2,ey,ew,h-ey);}return;}
+function drawSpectrum(cv){var c=cvCtx(cv),w=+cv.getAttribute('data-w'),h=+cv.getAttribute('data-h'),box=cv.closest('.cbox'),ac=tok(box,'--ac'),tx2=tok(box,'--tx2'),ln=tok(box,'--ln');
  var L=40,R=12,T=8,B=20,pw=w-L-R,ph=h-T-B,RANGE=80,slot=pw/31,bw=slot*0.62;
  c.font='10px '+tok(box,'--fnum');c.textAlign='right';c.textBaseline='middle';c.strokeStyle=ln;c.lineWidth=1;c.fillStyle=tx2;
  for(var g=0;g>=-RANGE;g-=20){var y=Math.round(T+ph*(-g/RANGE))+0.5;c.beginPath();c.moveTo(L,y);c.lineTo(L+pw,y);c.stroke();c.fillText(g?'\u2212'+(-g):'0',L-8,y);}
@@ -471,7 +497,7 @@ function announce(){if(st.note!==saidNote){saidNote=st.note;if(st.note)say(plain
    The drawing is handed a view of the state whose numbers run from the old values to the new;
    the state itself, and what the host is told, change at once. A drag cuts it short, and
    reduced motion skips it. The old photograph lies over the new for a moment and fades. ---- */
-var tw=null,TW_KEYS=['bands','rbands'].concat(Object.keys(P).filter(function(k){return P[k].max>1;}));
+var tw=null,TW_KEYS=['bands','rbands'].concat(Object.keys(P).filter(function(k){return P[k].max>1&&!/^eq\d+[so]$/.test(k);}));
 function reduced(){return !!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);}
 function twSnap(){var o={};TW_KEYS.forEach(function(k){var x=st[k];o[k]=Array.isArray(x)?x.slice():x;});return o;}
 function twStart(from){if(reduced()||drag)return;
@@ -497,12 +523,17 @@ var drag=null,eqTap=null;
 var MAC=/Mac/.test(navigator.platform||'');
 // Only the main button drags: a right press, or a Control click on a Mac, opens the host's menu for a control.
 live.addEventListener('pointerdown',function(e){var t=e.target;endDrag();tw=null;if(t.closest('input,button'))return;if(e.button!==0||(MAC&&e.ctrlKey))return;
- var kn=t.closest('[data-knob]'),lis=t.closest('[data-drag]'),dg=t.closest('svg[data-decay]'),en=t.closest('[data-eqn]');
- if(en){var es=en.closest('svg'),ei=+en.getAttribute('data-eqn'),alt=(e.altKey||e.ctrlKey)&&eqBell(ei),now=Date.now();
+ var kn=t.closest('[data-knob]'),lis=t.closest('[data-drag]'),dg=t.closest('svg[data-decay]'),en=t.closest('[data-eqn]'),eg=t.closest('svg[data-eqg]');
+ if(en){var es=en.closest('svg'),ei=+en.getAttribute('data-eqn'),alt=(e.altKey||e.ctrlKey)&&eqBell(st,ei),now=Date.now();
   // the page is redrawn between the two clicks, so a double click is counted here: it returns the band to 0 dB
   if(eqTap&&eqTap.i===ei&&now-eqTap.t<400){eqTap=null;eqSet(ei,'g',0);st.note=null;schedule();e.preventDefault();return;}eqTap={i:ei,t:now};
-  drag={type:'eq',i:ei,alt:alt,rect:es.getBoundingClientRect(),w:+es.getAttribute('data-w'),pw:+es.getAttribute('data-pw'),ph:+es.getAttribute('data-ph'),x0:e.clientX,y0:e.clientY,f0:st[eqKey(ei,'f')],g0:st[eqKey(ei,'g')],q0:st[eqKey(ei,'q')],ids:eqIds(ei,alt)};
+  drag=Object.assign(eqGeom(es),{type:'eq',i:ei,alt:alt,x0:e.clientX,y0:e.clientY,f0:st[eqKey(ei,'f')],g0:st[eqKey(ei,'g')],q0:st[eqKey(ei,'q')],ids:eqIds(ei,alt)});
   st.eqCur=ei;schedule();}
+ else if(eg&&!t.closest('[data-act]')){// an empty spot: a double click adds a band there; a single click chooses none
+  var gd=eqGeom(eg),gs=gd.w/gd.rect.width,at=eqAt(gd,(e.clientX-gd.rect.left)*gs,(e.clientY-gd.rect.top)*gs),gnow=Date.now();
+  if(gd.polar&&(at.r<gd.r0-20||at.r>gd.r1+20))return;
+  if(eqTap&&eqTap.i===-1&&gnow-eqTap.t<400){eqTap=null;var ni=eqAdd(at.f,clamp(at.g,-EQ_DB,EQ_DB));if(ni>=0){st.hint=null;renderLive();sync();var nn=live.querySelector('[data-fid="eqn-'+ni+'"]');if(nn)nn.focus({preventScroll:true});}e.preventDefault();return;}
+  eqTap={i:-1,t:gnow};if(st.eqCur!=null){st.eqCur=null;schedule();}return;}
  else if(kn){var k=kn.getAttribute('data-knob'),h=kn.getAttribute('data-h')==='1';drag={type:'knob',k:k,h:h,x0:e.clientX,y0:e.clientY,n0:to01(k,getV(st,k)),w:kn.getBoundingClientRect().width*(W/live.firstElementChild.getBoundingClientRect().width),ids:k==='decay'?(st.link?BAND_ID.slice():BAND_ID.concat(RBAND_ID)):[PID[k]]};}
  else if(lis){var sv=lis.closest('svg');drag={type:'lis',rect:sv.getBoundingClientRect(),w:+sv.getAttribute('data-w'),mode:sv.getAttribute('data-mode'),ox:+sv.getAttribute('data-ox'),oy:+sv.getAttribute('data-oy'),sc:+sv.getAttribute('data-sc'),rw:+sv.getAttribute('data-rw'),ids:lis.getAttribute('data-drag')==='src'?[PID.sx]:[PID.dist,PID.lx],src:lis.getAttribute('data-drag')==='src'};}
  else if(dg){var r=dg.getBoundingClientRect(),d={rect:r,l:+dg.getAttribute('data-l'),t:+dg.getAttribute('data-t'),pw:+dg.getAttribute('data-pw'),ph:+dg.getAttribute('data-ph'),ymax:+dg.getAttribute('data-ymax'),w:+dg.getAttribute('data-w'),bars:dg.getAttribute('data-bars')==='1'};
@@ -540,7 +571,7 @@ document.addEventListener('pointerdown',function(){pointing=true;},true);
 document.addEventListener('pointerup',function(){setTimeout(pointed,0);},true);
 document.addEventListener('pointercancel',function(){setTimeout(pointed,0);},true);
 /* on a bell, the wheel sets Q */
-live.addEventListener('wheel',function(e){var en=e.target.closest&&e.target.closest('[data-eqn]');if(!en||drag)return;var i=+en.getAttribute('data-eqn');e.preventDefault();if(!eqBell(i)||!e.deltaY)return;
+live.addEventListener('wheel',function(e){var en=e.target.closest&&e.target.closest('[data-eqn]');if(!en||drag)return;var i=+en.getAttribute('data-eqn');e.preventDefault();if(!eqBell(st,i)||!e.deltaY)return;
  eqSet(i,'q',st[eqKey(i,'q')]*Math.pow(e.shiftKey?1.015:1.06,e.deltaY<0?1:-1));st.note=null;schedule();},{passive:false});
 
 /* Keys are heard on the whole document, so an open window still hears Tab and Escape when the
@@ -570,16 +601,19 @@ document.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,A
  if(e.key==='Enter'&&t.matches('input[data-scn]')){e.preventDefault();t.blur();return;}
  if(t.matches('.sk')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.click();return;}
  // a captured position marked on a drawing is an SVG button: Enter and Space press it
- if(t.matches('svg [data-act="pos"]')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));return;}
+ if(t.matches('svg [data-act]')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));return;}
  if(t.matches('[data-knob]')){var k=t.getAttribute('data-knob'),p=P[k];if(e.key==='Home')setParam(st,k,p.min);else if(e.key==='End')setParam(st,k,p.max);else if(keys[e.key]){
    // a step only ever moves the way it was pressed, even from a value rounding takes back
    var v0=getV(st,k),nv=from01(k,to01(k,v0)+keys[e.key]*(e.shiftKey?0.002:0.02));if(keys[e.key]>0?nv>v0:nv<v0)setParam(st,k,nv);}else return;e.preventDefault();schedule();}
  else if(t.matches('[data-eqn]')){var qi=+t.getAttribute('data-eqn'),fine=e.shiftKey,ek=e.key;st.eqCur=qi;
   if(ek==='ArrowLeft'||ek==='ArrowRight')eqSet(qi,'f',st[eqKey(qi,'f')]*Math.pow(2,(ek==='ArrowRight'?1:-1)/(fine?48:12)));
   else if(ek==='ArrowUp'||ek==='ArrowDown')eqSet(qi,'g',st[eqKey(qi,'g')]+(ek==='ArrowUp'?1:-1)*(fine?0.1:0.5));
-  else if((ek==='PageUp'||ek==='PageDown')&&eqBell(qi))eqSet(qi,'q',st[eqKey(qi,'q')]*Math.pow(fine?1.015:1.12,ek==='PageUp'?1:-1));
-  else if(ek==='Delete'||ek==='Backspace')eqSet(qi,'g',0);
-  else if(ek==='Home'||ek==='End'){var nx=ek==='End'?EQ_N-1:0;st.eqCur=nx;renderLive();var nn=live.querySelector('[data-fid="eqn-'+nx+'"]');if(nn)nn.focus({preventScroll:true});e.preventDefault();return;}
+  else if((ek==='PageUp'||ek==='PageDown')&&eqBell(st,qi))eqSet(qi,'q',st[eqKey(qi,'q')]*Math.pow(fine?1.015:1.12,ek==='PageUp'?1:-1));
+  else if(ek==='Backspace')eqSet(qi,'g',0);
+  else if(ek==='s'||ek==='S'){eqSolo(qi);e.preventDefault();schedule();return;}
+  // Delete removes the band; the keyboard moves to the next one on the graph
+  else if(ek==='Delete'){var was=eqShown(st),wi=was.indexOf(qi),nb=was[wi+1]!=null?was[wi+1]:was[wi-1];eqRemove(qi);st.hint=null;e.preventDefault();renderLive();sync();var nd=nb!=null?live.querySelector('[data-fid="eqn-'+nb+'"]'):null;if(nd)nd.focus({preventScroll:true});else{var ab=live.querySelector('[data-act="eqadd"]');if(ab)ab.focus({preventScroll:true});}return;}
+  else if(ek==='Home'||ek==='End'){var sh=eqShown(st),nx=ek==='End'?sh[sh.length-1]:sh[0];st.eqCur=nx;renderLive();var nn=live.querySelector('[data-fid="eqn-'+nx+'"]');if(nn)nn.focus({preventScroll:true});e.preventDefault();return;}
   else return;st.note=null;e.preventDefault();schedule();}
  else if(t.matches('[data-node]')){var i=+t.getAttribute('data-node');if(e.key==='ArrowLeft'||e.key==='ArrowRight'){var ni=clamp(i+(e.key==='ArrowRight'?1:-1),0,7);st.lastBand=ni;e.preventDefault();renderLive();var n2=live.querySelector('[data-fid="nd-'+ni+'"]');if(n2)n2.focus({preventScroll:true});return;}
   var dk={ArrowUp:0.1,ArrowDown:-0.1,PageUp:1,PageDown:-1}[e.key];if(dk||e.key==='Home'||e.key==='End'){var cb=curBands(st);cb[i]=e.key==='Home'?0.1:e.key==='End'?20:clamp(Math.round((cb[i]+(e.shiftKey&&Math.abs(dk)<1?dk/10:dk))*100)/100,0.1,20);st.lastBand=i;st.hint='decay';st.note=null;e.preventDefault();schedule();}}
@@ -595,7 +629,7 @@ function typedNumbers(raw,thousands){var t=raw.replace(/[\u2212\u2013]/g,'-');
    The high cut shows kHz, so a bare number too small to be Hz, but not too big to be kHz, is kHz. */
 function typedScale(ty,raw,v){if(/^(pre|gate|attack|dDel|spkDelay)$/.test(ty))return /\d\s*s(ec(ond)?s?)?\b/i.test(raw)&&!/ms|millisec/i.test(raw)?1000:1;
  if(ty==='decay'||ty==='band')return /ms|millisec/i.test(raw)?0.001:1;
- if(/^(hicut|locut|xover|mono|eq\df)$/.test(ty))return /k/i.test(raw)?1000:ty==='hicut'&&v<P.hicut.min&&v*1000<=P.hicut.max&&!/hz/i.test(raw)?1000:1;return 1;}
+ if(/^(hicut|locut|xover|mono|eq\d+f)$/.test(ty))return /k/i.test(raw)?1000:ty==='hicut'&&v<P.hicut.min&&v*1000<=P.hicut.max&&!/hz/i.test(raw)?1000:1;return 1;}
 function onChange(e){var t=e.target;
  if(t.matches('input[data-spk]')){var si=+t.getAttribute('data-spk'),lv=t.getAttribute('data-f')==='l',sr=t.value,sn=typedNumbers(sr),cur=speakerOf(st,si).slice();
   if(lv)cur[0]=/off/i.test(sr)?SPK_LEVEL.min:sn.length?clamp(Math.round(sn[0]*10)/10,SPK_LEVEL.min,SPK_LEVEL.max):cur[0];else if(sn.length)cur[1]=clamp(Math.round(sn[0]*typedScale('spkDelay',sr,sn[0])*10)/10,SPK_DELAY.min,SPK_DELAY.max);
@@ -665,6 +699,11 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'spkreset':st.speakers=[];break;
   case 'scenes':st.scn=!st.scn;st.browse=false;st.hint=null;break;
   case 'eq':st.eq=!st.eq;st.browse=false;st.hint=null;break;
+  case 'graph':st.graph=v==='eq'?'eq':'decay';st.hint=null;st.note=v==='eq'?'<b>Wet EQ on the display.</b> Drag a point for frequency and gain, double-click an empty spot to add a band, choose a point for its shape, Solo and Remove.':null;break;
+  case 'eqadd':eqAdd();st.hint=null;break;
+  case 'eqshape':eqSet(+b.getAttribute('data-i'),'s',+v);st.hint=null;st.note=null;break;
+  case 'eqsolo':eqSolo(+b.getAttribute('data-i'));break;
+  case 'eqremove':eqRemove(+b.getAttribute('data-i'));st.hint=null;break;
   case 'wf':st.wf=!st.wf;st.browse=false;st.hint=null;break;
   case 'eqreset':eqReset();break;
   case 'scstore':sceneAct('store',0,'');st.hint=null;st.note='<b>Stored.</b> Automate Scene to recall it on the cut.';break;
@@ -707,7 +746,10 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
  else if(a==='skins'&&st.skins){var sk=live.querySelector('.skins .sk[aria-current="true"]');if(sk)sk.focus({preventScroll:true});}
  else if(a==='capture'&&st.capture){var cf=live.querySelector('.cap .cgo');if(cf)cf.focus({preventScroll:true});}
  else if(a==='speakers'&&st.spk){var sf=live.querySelector('.spkd input');if(sf)sf.focus({preventScroll:true});}
- else if(a==='eq'&&st.eq){var ef=live.querySelector('.eqd [data-eqn="'+(st.eqCur||0)+'"]');if(ef)ef.focus({preventScroll:true});}
+ else if(a==='eq'&&st.eq){var ef=live.querySelector('.eqd [data-eqn="'+(st.eqCur!=null?st.eqCur:eqShown(st)[0])+'"]')||live.querySelector('.eqd [data-act="eqadd"]');if(ef)ef.focus({preventScroll:true});}
+ else if(a==='eqadd'){var na=live.querySelector('[data-fid="eqn-'+st.eqCur+'"]');if(na)na.focus({preventScroll:true});}
+ else if(a==='eqremove'){var ra=live.querySelector('[data-act="eqadd"]')||live.querySelector('[data-eqn]');if(ra)ra.focus({preventScroll:true});}
+ else if(a==='eqshape'||a==='eqsolo'){var sa=live.querySelector('[data-act="'+a+'"][data-i="'+b.getAttribute('data-i')+'"]'+(v!=null?'[data-v="'+v+'"]':''));if(sa)sa.focus({preventScroll:true});}
  else if(a==='wf'&&st.wf){var wfc=live.querySelector('.wfd .cx');if(wfc)wfc.focus({preventScroll:true});}
  else if(a==='report'&&st.rep){var rf=live.querySelector('#rep-text');if(rf)rf.focus({preventScroll:true});}
  else if(a==='licence'&&st.lic){var lf=live.querySelector('#lic-key')||live.querySelector('.lic .cgo');if(lf)lf.focus({preventScroll:true});}

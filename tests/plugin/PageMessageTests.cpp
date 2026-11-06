@@ -270,8 +270,9 @@ TEST_CASE ("ui sets the interface state the page owns, and nothing else", "[brid
     tree.addListener (&watcher);
 
     REQUIRE (b.send ("ui", R"({"spaceId": "chapel", "locks": "mix,decay", "mode": "stage", "view": "section",
-                               "speakers": "-3 10;0 0", "skin": "catalogue"})"));
+                               "speakers": "-3 10;0 0", "skin": "catalogue", "graph": "eq"})"));
     CHECK (b.ui (UiIDs::spaceId) == "chapel");
+    CHECK (b.ui (UiIDs::graph) == "eq");
     CHECK (b.ui (UiIDs::locks) == "mix,decay");
     CHECK (b.ui (UiIDs::mode) == "stage");
     CHECK (b.ui (UiIDs::view) == "section");
@@ -365,6 +366,37 @@ TEST_CASE ("The scene messages store, rename, delete and recall scenes", "[bridg
         CHECK (names() == juce::StringArray { "2 Wide" });
         CHECK (near (b.plain (ParamIDs::mix), 55.0f));
     }
+}
+
+TEST_CASE ("eqSolo listens to one EQ band alone until the page lets go, reloads, or the window closes", "[bridge]")
+{
+    Bridge b;
+    Host host (*b.plugin);
+    CHECK (b.plugin->eqSoloBand() == WetEqualiser::noSolo);
+
+    REQUIRE (b.send ("eqSolo", R"({"band": 3})"));
+    CHECK (b.plugin->eqSoloBand() == 3);
+    b.send ("eqSolo", R"({"band": 11})");
+    CHECK (b.plugin->eqSoloBand() == 11);
+
+    // A solo is heard, not kept: it is no parameter, and no part of the session.
+    CHECK (host.changes.empty());
+    juce::MemoryBlock session;
+    b.plugin->getStateInformation (session);
+    const auto xml = juce::AudioProcessor::getXmlFromBinary (session.getData(), static_cast<int> (session.getSize()));
+    REQUIRE (xml != nullptr);
+    CHECK_FALSE (xml->toString().containsIgnoreCase ("solo"));
+
+    b.send ("eqSolo", R"({"band": -1})");
+    CHECK (b.plugin->eqSoloBand() == WetEqualiser::noSolo);
+    b.send ("eqSolo");
+    CHECK (b.plugin->eqSoloBand() == WetEqualiser::noSolo);
+
+    // The page reloading (its solo button gone) ends a solo too.
+    b.send ("eqSolo", R"({"band": 0})");
+    CHECK (b.plugin->eqSoloBand() == 0);
+    b.send ("ready");
+    CHECK (b.plugin->eqSoloBand() == WetEqualiser::noSolo);
 }
 
 TEST_CASE ("The window's own messages go to the window", "[bridge]")

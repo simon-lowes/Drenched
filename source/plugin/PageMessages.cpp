@@ -43,6 +43,8 @@ const std::vector<std::pair<const char*, PageMessages::Handler>>& PageMessages::
         { "dropIr",   [] (M& m, V v) { m.onDropIr (v); } },
         { "match",    [] (M& m, V)   { m.window.chooseRecordingToMatch(); } },
         { "displays", [] (M& m, V v) { m.window.displaysOpened (static_cast<bool> (v.getProperty ("open", false))); } },
+        // Hear one EQ band alone while its node is held or its Solo is on (band -1: all of them).
+        { "eqSolo",   [] (M& m, V v) { m.processor.setEqSolo (static_cast<int> (v.getProperty ("band", -1))); } },
         { "sceneStore",  [] (M& m, V v) { m.onScene ("store", v); } },
         { "sceneRename", [] (M& m, V v) { m.onScene ("rename", v); } },
         { "sceneDelete", [] (M& m, V v) { m.onScene ("delete", v); } },
@@ -88,7 +90,7 @@ juce::StringArray PageMessages::names()
 
 juce::StringArray PageMessages::interfaceKeys()
 {
-    return { "spaceId", "locks", "mode", "view", "speakers", "skin" };
+    return { "spaceId", "locks", "mode", "view", "graph", "speakers", "skin" };
 }
 
 bool PageMessages::handle (const juce::String& name, const juce::var& payload)
@@ -109,8 +111,9 @@ bool PageMessages::handle (const juce::String& name, const juce::var& payload)
 //==============================================================================
 void PageMessages::onReady (const juce::var&)
 {
-    // A page that reloaded mid-drag can't end that drag.
+    // A page that reloaded mid-drag can't end that drag, or its solo.
     held.releaseAll();
+    processor.setEqSolo (WetEqualiser::noSolo);
     window.pageReady();
 }
 
@@ -166,6 +169,7 @@ void PageMessages::onUi (const juce::var& payload)
         else if (key == "locks") ui.setProperty (UiIDs::locks, value.toString(), nullptr);
         else if (key == "mode")  ui.setProperty (UiIDs::mode, value.toString(), nullptr);
         else if (key == "view")  ui.setProperty (UiIDs::view, value.toString(), nullptr);
+        else if (key == "graph") ui.setProperty (UiIDs::graph, value.toString(), nullptr);
         else if (key == "speakers") ui.setProperty (UiIDs::speakers, value.toString().substring (0, 1024), nullptr);
         else if (key == "skin")
         {
@@ -251,7 +255,7 @@ void PageMessages::noteStep (const juce::String& name, const juce::var& payload)
 {
     juce::String what;
 
-    if (name == "gesture" || name == "copyText" || name == "pasteText")
+    if (name == "gesture" || name == "copyText" || name == "pasteText" || name == "eqSolo")
         return;
 
     if (name == "params" || name == "ui")
