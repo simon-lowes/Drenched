@@ -39,7 +39,8 @@ function applyFromHost(msg){if(!msg)return;var p=msg.params||{},u=msg.ui||{},fro
  if(u.shortened!=null){var sh=+u.shortened||0;if(sh>0&&sh!==shortened){st.hint=null;
    st.note='<b>Shortened to '+sh.toFixed(1)+' s.</b> The 32-bit version only has memory for this much of a surround reverb at this sample rate. The 64-bit version plays it in full.';}
   shortened=sh;}
- if('ir' in u)setUserSpace(u.ir);
+ if('ir' in u)recompose(function(){setUserSpace(u.ir);});
+ if('room' in u)recompose(function(){setDescribedSpace(u.room);});
  if('scenes' in u)setScenes(u.scenes);
  if(p.scene!=null){var sn=Math.round(+p.scene);if(sceneSeen&&sn!==st.scene&&sn>0&&sceneOf(sn)){st.hint=null;settle=true;st.note='<b>'+esc(sceneOf(sn).name)+'</b> recalled: scene '+sn+', '+esc(sceneOf(sn).space)+'.';}st.scene=isFinite(sn)?sn:0;sceneSeen=true;}
  if(u.irEvent!=null){var ev=+u.irEvent;if(irEvent!==null&&ev!==irEvent){st.hint=null;settle=true;
@@ -126,14 +127,48 @@ function onCapture(m){if(!m)return;var was=st.capStatus.stage,msgWas=st.capStatu
  if(was==='working'&&st.capStatus.stage==='idle')st.capture=false;
  renderLive();}
 
+/* ---- Describe a room: a few words, or a photograph, become a modelled space. The plugin reads
+   the words (or looks at the picture, on this computer) and says what it made of them; the
+   window shows that as you type, and Hear it makes the room the space. ---- */
+st.desc=false;st.descWords='';st.descRead=null;st.descBusy=null;var descT=0,descSent=null;
+/* the space list is rebuilt around the chosen space, so its index is found again by id */
+function recompose(fn){var id=SPACES[st.sp]?SPACES[st.sp].id:'';fn();var i=spaceIndex(id);st.sp=i>=0?i:clamp(st.sp,0,SPACES.length-1);}
+/* without the plugin (previews and tests) a plain room stands in for whatever is typed */
+function localDescribe(w){var n=w.charAt(0).toUpperCase()+w.slice(1);return {name:n.length>48?n.slice(0,45)+'...':n,kind:'room',place:'a room',W:5,D:7,H:2.8,mat:'Plaster, wood',bands:[1.1,1.1,1.3,1.8,2.3,2.2,1.5,0.9],pre:4,dist:40,el:55,words:w,understood:[],known:false,from:'words'};}
+function descPreview(){var w=st.descWords.trim();if(w===descSent)return;descSent=w;if(!w){st.descRead=null;schedule();return;}if(JUCE)JUCE.emitEvent('describe',{words:w,apply:false});else{st.descRead=localDescribe(w);schedule();}}
+function descApply(){var w=st.descWords.trim();if(!w||st.descBusy)return;if(JUCE)JUCE.emitEvent('describe',{words:w,apply:true});else onDescribed(Object.assign(localDescribe(w),{applied:true}));}
+function descLine(r){var what=r.known?r.place:'a plain room',dims=f1(+r.W)+' \u00d7 '+f1(+r.D)+' \u00d7 '+f1(+r.H)+' m';
+ return '<b>'+esc(what.charAt(0).toUpperCase()+what.slice(1))+'</b>, '+dims+(r.mat?', '+esc(String(r.mat).toLowerCase()):'')+'. Rings '+f1(decayOf(r.bands))+' s at 1 kHz'+(+r.pre>=1?', first reflection after '+Math.round(+r.pre)+' ms':'')+'.';}
+function descWords(r){if(r.from==='photo'&&Array.isArray(r.seen)&&r.seen.length){var seen=r.seen.slice(0,3).map(function(c,i){return (i?'':'')+esc(c.name)+' ('+Math.round(+c.probability*100)+'%)';});return 'Looked like '+seen.join(', ')+'.';}
+ if(r.understood&&r.understood.length)return 'Understood: '+r.understood.map(function(w){return '<em>'+esc(w)+'</em>';}).join(', ')+'.';
+ return 'No word here names a kind of room, so a plain room stands in. Try bathroom, church, car park, cave or forest, a size, a material and how it sounds.';}
+function describeHTML(){var w=st.descWords,r=st.descRead,busy=st.descBusy;
+ var read=busy?'<span>Looking at <b>'+esc(busy)+'</b> for the kind of room it shows\u2026</span>'
+  :r?'<span>'+descLine(r)+'</span>'+sparkSVG(r.bands)+'<small id="desc-w">'+descWords(r)+'</small>'
+  :'<span>Say what kind of room it is, how big, what it is made of and how it sounds: <b>small tiled bathroom</b>, <b>stone cathedral, long and narrow</b>, <b>carpeted living room, 5 by 4 metres</b>.</span>';
+ return '<div class="cap dsc" role="dialog" aria-modal="true" aria-labelledby="desc-h" tabindex="-1" data-fid="dlg-desc"><div class="cbox"><div class="chd"><h2 id="desc-h">Describe a room</h2><button class="cx" data-act="describe" aria-label="Close">Close</button></div>'+
+  '<input id="desc-q" class="dsc-q" data-fid="desc-q" data-in="descWords" type="text" value="'+esc(w)+'" placeholder="small tiled bathroom" maxlength="400" autocomplete="off" spellcheck="false" aria-label="Describe the room" aria-describedby="desc-r"'+(busy?' disabled':'')+'>'+
+  '<div class="dsc-read" id="desc-r" aria-live="polite">'+read+'</div>'+
+  '<div class="cft"><button class="cgo" data-act="describego"'+(busy||!w.trim()?' disabled':'')+'>Hear it</button><button class="cgo stop" data-act="photo"'+(busy?' disabled':'')+'>Photograph\u2026</button><span class="ct">Or drop a photograph of the room on the window. Nothing leaves this computer.</span></div></div></div>';}
+function onDescribed(m){if(!m)return;st.hint=null;
+ if(m.looking){st.descBusy=String(m.name||'the picture');st.note='<b>Looking at '+esc(st.descBusy)+'</b> for the kind of room it shows.';}
+ else if(m.error){st.descBusy=null;errNote=st.note='<b>'+esc(m.name||'That picture')+'</b> couldn\u2019t be read: '+esc(m.error)+'.';}
+ else if(m.applied&&Array.isArray(m.bands)&&m.bands.length===8){st.descBusy=null;var from=twSnap();recompose(function(){setDescribedSpace(m);});changeSpace(DESCRIBED);
+  if(!st.locks.dist)st.dist=clamp(+m.dist||40,0,100);if(!st.locks.el)st.el=clamp(+m.el||55,0,100);
+  st.descWords=String(m.words||'');descSent=st.descWords;st.descRead=m;st.desc=false;
+  st.note='<b>'+esc(m.name)+'.</b> '+descLine(m)+' '+descWords(m)+' Drag the graph or the controls to adjust it.';twStart(from);renderLive();sync();syncUi();return;}
+ else if(Array.isArray(m.bands)&&m.bands.length===8){st.descRead=m;}
+ schedule();}
+
 /* ---- credits for the recorded spaces: who made each recording, and its licence ---- */
 st.credits=false;
 function creditsHTML(){var seen={},rows=[];LIBRARY.forEach(function(x){var k=x.credit+'|'+x.licence+'|'+x.source+'|'+x.changes;if(!x.credit||seen[k])return;seen[k]=[];rows.push({credit:x.credit,licence:x.licence,source:x.source,changes:x.changes,spaces:seen[k]});});
  LIBRARY.forEach(function(x){var k=x.credit+'|'+x.licence+'|'+x.source+'|'+x.changes;if(seen[k])seen[k].push(x.name);});
  var body=rows.length?'<ul class="crl">'+rows.map(function(r){return '<li><b>'+esc(r.credit)+'</b><span>'+esc(r.licence)+(r.source?', '+esc(r.source):'')+'</span><small>'+esc(r.spaces.join('; '))+'</small>'+(r.changes?'<small>Changes: '+esc(r.changes)+'</small>':'')+'</li>';}).join('')+'</ul>'
    :'<p>This build has no recorded spaces.</p>';
+ var model='<ul class="crl"><li><b>Places365 scene recognition model (ResNet-18 with scene attributes): Bolei Zhou, Agata Lapedriza, Aditya Khosla, Aude Oliva and Antonio Torralba, MIT CSAIL (2017)</b><span>CC BY, places2.csail.mit.edu</span><small>Looks at a photograph in Describe a room. Zhou et al., Places: A 10 million Image Database for Scene Recognition, IEEE TPAMI 2017.</small><small>Changes: weights quantised to 8 bits and batch normalisation folded in, for the plugin\u2019s own reader.</small></li></ul>';
  return '<div class="cap crd" role="dialog" aria-modal="true" aria-labelledby="crd-h" tabindex="-1" data-fid="dlg-crd"><div class="cbox"><div class="chd"><h2 id="crd-h">Recording credits</h2><button class="cx" data-act="credits" aria-label="Close">Close</button></div>'+
-  '<p>The recorded spaces are used under the licences below. Thank you to everyone who made and shared them.</p>'+body+'</div></div>';}
+  '<p>The recorded spaces are used under the licences below. Thank you to everyone who made and shared them.</p>'+body+'<p>The scene model that reads photographs:</p>'+model+'</div></div>';}
 
 /* ---- each speaker's reverb level and delay, with a meter per output ---- */
 st.spk=false;st.speakers=[];st.outputs=[{name:'L',wet:true},{name:'R',wet:true}];st.spkM=[];
@@ -444,7 +479,7 @@ function fitText(){var sc=live.querySelector('.screen');if(!sc)return;
 if(document.fonts&&document.fonts.addEventListener)document.fonts.addEventListener('loadingdone',function(){fitText();});
 function drawLive(){var a=document.activeElement,af=a&&live.contains(a)?a:null,fid=af?af.getAttribute('data-fid'):null,bl=live.querySelector('.brw-list'),blt=bl?bl.scrollTop:0;
  var text=!!af&&af.matches('input,textarea'),v=text?af.value:'',s0=text?af.selectionStart:0,s1=text?af.selectionEnd:0,all=text&&s0===0&&s1===v.length,typed=text&&af!==committed&&v!==af.defaultValue?af:null;
- resetIds();var html=screenHTML(st.skin,viewState());if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.rep)html=html.slice(0,-6)+reportHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.wf)html=html.slice(0,-6)+wfHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';if(st.tour!=null)html=html.slice(0,-6)+tourHTML()+'</div>';html=uniqueFids(html);
+ resetIds();var html=screenHTML(st.skin,viewState());if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.desc)html=html.slice(0,-6)+describeHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.rep)html=html.slice(0,-6)+reportHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.wf)html=html.slice(0,-6)+wfHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';if(st.tour!=null)html=html.slice(0,-6)+tourHTML()+'</div>';html=uniqueFids(html);
  var t=document.createElement('template');t.innerHTML=html;morphKids(live,t.content,typed);
  var kept=!!af&&live.contains(af);
  if(kept&&typed){if(af.value!==v){af.value=v;af.setSelectionRange(s0,s1);}}
@@ -455,7 +490,7 @@ function drawLive(){var a=document.activeElement,af=a&&live.contains(a)?a:null,f
  var dl=topDialog();modal(dl);
  if(fid&&!kept){var n=live.querySelector('[data-fid="'+fid+'"]');if(n&&!n.closest('[inert]')){n.focus({preventScroll:true});if(n.matches('input,textarea'))n.selectionStart=n.selectionEnd=n.value.length;}}
  // A dialog keeps the keyboard even when the control that had it is redrawn away.
- if(dl&&!dl.contains(document.activeElement)){var d=st.browse?live.querySelector('#brw-q'):st.skins?dl.querySelector('.sk[aria-current="true"]'):dl.querySelector('.cgo:not([disabled])')||dl.querySelector('.cx');(d||dl).focus({preventScroll:true});}
+ if(dl&&!dl.contains(document.activeElement)){var d=st.browse?live.querySelector('#brw-q'):st.desc&&dl.classList.contains('dsc')?dl.querySelector('#desc-q:not([disabled])'):st.skins?dl.querySelector('.sk[aria-current="true"]'):dl.querySelector('.cgo:not([disabled])')||dl.querySelector('.cx');(d||dl).focus({preventScroll:true});}
  // Closed, it gives the keyboard back to the control that opened it.
  else if(!dl&&opener){var o=live.querySelectorAll(opener.sel),oe=o[opener.i]||o[0];opener=null;if(oe&&!live.contains(document.activeElement))oe.focus({preventScroll:true});}
  if(!dl)opener=null;
@@ -474,7 +509,7 @@ function menuFit(){var pm=live.querySelector('.pc-menu');if(!pm)return;var sc=li
 var noteShown=null,noteAt=0,noteT=0;
 function noteTimer(){if(st.note===noteShown)return;noteShown=st.note;noteAt=Date.now();clearTimeout(noteT);
  if(st.note)noteT=setTimeout(function(){if(st.note===noteShown&&!st.noteOpen){st.note=null;renderLive();}},st.note===errNote?15000:9000);}
-function dialogOpen(){return !!(st.skins||st.browse||st.capture||st.lic||st.rep||st.credits||st.spk||st.scn||st.eq||st.wf||st.tour!=null);}
+function dialogOpen(){return !!(st.skins||st.browse||st.capture||st.desc||st.lic||st.rep||st.credits||st.spk||st.scn||st.eq||st.wf||st.tour!=null);}
 function topDialog(){var sc=live.firstElementChild,d=null;if(sc)for(var c=sc.firstElementChild;c;c=c.nextElementSibling)if(c.getAttribute('role')==='dialog')d=c;return d;}
 function modal(d){var sc=live.firstElementChild;if(sc)for(var c=sc.firstElementChild;c;c=c.nextElementSibling){var bg=!!d&&c!==d;if(bg!==c.hasAttribute('inert')){if(bg)c.setAttribute('inert','');else c.removeAttribute('inert');}}}
 function tabStops(d){return Array.prototype.filter.call(d.querySelectorAll('button,input,textarea,[tabindex]'),function(x){return !x.disabled&&x.getAttribute('tabindex')!=='-1'&&!x.closest('[inert]')&&x.getClientRects().length>0;});}
@@ -588,7 +623,7 @@ document.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,A
  if(e.key==='Escape'&&st.noteOpen&&!dialogOpen()){st.noteOpen=null;e.preventDefault();renderLive();return;}
  if(st.tour!=null&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='ArrowRight'||e.key==='ArrowLeft')&&!(t.matches&&t.matches('input,textarea'))){if(e.key==='ArrowRight')tourNext();else tourBack();e.preventDefault();renderLive();sync();syncUi();return;}
  if(e.key==='?'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!dialogOpen()&&!(t.matches&&t.matches('input,textarea'))){openTour(false);e.preventDefault();renderLive();return;}
- if(e.key==='Escape'&&dialogOpen()){if(st.tour!=null)closeTour();else if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.wf)st.wf=false;else if(st.eq)st.eq=false;else if(st.scn)st.scn=false;else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.rep)st.rep=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
+ if(e.key==='Escape'&&dialogOpen()){if(st.tour!=null)closeTour();else if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.wf)st.wf=false;else if(st.eq)st.eq=false;else if(st.scn)st.scn=false;else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.rep)st.rep=false;else if(st.lic)st.lic=false;else if(st.desc)st.desc=false;else st.capture=false;e.preventDefault();renderLive();return;}
  if(e.ctrlKey||e.metaKey||e.altKey||!t.matches)return;
  var pm=t.closest('.pc-menu');if(pm&&(e.key==='ArrowDown'||e.key==='ArrowUp'||e.key==='Home'||e.key==='End')){var pit=Array.prototype.slice.call(pm.querySelectorAll('.pc-i')),pc=pit.indexOf(t),pn=e.key==='Home'?0:e.key==='End'?pit.length-1:clamp(pc+(e.key==='ArrowDown'?1:-1),0,pit.length-1);if(pit[pn])pit[pn].focus({preventScroll:true});e.preventDefault();return;}
  var bw=st.browse&&t.closest&&t.closest('.brw');
@@ -598,6 +633,7 @@ document.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,A
    if(e.shiftKey){st.brwSim=br.i;st.brwCur=0;renderLive();brwReveal();}
    else{st.browse=false;changeSpace(br.i);renderLive();sync();syncUi();var ob=live.querySelector('[data-act="browse"]');if(ob)ob.focus({preventScroll:true});}return;}}
  if(e.key==='Enter'&&t.id==='lic-key'){e.preventDefault();licActivate();renderLive();return;}
+ if(e.key==='Enter'&&t.id==='desc-q'){e.preventDefault();clearTimeout(descT);st.descWords=t.value;descApply();renderLive();return;}
  if(e.key==='Enter'&&t.matches('input[data-scn]')){e.preventDefault();t.blur();return;}
  if(t.matches('.sk')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.click();return;}
  // a captured position marked on a drawing is an SVG button: Enter and Space press it
@@ -646,6 +682,7 @@ function onChange(e){var t=e.target;
 /* the field being committed takes its new, formatted value when the page is redrawn */
 live.addEventListener('change',function(e){committed=e.target;try{onChange(e);}finally{committed=null;}});
 live.addEventListener('input',function(e){var k=e.target.getAttribute&&e.target.getAttribute('data-in');if(k==='licKey'||k==='licCode'||k==='repText'||k==='repMail')st[k]=e.target.value;
+ if(k==='descWords'){st.descWords=e.target.value;clearTimeout(descT);descT=setTimeout(descPreview,250);var go=live.querySelector('[data-act="describego"]');if(go)go.disabled=!e.target.value.trim()||!!st.descBusy;}
  if(e.target.id==='brw-q'){var ss=e.target.selectionStart;st.brwQ=e.target.value;st.brwCur=0;renderLive();var q=live.querySelector('#brw-q');if(q&&q!==e.target){q.focus({preventScroll:true});q.selectionStart=q.selectionEnd=ss;}brwReveal();}});
 /* ---- the hint line: the control under the pointer, or the one with the keyboard. A note left
    by an action shows first; moving on to another control once it has been read puts it away. ---- */
@@ -711,6 +748,9 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'screcall':sceneAct('recall',+v,'');break;
   case 'scdelete':sceneAct('delete',+v,'');st.hint=null;st.note='<b>Scene '+v+' deleted.</b> The others keep their numbers, so their automation still works.';break;
   case 'capture':st.capture=!st.capture;st.hint=null;if(st.capture&&!capBusy()&&st.capStatus.stage!=='failed')st.capStatus.message='';break;
+  case 'describe':st.desc=!st.desc;st.hint=null;if(st.desc){if(!st.descWords.trim()&&DESCRIBED>=0)st.descWords=SPACES[DESCRIBED].words;descSent=null;descPreview();}break;
+  case 'describego':descApply();break;
+  case 'photo':st.hint=null;if(JUCE){JUCE.emitEvent('describePhoto',{});st.note='Choose a JPEG, PNG or GIF picture of the room. It is read on this computer.';}else st.note='<b>Photograph</b> opens a file chooser in the plugin.';break;
   case 'capopt':var ck=b.getAttribute('data-k');if(CAP_OPTS[ck]&&!capBusy())st.cap[ck]=ck==='method'?v:+v;break;
   case 'capstart':if(JUCE){st.capStatus={stage:'playing',progress:0,peakDb:-100,message:''};JUCE.emitEvent('startCapture',{method:st.cap.method,listenSeconds:st.cap.listen,speakers:st.cap.speakers,sweepSeconds:st.cap.sweep,tailSeconds:st.cap.tail,levelDb:st.cap.level});}
    else st.capStatus={stage:'failed',progress:0,peakDb:-100,message:'Capturing works inside the plugin, where Drenched can reach your speakers and microphone.'};break;
@@ -745,6 +785,7 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
  else if(a==='brwsim'||a==='brwclear'){brwFocus();brwReveal();}
  else if(a==='skins'&&st.skins){var sk=live.querySelector('.skins .sk[aria-current="true"]');if(sk)sk.focus({preventScroll:true});}
  else if(a==='capture'&&st.capture){var cf=live.querySelector('.cap .cgo');if(cf)cf.focus({preventScroll:true});}
+ else if(a==='describe'&&st.desc){var df=live.querySelector('#desc-q:not([disabled])');if(df)df.focus({preventScroll:true});}
  else if(a==='speakers'&&st.spk){var sf=live.querySelector('.spkd input');if(sf)sf.focus({preventScroll:true});}
  else if(a==='eq'&&st.eq){var ef=live.querySelector('.eqd [data-eqn="'+(st.eqCur!=null?st.eqCur:eqShown(st)[0])+'"]')||live.querySelector('.eqd [data-act="eqadd"]');if(ef)ef.focus({preventScroll:true});}
  else if(a==='eqadd'){var na=live.querySelector('[data-fid="eqn-'+st.eqCur+'"]');if(na)na.focus({preventScroll:true});}
@@ -781,21 +822,32 @@ var PREVIEW_LIBRARY=[
 ];
 /* ---- files dropped on the window: an impulse response goes to the plugin in pieces, which
    keeps a copy and loads it. Nothing dropped may open in place of the interface. ---- */
-var DROP_TYPES=/\.(wav|wave|amb|aif|aiff|flac|sofa)$/i,DROP_MAX=512*1024*1024,DROP_PIECE=3*1024*1024,dropping=null,dropDepth=0,dropVeil=document.getElementById('drop');
+var DROP_TYPES=/\.(wav|wave|amb|aif|aiff|flac|sofa)$/i,DROP_PHOTO=/\.(jpe?g|png|gif|webp|bmp)$/i,DROP_MAX=512*1024*1024,DROP_PIECE=3*1024*1024,dropping=null,dropDepth=0,dropVeil=document.getElementById('drop');
 function hasFiles(e){var t=e.dataTransfer&&e.dataTransfer.types;return !!t&&Array.prototype.indexOf.call(t,'Files')>=0;}
 function showDrop(on){if(dropVeil)dropVeil.classList.toggle('on',on);}
 document.addEventListener('dragenter',function(e){e.preventDefault();if(!hasFiles(e))return;dropDepth++;showDrop(true);});
 document.addEventListener('dragover',function(e){e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect=hasFiles(e)?'copy':'none';});
 document.addEventListener('dragleave',function(e){if(!hasFiles(e))return;if(--dropDepth<=0){dropDepth=0;showDrop(false);}});
 document.addEventListener('drop',function(e){e.preventDefault();dropDepth=0;showDrop(false);var fs=e.dataTransfer&&e.dataTransfer.files;if(fs&&fs.length)dropFiles(fs);});
-function dropFiles(fs){var f=null;for(var i=0;i<fs.length&&!f;i++)if(DROP_TYPES.test(fs[i].name))f=fs[i];
+function dropFiles(fs){var f=null,photo=null;for(var i=0;i<fs.length&&!f;i++){if(DROP_TYPES.test(fs[i].name))f=fs[i];else if(!photo&&DROP_PHOTO.test(fs[i].name))photo=fs[i];}
  st.hint=null;st.browse=false;
- if(!f)errNote=st.note='<b>'+esc(fs[0].name)+'</b> isn\u2019t an impulse response Drenched can load. Drop a WAV, AIFF, FLAC or SOFA file.';
+ if(!f&&photo){dropPhoto(photo);return;}
+ if(!f)errNote=st.note='<b>'+esc(fs[0].name)+'</b> isn\u2019t an impulse response Drenched can load. Drop a WAV, AIFF, FLAC or SOFA file, or a photograph of a room.';
  else if(dropping)errNote=st.note='Still reading <b>'+esc(dropping)+'</b>. Drop the next file once it has loaded.';
  else if(f.size>DROP_MAX)errNote=st.note='<b>'+esc(f.name)+'</b> is too large to drop. Use <b>Load your own IR</b> instead.';
  else if(!JUCE)st.note='Dropping a file loads it in the plugin.';
  else sendDropped(f,!!(spOf(st)&&spOf(st).missing));
  schedule();}
+/* A photograph is scaled here to the 224 by 224 the plugin's scene model looks at, so only
+   150 KB crosses to the plugin, and nothing leaves the computer. */
+function dropPhoto(f){var n=f.name.replace(/\.[^.]+$/,'');
+ if(!JUCE){st.note='Dropping a photograph describes the room in the plugin.';schedule();return;}
+ if(!window.createImageBitmap){errNote=st.note='<b>'+esc(f.name)+'</b> can\u2019t be read here. Use <b>Photograph</b> in Describe a room instead.';schedule();return;}
+ st.descBusy=n;st.note='<b>Looking at '+esc(n)+'</b> for the kind of room it shows.';schedule();
+ createImageBitmap(f).then(function(bm){var c=document.createElement('canvas');c.width=224;c.height=224;var g=c.getContext('2d');g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';g.drawImage(bm,0,0,224,224);
+   var d=g.getImageData(0,0,224,224).data,rgb=new Uint8Array(224*224*3);for(var i=0,j=0;i<d.length;i+=4){rgb[j++]=d[i];rgb[j++]=d[i+1];rgb[j++]=d[i+2];}
+   JUCE.emitEvent('describePhoto',{name:n,rgb:base64(rgb)});},
+  function(){st.descBusy=null;errNote=st.note='<b>'+esc(f.name)+'</b> couldn\u2019t be read as a picture. Drenched reads JPEG, PNG and GIF.';schedule();});}
 function onDropFailed(m){dropping=null;st.hint=null;var n='<b>'+esc(m&&m.name||'The file')+'</b>';
  errNote=st.note=m&&m.large?n+' is too large to drop here. Use <b>Load your own IR</b> instead.':n+' didn\u2019t reach the plugin whole. Drop it again.';schedule();}
 function base64(bytes){var s='';for(var i=0;i<bytes.length;i+=0x8000)s+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));return btoa(s);}
@@ -813,7 +865,7 @@ else{setLibrary(PREVIEW_LIBRARY);Object.assign(st,{sp:0,bands:SPACES[0].bands.sl
 try{var hs=(location.hash||'').slice(1);if(SKINS.some(function(x){return x.id===hs;}))st.skin=hs;if(/[?&]tips\b/.test(location.search))openTour(true);}catch(_){}
 Object.assign(lastSent,paramValues(st));Object.assign(lastUi,uiState(st));
 renderLive();
-if(JUCE){JUCE.addEventListener('state',applyFromHost);JUCE.addEventListener('meters',onMeters);JUCE.addEventListener('capture',onCapture);JUCE.addEventListener('licence',onLicence);JUCE.addEventListener('report',onReport);JUCE.addEventListener('pasted',onPasted);JUCE.addEventListener('matched',onMatched);JUCE.addEventListener('analysis',onAnalysis);JUCE.addEventListener('dropFailed',onDropFailed);JUCE.addEventListener('spectrum',onSpectrum);JUCE.emitEvent('ready',{});if(st.rep)JUCE.emitEvent('reportOpen',{});
+if(JUCE){JUCE.addEventListener('state',applyFromHost);JUCE.addEventListener('meters',onMeters);JUCE.addEventListener('capture',onCapture);JUCE.addEventListener('licence',onLicence);JUCE.addEventListener('report',onReport);JUCE.addEventListener('pasted',onPasted);JUCE.addEventListener('matched',onMatched);JUCE.addEventListener('analysis',onAnalysis);JUCE.addEventListener('dropFailed',onDropFailed);JUCE.addEventListener('described',onDescribed);JUCE.addEventListener('spectrum',onSpectrum);JUCE.emitEvent('ready',{});if(st.rep)JUCE.emitEvent('reportOpen',{});
  // after a reload the plugin has forgotten which displays were open, so it is told again
  dispOpen=false;syncDisplays();}
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);

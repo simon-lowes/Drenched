@@ -11,6 +11,8 @@ add_executable(drenched_tests
     ResponseEnvelopeTests.cpp
     ReverbCloudTests.cpp
     RoomMatchTests.cpp
+    RoomDescriptionTests.cpp
+    SceneNetTests.cpp
     SpeakerTrimTests.cpp
     WetEqualiserTests.cpp
     SmoothChangeTests.cpp
@@ -45,6 +47,7 @@ add_subdirectory(plugin)
 target_compile_definitions(drenched_tests PRIVATE
     DRENCHED_SOFA_TEST_DIR="${mysofa_SOURCE_DIR}/tests"
     DRENCHED_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
+    DRENCHED_SCENE_MODEL="${PROJECT_SOURCE_DIR}/library/scene/places365.drsn"
     DRENCHED_LICENCE_VECTORS="${PROJECT_SOURCE_DIR}/server/test/vectors.json")
 
 # What the engine costs to build and play; run it by hand (see Benchmark.cpp).

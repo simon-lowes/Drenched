@@ -1,5 +1,9 @@
 #include "PageMessages.h"
 
+#include <drenched/SceneNet.h>
+
+#include <cstring>
+
 #include "CrashReports.h"
 
 namespace drenched
@@ -42,6 +46,8 @@ const std::vector<std::pair<const char*, PageMessages::Handler>>& PageMessages::
         { "loadIr",   [] (M& m, V v) { m.window.chooseImpulseResponse (static_cast<bool> (v["keep"])); } },
         { "dropIr",   [] (M& m, V v) { m.onDropIr (v); } },
         { "match",    [] (M& m, V)   { m.window.chooseRecordingToMatch(); } },
+        { "describe",      [] (M& m, V v) { m.onDescribe (v); } },
+        { "describePhoto", [] (M& m, V v) { m.onDescribePhoto (v); } },
         { "displays", [] (M& m, V v) { m.window.displaysOpened (static_cast<bool> (v.getProperty ("open", false))); } },
         // Hear one EQ band alone while its node is held or its Solo is on (band -1: all of them).
         { "eqSolo",   [] (M& m, V v) { m.processor.setEqSolo (static_cast<int> (v.getProperty ("band", -1))); } },
@@ -212,6 +218,59 @@ void PageMessages::onDropIr (const juce::var& payload)
     }
 }
 
+void PageMessages::onDescribe (const juce::var& payload)
+{
+    const auto apply = static_cast<bool> (payload.getProperty ("apply", false));
+    const auto result = processor.describeRoom (payload.getProperty ("words", "").toString(),
+                                                payload.getProperty ("name", "").toString(), apply);
+    window.send (PageEvents::described, result);
+
+    if (apply)
+        window.interfaceChanged();
+}
+
+void PageMessages::onDescribePhoto (const juce::var& payload)
+{
+    // A photograph dropped on the window comes scaled by the page; otherwise the window
+    // asks for one.
+    const auto encoded = payload.getProperty ("rgb", "").toString();
+
+    if (encoded.isEmpty())
+    {
+        window.choosePhoto();
+        return;
+    }
+
+    juce::MemoryOutputStream decoded;
+    const auto wanted = static_cast<std::size_t> (SceneNet::side * SceneNet::side * 3);
+    const auto ok = juce::Base64::convertFromBase64 (decoded, encoded) && decoded.getDataSize() == wanted;
+    const auto name = payload.getProperty ("name", "").toString().substring (0, 200);
+
+    if (! ok)
+    {
+        auto reply = std::make_unique<juce::DynamicObject>();
+        reply->setProperty ("name", name);
+        reply->setProperty ("error", "the picture didn't reach the plugin whole");
+        window.send (PageEvents::described, juce::var (reply.release()));
+        return;
+    }
+
+    std::vector<std::uint8_t> rgb (wanted);
+    std::memcpy (rgb.data(), decoded.getData(), wanted);
+
+    std::weak_ptr<int> guard = alive;
+    processor.describePhotoAsync (name, std::move (rgb), [this, guard] (const juce::var& result)
+    {
+        if (guard.expired())
+            return;
+
+        window.send (PageEvents::described, result);
+
+        if (result["error"].isVoid())
+            window.interfaceChanged();
+    });
+}
+
 void PageMessages::onScene (const juce::String& action, const juce::var& payload)
 {
     const auto number = static_cast<int> (payload.getProperty ("number", 0));
@@ -276,6 +335,17 @@ void PageMessages::noteStep (const juce::String& name, const juce::var& payload)
             return;
 
         what = "dropped a file on the window";
+    }
+    else if (name == "describePhoto")
+    {
+        what = payload.hasProperty ("rgb") ? "dropped a photograph on the window" : "chose Photograph a room";
+    }
+    else if (name == "describe")
+    {
+        if (! static_cast<bool> (payload.getProperty ("apply", false)))
+            return;
+
+        what = "described a room in words";
     }
     else
     {

@@ -210,22 +210,49 @@ std::array<double, 8> decayFor (const ImpulseResponseRequest& request, double ri
     return rt;
 }
 
+namespace
+{
+    float listenerDistanceFor (double depth, float distancePercent) noexcept
+    {
+        const auto nearest = std::min (1.5, depth * 0.15);
+        return static_cast<float> (nearest + std::clamp (distancePercent, 0.0f, 100.0f) / 100.0 * (depth * 0.85 - nearest));
+    }
+}
+
 float listenerDistanceMetres (int space, float sizePercent, float distancePercent) noexcept
 {
     const auto& room = bundledSpaces[static_cast<std::size_t> (std::clamp (space, 0, static_cast<int> (bundledSpaces.size()) - 1))];
-    const auto depth = room.depth * sizePercent / 100.0f;
-    const auto nearest = std::min (1.5f, depth * 0.15f);
-    return nearest + std::clamp (distancePercent, 0.0f, 100.0f) / 100.0f * (depth * 0.85f - nearest);
+    return listenerDistanceFor (static_cast<double> (room.depth) * sizePercent / 100.0, distancePercent);
+}
+
+float listenerDistanceMetres (const ImpulseResponseRequest& request) noexcept
+{
+    return listenerDistanceFor (roomMetresOf (request).depth, request.distancePercent);
+}
+
+RoomMetres roomMetresOf (const ImpulseResponseRequest& request) noexcept
+{
+    const auto scale = sizeScale (request);
+    const auto& described = request.roomMetres;
+
+    // A described room: its own sides, kept sensible whatever a session says.
+    if (described[0] > 0.0f && described[1] > 0.0f && described[2] > 0.0f
+        && std::isfinite (described[0]) && std::isfinite (described[1]) && std::isfinite (described[2]))
+    {
+        return { std::clamp (static_cast<double> (described[0]), 0.6, 400.0) * scale,
+                 std::clamp (static_cast<double> (described[1]), 0.6, 400.0) * scale,
+                 std::clamp (static_cast<double> (described[2]), 0.6, 120.0) * scale };
+    }
+
+    const auto spaceIndex = std::clamp (request.space, 0, static_cast<int> (bundledSpaces.size()) - 1);
+    const auto& room = bundledSpaces[static_cast<std::size_t> (spaceIndex)];
+    return { room.width * scale, room.depth * scale, room.height * scale };
 }
 
 ImpulseResponseSet synthesiseImpulseResponse (const ImpulseResponseRequest& request)
 {
     const auto sr = request.sampleRate;
-    const auto spaceIndex = std::clamp (request.space, 0, static_cast<int> (bundledSpaces.size()) - 1);
-    const auto& room = bundledSpaces[static_cast<std::size_t> (spaceIndex)];
-    const auto scale = sizeScale (request);
-
-    const auto W = room.width * scale, D = room.depth * scale, H = room.height * scale;
+    const auto [W, D, H] = roomMetresOf (request);
     const auto volume = W * D * H;
     const auto surface = 2.0 * (W * D + W * H + D * H);
 
@@ -261,8 +288,7 @@ ImpulseResponseSet synthesiseImpulseResponse (const ImpulseResponseRequest& requ
     const auto sourceZ = std::min (1.6, H * 0.6);
     const auto sourceSpread = std::min (1.5, W * 0.15);
     const auto sourceX = std::clamp (static_cast<double> (request.sourceX) * W, sourceSpread + 0.3, W - sourceSpread - 0.3);
-    const auto listenerY = std::clamp (static_cast<double> (listenerDistanceMetres (spaceIndex, request.sizePercent, request.distancePercent)),
-                                       sourceY + 0.5, D - 0.3);
+    const auto listenerY = std::clamp (static_cast<double> (listenerDistanceMetres (request)), sourceY + 0.5, D - 0.3);
     const auto listenerX = std::clamp (static_cast<double> (request.listenerX) * W, 0.6, W - 0.6);
     const auto listenerZ = std::min (1.4, H * 0.5);
 

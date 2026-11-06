@@ -109,7 +109,7 @@
     {"id": "eq11On", "kind": "bool", "min": 0.0, "max": 1.0, "step": 1.0, "default": 0.0},
     {"id": "eq12On", "kind": "bool", "min": 0.0, "max": 1.0, "step": 1.0, "default": 0.0}
   ],
-  "toPlugin": ["ready", "params", "gesture", "ui", "loadIr", "dropIr", "match", "displays", "eqSolo", "sceneStore", "sceneRename", "sceneDelete", "sceneRecall", "startCapture", "cancelCapture", "licenceOpen", "licenceActivate", "licenceCode", "licenceDeactivate", "licencePage", "copyText", "copyReport", "reportOpen", "reportSend", "reportDismissCrash", "pasteText", "tipsSeen"],
-  "toPage": ["state", "meters", "capture", "licence", "matched", "analysis", "spectrum", "pasted", "dropFailed", "report"],
+  "toPlugin": ["ready", "params", "gesture", "ui", "loadIr", "dropIr", "match", "describe", "describePhoto", "displays", "eqSolo", "sceneStore", "sceneRename", "sceneDelete", "sceneRecall", "startCapture", "cancelCapture", "licenceOpen", "licenceActivate", "licenceCode", "licenceDeactivate", "licencePage", "copyText", "copyReport", "reportOpen", "reportSend", "reportDismissCrash", "pasteText", "tipsSeen"],
+  "toPage": ["state", "meters", "capture", "licence", "matched", "analysis", "spectrum", "pasted", "dropFailed", "report", "described"],
   "interfaceKeys": ["spaceId", "locks", "mode", "view", "graph", "speakers", "skin"]
 }

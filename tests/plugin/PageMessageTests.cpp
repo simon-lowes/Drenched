@@ -4,6 +4,8 @@
 #include <LicenceManager.h>
 #include <PageMessages.h>
 
+#include <drenched/SceneNet.h>
+
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
@@ -656,6 +658,139 @@ TEST_CASE ("A whole dropped file is kept in the import folder and loaded", "[bri
     juce::MemoryBlock read;
     REQUIRE (kept.loadFileAsData (read));
     CHECK (read == data);
+}
+
+TEST_CASE ("describe turns words into a room, and applies it when asked", "[bridge][describe]")
+{
+    Bridge b;
+    b.send ("ui", R"({"spaceId": "stpauls-hall"})");
+    b.window.sent.clear();
+    b.window.interface = 0;
+
+    SECTION ("a preview changes nothing")
+    {
+        REQUIRE (b.send ("describe", R"({"words": "small tiled bathroom", "apply": false})"));
+        REQUIRE (b.window.sent.size() == 1);
+        const auto& [event, room] = b.window.sent[0];
+        CHECK (event == "described");
+        CHECK (room["kind"].toString() == "room");
+        CHECK (room["place"].toString().contains ("bathroom"));
+        CHECK (room["from"].toString() == "words");
+        CHECK_FALSE (static_cast<bool> (room["applied"]));
+        CHECK (static_cast<bool> (room["known"]));
+        CHECK (room["bands"].size() == 8);
+        CHECK (static_cast<double> (room["W"]) > 0.5);
+        CHECK (room["understood"].size() == 3);
+        CHECK (room["mat"].toString().containsIgnoreCase ("tiles"));
+        CHECK (b.ui (UiIDs::spaceId).toString() == "stpauls-hall");
+        CHECK (b.ui (UiIDs::roomSize).isVoid());
+        CHECK (b.window.interface == 0);
+    }
+
+    SECTION ("applied, the described room is the space, named as asked")
+    {
+        REQUIRE (b.send ("describe", R"({"words": "stone cathedral, long and narrow", "name": "Nave", "apply": true})"));
+        REQUIRE (b.window.sent.size() == 1);
+        const auto& room = b.window.sent[0].second;
+        CHECK (room["name"].toString() == "Nave");
+        CHECK (room["kind"].toString() == "chapel"); // the modelled space it borrows from
+        CHECK (room["place"].toString().contains ("cathedral"));
+        CHECK (static_cast<bool> (room["applied"]));
+        CHECK (static_cast<double> (room["D"]) > static_cast<double> (room["W"]));
+        CHECK (b.ui (UiIDs::spaceId).toString() == "described");
+        CHECK (b.ui (UiIDs::roomName).toString() == "Nave");
+        CHECK (b.ui (UiIDs::roomKind).toString() == "chapel");
+        CHECK (b.ui (UiIDs::roomPlace).toString().contains ("cathedral"));
+        CHECK (b.ui (UiIDs::roomWords).toString() == "stone cathedral, long and narrow");
+        CHECK (b.ui (UiIDs::roomFrom).toString() == "words");
+        CHECK (juce::StringArray::fromTokens (b.ui (UiIDs::roomSize).toString(), " ", "").size() == 3);
+        CHECK (juce::StringArray::fromTokens (b.ui (UiIDs::roomDecay).toString(), " ", "").size() == 8);
+        CHECK (b.window.interface == 1);
+
+        // What the plugin keeps of the room is what it told the page.
+        const auto kept = b.plugin->describedRoomInfo();
+        CHECK (kept["name"].toString() == "Nave");
+        CHECK (kept["place"].toString() == room["place"].toString());
+        CHECK (near (static_cast<float> (kept["W"]), static_cast<float> (room["W"])));
+        CHECK (near (static_cast<float> (kept["bands"][3]), static_cast<float> (room["bands"][3])));
+    }
+
+    SECTION ("nothing understood is still a room, and says so")
+    {
+        REQUIRE (b.send ("describe", R"({"words": "zxqv", "apply": false})"));
+        const auto& room = b.window.sent[0].second;
+        CHECK_FALSE (static_cast<bool> (room["known"]));
+        CHECK (room["understood"].size() == 0);
+        CHECK (room["bands"].size() == 8);
+    }
+
+    SECTION ("words are trimmed and cut, a name too")
+    {
+        const auto words = juce::String::repeatedString ("hall ", 200);
+        b.send ("describe", "{\"words\": \"  " + words + "\", \"name\": \"" + juce::String::repeatedString ("n", 100) + "\", \"apply\": true}");
+        CHECK (b.ui (UiIDs::roomWords).toString().length() <= 400);
+        CHECK (b.ui (UiIDs::roomName).toString().length() == 64);
+    }
+}
+
+TEST_CASE ("describePhoto asks the window for a photograph, or reads the one the page sends", "[bridge][describe]")
+{
+    Bridge b;
+
+    SECTION ("no picture: the window chooses one")
+    {
+        REQUIRE (b.send ("describePhoto", R"({})"));
+        CHECK (b.window.chosen == std::vector<juce::String> { "photo" });
+        CHECK (b.window.sent.empty());
+    }
+
+    SECTION ("a picture that isn't whole is refused")
+    {
+        REQUIRE (b.send ("describePhoto", R"({"name": "kitchen.jpg", "rgb": "AQIDBAU="})"));
+        CHECK (b.window.chosen.empty());
+        REQUIRE (b.window.sent.size() == 1);
+        CHECK (b.window.sent[0].first == "described");
+        CHECK (b.window.sent[0].second["name"].toString() == "kitchen.jpg");
+        CHECK (b.window.sent[0].second["error"].toString().isNotEmpty());
+        CHECK (b.window.interface == 0);
+    }
+
+    SECTION ("a picture that isn't base64 is refused")
+    {
+        REQUIRE (b.send ("describePhoto", R"({"name": "kitchen.jpg", "rgb": "!!!"})"));
+        REQUIRE (b.window.sent.size() == 1);
+        CHECK (b.window.sent[0].second["error"].toString().isNotEmpty());
+    }
+}
+
+TEST_CASE ("A whole photograph the page sends is looked at in the background, then is the room", "[bridge][describe][messageloop]")
+{
+    DRENCHED_NEEDS_MESSAGE_LOOP();
+    Bridge b;
+
+    const auto file = juce::File (DRENCHED_TEST_DATA_DIR).getChildFile ("scene").getChildFile ("chapel.rgb");
+    juce::MemoryBlock rgb;
+    REQUIRE (file.loadFileAsData (rgb));
+    REQUIRE (rgb.getSize() == static_cast<size_t> (SceneNet::side * SceneNet::side * 3));
+
+    REQUIRE (b.send ("describePhoto", "{\"name\": \"chapel.jpg\", \"rgb\": \"" + juce::Base64::toBase64 (rgb.getData(), rgb.getSize()) + "\"}"));
+    CHECK (b.window.sent.empty()); // looked at in the background
+    REQUIRE (testing::pumpUntil ([&] { return ! b.window.sent.empty(); }, 60000));
+
+    REQUIRE (b.window.sent.size() == 1);
+    const auto& room = b.window.sent[0].second;
+    CHECK (room["error"].isVoid());
+    CHECK (room["name"].toString() == "chapel.jpg");
+    CHECK (room["from"].toString() == "photo");
+    CHECK (room["kind"].toString() == "chapel");
+    CHECK (static_cast<bool> (room["applied"]));
+    REQUIRE (room["seen"].size() == 5);
+    CHECK (room["seen"][0]["name"].toString() == "church/indoor");
+    CHECK (static_cast<double> (room["seen"][0]["probability"]) > 0.8);
+    CHECK (b.ui (UiIDs::spaceId).toString() == "described");
+    CHECK (b.ui (UiIDs::roomFrom).toString() == "photo");
+    CHECK (b.ui (UiIDs::roomName).toString() == "chapel.jpg");
+    CHECK (b.window.interface == 1);
 }
 
 TEST_CASE ("Every event name the page may send is handled, and no other", "[bridge]")

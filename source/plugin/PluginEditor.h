@@ -59,6 +59,7 @@ private:
     void displaysOpened (bool open) override;
     void chooseImpulseResponse (bool keepSettings) override;
     void chooseRecordingToMatch() override;
+    void choosePhoto() override;
     void lookChosen (const juce::String& skin) override;
     void tipsSeen() override;
     void openInBrowser (const juce::URL&) override;

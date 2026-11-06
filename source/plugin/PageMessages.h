@@ -28,12 +28,14 @@ namespace PageEvents
     inline const juce::Identifier pasted { "pasted" };
     inline const juce::Identifier dropFailed { "dropFailed" };
     inline const juce::Identifier report { "report" };
+    inline const juce::Identifier described { "described" };
 
     /** Every one, for the record the interface tests check the page against. */
     inline juce::StringArray all()
     {
         return { state.toString(), meters.toString(), capture.toString(), licence.toString(), matched.toString(),
-                 analysis.toString(), spectrum.toString(), pasted.toString(), dropFailed.toString(), report.toString() };
+                 analysis.toString(), spectrum.toString(), pasted.toString(), dropFailed.toString(), report.toString(),
+                 described.toString() };
     }
 }
 
@@ -73,6 +75,9 @@ public:
 
         /** Opens the file chooser for a recording to match a room from. */
         virtual void chooseRecordingToMatch() = 0;
+
+        /** Opens the file chooser for a photograph to describe a room from. */
+        virtual void choosePhoto() = 0;
 
         /** A look was chosen: new windows open in it. */
         virtual void lookChosen (const juce::String& skin) = 0;
@@ -119,6 +124,8 @@ private:
     void onGesture (const juce::var&);
     void onUi (const juce::var&);
     void onDropIr (const juce::var&);
+    void onDescribe (const juce::var&);
+    void onDescribePhoto (const juce::var&);
     void onScene (const juce::String& action, const juce::var&);
     void onPasteText (const juce::var&);
     void onReportSend (const juce::var&);
@@ -137,6 +144,7 @@ private:
 
     HeldControls held { state };
     DroppedFile dropped;
+    std::shared_ptr<int> alive = std::make_shared<int> (0); // guards what the photo analysis hands back
     bool settingInterface = false;
     juce::String lastStep;
 

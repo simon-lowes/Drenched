@@ -22,6 +22,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <vector>
 
 namespace drenched
 {
@@ -144,6 +145,28 @@ public:
     /** The same, at once: what matchRoomAsync hands back. Allocates and takes a while; any
         thread but the audio thread. */
     static juce::var matchRecording (const juce::File& file);
+
+    /** Describe a room: the room the words describe (see RoomDescription.h), as the
+        interface takes it: name, kind, place, W, D, H (metres), mat, bands (eight decay
+        seconds), pre (ms), dist and el (percent), words, understood (the words used), known
+        (whether a kind of room was named) and from ("words" or "photo"). With `apply` it
+        becomes the chosen space, "described", which the session and scenes keep by its
+        size and decay, so it plays the same whatever a later version makes of the words.
+        `name` names the space; empty, the words do. Message thread only. */
+    juce::var describeRoom (const juce::String& words, const juce::String& name, bool apply, const juce::String& from = "words");
+
+    /** The described room the session holds, as describeRoom gives it, or void. */
+    juce::var describedRoomInfo();
+
+    /** Describe a room from a photograph: looks at it on the analysis thread (SceneNet.h:
+        the kind of place and what it is made of), then on the message thread describes
+        the room that gives, applies it, and calls `done` with what describeRoom gives plus
+        "seen" (the kinds of place the model saw, likeliest first, each with name and
+        probability), or with "error" when the picture can't be read. The file is read and
+        scaled on that thread; the other form takes a picture already scaled to
+        SceneNet::side square, three bytes a pixel. Message thread only. */
+    void describePhotoAsync (const juce::File& file, std::function<void (const juce::var&)> done);
+    void describePhotoAsync (const juce::String& name, std::vector<std::uint8_t> rgb, std::function<void (const juce::var&)> done);
 
     /** The stored scenes for the interface, by number: number, name and the space's name.
         Message thread only. */
@@ -292,7 +315,18 @@ private:
 
     juce::ValueTree scenes();
     juce::ValueTree findScene (int number);
-    juce::String spaceName (const juce::String& id, const juce::String& irName) const;
+    juce::String spaceName (const juce::String& id, const juce::String& irName, const juce::String& roomName = {}) const;
+
+    /** The modelled space a described room of a kind is built on. */
+    static int describedBase (const juce::String& kind) noexcept;
+
+    /** A described room's size from the interface state, or zeros when none is chosen. */
+    static std::array<float, 3> describedSize (const juce::ValueTree& ui, const juce::String& chosenId);
+
+    /** Looks at a photograph on the analysis thread and hands the room it describes to the
+        message thread; `read` makes the scaled picture (or throws with what went wrong). */
+    void lookAtPhotoAsync (const juce::String& name, std::function<std::vector<std::uint8_t>()> read,
+                           std::function<void (const juce::var&)> done);
     // The scene parameter's value at the last recall or session load. Read by the audio
     // thread while bouncing (see followSceneOffline).
     std::atomic<int> followedScene { 0 };
@@ -412,6 +446,7 @@ private:
     SpeakerLayout outputSpeakers = layouts::stereo();
 
     std::atomic<int> spaceIndex { 0 };
+    std::atomic<float> describedWidth { 0.0f }, describedDepth { 0.0f }, describedHeight { 0.0f }; // the described room's, when chosen
     std::atomic<LoadedLevel> loadedLevel { LoadedLevel::fileRate }; // the session's, kept by cacheUiState
     std::atomic<double> preparedRate { 0.0 };
 

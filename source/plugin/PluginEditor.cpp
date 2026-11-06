@@ -230,6 +230,7 @@ juce::var DrenchedEditor::uiValues()
     sentLayout = outputLayoutName (processor);
     object->setProperty ("layout", sentLayout);
     object->setProperty ("ir", processor.impulseResponseInfo());
+    object->setProperty ("room", processor.describedRoomInfo());
     object->setProperty ("irError", ui.getProperty (UiIDs::irError, "").toString());
     object->setProperty ("irEvent", static_cast<int> (ui.getProperty (UiIDs::irEvent, 0)));
     object->setProperty ("scenes", processor.sceneList());
@@ -368,6 +369,39 @@ void DrenchedEditor::chooseRecordingToMatch()
                               {
                                   if (editor != nullptr)
                                       editor->web.emitEventIfBrowserIsVisible (PageEvents::matched, result);
+                              });
+                          });
+}
+
+void DrenchedEditor::choosePhoto()
+{
+    if (choosing)
+        return;
+
+    choosing = true;
+    chooser = std::make_unique<juce::FileChooser> ("Photograph a room: choose a picture of it", settings::loadPhotoFolder(),
+                                                   "*.jpg;*.jpeg;*.png;*.gif");
+
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              const auto file = fc.getResult();
+                              choosing = false;
+
+                              if (file == juce::File())
+                                  return; // cancelled
+
+                              settings::savePhotoFolder (file.getParentDirectory());
+
+                              auto looking = std::make_unique<juce::DynamicObject>();
+                              looking->setProperty ("looking", true);
+                              looking->setProperty ("name", file.getFileNameWithoutExtension());
+                              web.emitEventIfBrowserIsVisible (PageEvents::described, juce::var (looking.release()));
+
+                              processor.describePhotoAsync (file, [editor = juce::Component::SafePointer<DrenchedEditor> (this)] (const juce::var& result)
+                              {
+                                  if (editor != nullptr)
+                                      editor->web.emitEventIfBrowserIsVisible (PageEvents::described, result);
                               });
                           });
 }

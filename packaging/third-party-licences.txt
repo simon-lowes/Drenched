@@ -128,6 +128,29 @@ of Communication Systems, RWTH Aachen University.
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
 
+## Scene model
+
+`library/scene/places365.drsn` is the Places365 scene recognition network
+(ResNet-18 trained on Places365, with the SUN scene-attribute weights), which
+Describe a room uses to tell what kind of place a photograph shows. It is
+published by MIT CSAIL at [places2.csail.mit.edu](http://places2.csail.mit.edu)
+and [github.com/CSAILVision/places365](https://github.com/CSAILVision/places365)
+under [CC BY](https://creativecommons.org/licenses/by/4.0/), which asks for
+credit: it is credited in the plugin (Recording credits) and in
+[library/scene/README.md](library/scene/README.md). Cite: Bolei Zhou, Agata
+Lapedriza, Aditya Khosla, Aude Oliva and Antonio Torralba, "Places: A 10
+million Image Database for Scene Recognition", IEEE Transactions on Pattern
+Analysis and Machine Intelligence, 2017. The scene attributes follow Genevieve
+Patterson and James Hays, "SUN Attribute Database: Discovering, Annotating,
+and Recognizing Scene Attributes", CVPR 2012.
+
+The published PyTorch weights are converted by `tools/scene/convert_places365.py`
+(weights quantised to 8 bits per output channel, batch normalisation folded
+in) into the plugin's own file, read by `source/engine/src/SceneNet.cpp`; no
+machine-learning runtime ships. The converter needs
+[PyTorch](https://pytorch.org) (BSD-3-Clause) and NumPy, run by hand and not
+shipped.
+
 ## Images
 
 The space photographs in `source/ui/spaces/` are placeholder renders made for

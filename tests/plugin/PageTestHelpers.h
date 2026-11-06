@@ -20,6 +20,7 @@ namespace testing
         void displaysOpened (bool open) override { displays.push_back (open); }
         void chooseImpulseResponse (bool keep) override { chosen.push_back (keep ? "keep" : "new"); }
         void chooseRecordingToMatch() override { chosen.push_back ("match"); }
+        void choosePhoto() override { chosen.push_back ("photo"); }
         void lookChosen (const juce::String& skin) override { looks.add (skin); }
         void tipsSeen() override { ++tips; }
         void openInBrowser (const juce::URL& url) override { opened.add (url.toString (true)); }

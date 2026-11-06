@@ -18,7 +18,7 @@ var MODELLED=[
  {id:'modelled-garage',name:'Car Park Level 2',no:'Modelled',kind:'garage',img:'garage',place:'Underground deck',W:44,D:58,H:3.2,mat:'Bare concrete',bands:[1.5,1.8,2.0,1.9,1.8,1.6,1.3,0.9],pre:9,rec:'Modelled from the room\u2019s size and decay',date:'synthesised'},
  {id:'modelled-room',name:'Live Room B',no:'Modelled',kind:'room',img:'room',place:'Studio live room',W:9,D:12,H:4.2,mat:'Timber and diffusers',bands:[0.72,0.66,0.6,0.55,0.52,0.5,0.45,0.38],pre:4,rec:'Modelled from the room\u2019s size and decay',date:'synthesised'}
 ];
-var LIBRARY=[],SPACES=MODELLED.slice(),USER=SPACES.length;
+var LIBRARY=[],SPACES=MODELLED.slice(),USER=SPACES.length,DESCRIBED=-1,userRec=null,roomRec=null;
 /* The kinds a space can be. They pick the plan and section drawing, the pixel room, the
    Material palette and the photograph: garage is any bare concrete or industrial space,
    outdoor is open to the sky, underground is a tunnel, mine, cave, kiln or buried hall.
@@ -29,17 +29,30 @@ function setLibrary(list){LIBRARY=(list||[]).filter(function(x){return x&&x.id&&
    mat:String(x.mat||''),bands:(x.bands||[2,2,2,2,2,2,2,2]).map(function(b){return clamp(+b||1,0.1,20);}),pre:+x.pre||0,rec:String(x.rec||''),date:String(x.date||''),
    credit:String(x.credit||''),licence:String(x.licence||''),source:String(x.source||''),changes:String(x.changes||''),recorded:true,
    room:x.room?String(x.room):'',position:x.position?String(x.position):'',mics:x.mics?String(x.mics):'',atM:isFinite(+x.atM)&&x.atM!=null?+x.atM:null};});
- var user=SPACES.length>USER?SPACES[USER]:null;SPACES.length=0;LIBRARY.concat(MODELLED).forEach(function(x){SPACES.push(x);});USER=SPACES.length;if(user)SPACES.push(user);}
+ composeSpaces();}
+/* The list in order: the recorded spaces, the modelled ones, a described room if there is
+   one (DESCRIBED is its index, else -1), and a loaded impulse response last (USER is its
+   index; SPACES.length>USER says there is one). */
+function composeSpaces(){SPACES.length=0;LIBRARY.concat(MODELLED).forEach(function(x){SPACES.push(x);});DESCRIBED=roomRec?SPACES.length:-1;if(roomRec)SPACES.push(roomRec);USER=SPACES.length;if(userRec)SPACES.push(userRec);}
 /* Up to four spaces for a row of swatches: the chosen one and those after it, wrapping. */
 function swatchWindow(s){var n=Math.min(4,SPACES.length),out=[];for(var j=0;j<n;j++)out.push((s.sp+j)%SPACES.length);return out;}
 function spaceIndex(id){for(var i=0;i<SPACES.length;i++)if(SPACES[i].id===id)return i;return -1;}
 /* A loaded impulse response joins the end of the list, described by the plugin: its
    measured decay and the room size its echo density implies. A missing file keeps its slot
    so the session still says what it used, and Spaces offers to find it. */
-function setUserSpace(ir){SPACES.length=USER;if(!ir)return;var miss=!!ir.missing;
- SPACES.push({id:'user',name:String(ir.name||'Your impulse response'),no:'Your IR',kind:'user',img:'user',place:miss?'File not found':'Your own impulse response',
+function setUserSpace(ir){userRec=null;if(ir){var miss=!!ir.missing;
+ userRec={id:'user',name:String(ir.name||'Your impulse response'),no:'Your IR',kind:'user',img:'user',place:miss?'File not found':'Your own impulse response',
   W:+ir.W||10,D:+ir.D||14,H:+ir.H||5.5,mat:'Measured from the file',bands:(ir.bands||[1,1,1,1,1,1,1,1]).map(function(b){return clamp(+b||1,0.1,20);}),pre:0,
-  rec:miss?'Find it in Spaces to hear it':(ir.bformat?'B-format':ir.layout?String(ir.layout)+' surround':+ir.ch===4?'True-stereo':+ir.ch===2?'Stereo':'Mono')+' file, '+Math.round(+ir.rate||48000)+' Hz',date:miss?'file missing':'by you',missing:miss});}
+  rec:miss?'Find it in Spaces to hear it':(ir.bformat?'B-format':ir.layout?String(ir.layout)+' surround':+ir.ch===4?'True-stereo':+ir.ch===2?'Stereo':'Mono')+' file, '+Math.round(+ir.rate||48000)+' Hz',date:miss?'file missing':'by you',missing:miss};}
+ composeSpaces();}
+/* A described room (Describe a room: words, or a photograph) sits between the modelled
+   spaces and a loaded file, described by the plugin: the kind of room it took the words
+   for, its size, its materials and the decay they give. */
+function setDescribedSpace(room){roomRec=null;if(room&&room.bands&&room.bands.length===8){var k=KINDS[room.kind]?room.kind:'room',photo=room.from==='photo';
+ roomRec={id:'described',name:String(room.name||'Described room'),no:'Described',kind:k,img:k,place:String(room.place||''),W:+room.W||5,D:+room.D||7,H:+room.H||2.8,
+  mat:String(room.mat||''),bands:room.bands.map(function(b){return clamp(+b||1,0.1,20);}),pre:clamp(+room.pre||0,0,250),rec:photo?'From your photograph':'From your words',date:'described',
+  described:true,words:String(room.words||''),from:photo?'photo':'words'};}
+ composeSpaces();}
 /* The twelve skins. Each is a token set plus a composition in COMPOSE; the ids match the
    CSS (.s-<id>) and the value saved in the plugin state. Order is the picker order. */
 var SKINS=[
@@ -521,12 +534,15 @@ var TIPS=[
  {sel:'[data-act="slot"]',t:'A and B',b:'Two snapshots of every setting and the space. B starts as a copy of A, and changes go to whichever is selected, so switch between them to compare.'},
  {sel:'[data-act="lock"]',t:'Locks',b:'A new space brings its own decay and pre-delay. A lock holds your value through the change. Mix has one in every look; Stage view shows them all.'},
  {sel:'[data-act="adv"]',t:'All parameters',b:'Opens the deeper controls in place: the wet low and high cuts, width, ducking, mono below, living tail, reverse and gate, direct sound, cross-feed and Low CPU.'},
- {sel:'[data-act="eq"]',t:'Wet EQ and Waterfall',b:'Wet EQ shapes the reverb alone, six bands over its live spectrum. Waterfall shows the response you are hearing, measured. The Spaces window\u2019s tools hold the rest: Scenes, Capture a space, Reverb speakers and your own impulse responses.'},
+ {sel:'[data-act="eq"]',t:'Wet EQ and Waterfall',b:'Wet EQ shapes the reverb alone, six bands over its live spectrum. Waterfall shows the response you are hearing, measured. The Spaces window\u2019s tools hold the rest: Scenes, Describe a room, Capture a space, Reverb speakers and your own impulse responses.'},
  {sel:'.hint',up:true,t:'The strip',b:'This line describes whatever the pointer or the keyboard is on, with its value and the captured space\u2019s. The In and Out meters hold their peaks, and a lamp lights at full scale.'},
  {sel:'.wmb[data-act="skins"]',t:'The look',b:'Click the Drenched name to choose one of twelve looks. Every value stays where it is. To see these tips again, press ? or open Tips in the Spaces window.',
   alt:{sel:'[data-act="adv"]',b:'This look has no Drenched name on screen: All parameters has a Look button, for one of twelve looks. Every value stays where it is. To see these tips again, press ? or open Tips in the Spaces window.'}}];
 var ACT_HELP={freeze:'<b>Freeze</b> holds the tail as it sounds now, for as long as it is on. Below the crossover it keeps fading, so the bass never builds up.',
  match:'<b>Match a room</b> listens to a recording made in a room and sets the decay to match it.',
+ describe:'<b>Describe a room</b> builds a space from a few words, such as small tiled bathroom or stone cathedral, long and narrow, or from a photograph of the room.',
+ photo:'<b>Photograph</b> chooses a picture of a room. Drenched works out what kind of place it is and what it is made of, on this computer, and builds the space from that.',
+ describego:'<b>Hear it</b> makes the described room the space: its size, materials and decay. Drag the graph or the controls to adjust it afterwards, like any space.',
  adv:'<b>All parameters</b> opens every setting in place: direct sound, gate, reverse, living tail, width and more.',
  eq:'<b>Wet EQ</b> shapes the reverb alone. The dry sound is not changed.',
  graph:function(s,p){return p.v==='eq'?'<b>EQ</b> puts the wet EQ on the main display: drag its points, double-click to add a band, S to listen to one alone.':'<b>Decay</b> shows the decay time by frequency.';},
@@ -582,7 +598,7 @@ var BRW_KINDS=[['all','All'],['hall','Halls'],['chapel','Churches'],['room','Roo
 function brwKind(sp){return sp.kind==='user'?'user':sp.recorded?sp.kind:'modelled';}
 /* words a search finds a space by, beyond what its row says */
 var BRW_WORDS={hall:'hall',chapel:'church chapel cathedral',garage:'industrial garage car park concrete',room:'room',outdoor:'outdoor outdoors open air courtyard gorge',underground:'underground tunnel mine cave kiln',user:'your own impulse response file'};
-function brwText(sp){return (sp.name+' '+sp.place+' '+sp.mat+' '+sp.rec+' '+sp.date+' '+sp.no+' '+(BRW_WORDS[sp.kind]||'')+' '+(sp.recorded?'recorded':sp.kind==='user'?'':'modelled')).toLowerCase();}
+function brwText(sp){return (sp.name+' '+sp.place+' '+sp.mat+' '+sp.rec+' '+sp.date+' '+sp.no+' '+(BRW_WORDS[sp.kind]||'')+' '+(sp.recorded?'recorded':sp.kind==='user'?'':'modelled')+(sp.described?' described words photograph '+sp.words:'')).toLowerCase();}
 function brwMatch(sp,q){var t=brwText(sp),w=q.toLowerCase().split(/\s+/);for(var i=0;i<w.length;i++)if(w[i]&&t.indexOf(w[i])<0)return false;return true;}
 /* How far apart two spaces sound, for the Similar ordering. Each octave band's decay is
    compared on a log scale, so 1 s against 2 s counts as much as 4 s against 8 s, and the mid
@@ -624,7 +640,7 @@ function browserHTML(s){var R=browseResults(s),n=R.rows.length,cur=clamp(s.brwCu
   :'<button class="brw-simb" data-act="brwsim" data-v="'+s.sp+'" aria-pressed="false" title="Order the list by how close each space sounds to '+esc(spOf(s).name)+'">Similar to this space</button>';
  var tool=function(act,cls,l,sm){return '<button data-act="'+act+'" class="'+cls+'"><b>'+l+'</b><small>'+sm+'</small></button>';};
  var lost=spOf(s)&&spOf(s).missing?spOf(s):null;
- var tools=(lost?tool('findir','mload','Find '+esc(lost.name)+'\u2026','Keeps your settings'):'')+tool('loadir','mload','Load your own IR\u2026','WAV, AIFF, FLAC, SOFA')+tool('capture','mcap','Capture a space\u2026','Sweep or clap, and record')+tool('speakers','mspk','Reverb speakers\u2026','Level and delay each')+
+ var tools=(lost?tool('findir','mload','Find '+esc(lost.name)+'\u2026','Keeps your settings'):'')+tool('loadir','mload','Load your own IR\u2026','WAV, AIFF, FLAC, SOFA')+tool('describe','mdesc','Describe a room\u2026',DESCRIBED>=0?esc(SPACES[DESCRIBED].name):'Words, or a photograph')+tool('capture','mcap','Capture a space\u2026','Sweep or clap, and record')+tool('speakers','mspk','Reverb speakers\u2026','Level and delay each')+
   tool('eq','meq','Wet EQ\u2026',eqFlat(s)?'Six bands, flat':eqUsed(s)+(eqUsed(s)===1?' band':' bands')+' in use')+tool('wf','mwf','Waterfall\u2026','Decay and live spectrum')+tool('scenes','mscn','Scenes\u2026',s.scenes&&s.scenes.length?s.scenes.length+' stored':'For each shot')+
   (LIBRARY.length?tool('credits','mcred','Recording credits\u2026',LIBRARY.length+' recorded'):'')+tool('report','mrep','Report a bug\u2026','Send what went wrong')+tool('tips','mtips','Tips\u2026','A short tour of the screen')+(s.licence&&s.licence.state==='beta'?'':tool('licence','mlic','Licence\u2026',s.licence&&s.licence.state==='licensed'?'Activated':s.licence&&s.licence.state==='ended'?'Trial ended':'Trial'));
  return '<div class="cap brw'+(R.ref?' sim':'')+'" role="dialog" aria-modal="true" aria-labelledby="brw-h" tabindex="-1" data-fid="dlg-brw"><div class="cbox"><div class="chd"><h2 id="brw-h">Spaces</h2><span class="brw-n">'+SPACES.length+' to choose from. Type to search, the arrow keys move, Enter picks, and Shift with Enter lists the ones that sound like the highlighted space.</span><button class="cx" data-act="browse" aria-label="Close">Close</button></div>'+

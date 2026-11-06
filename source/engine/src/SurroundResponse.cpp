@@ -381,9 +381,8 @@ double mixingTimeSeconds (const ImpulseResponseRequest& request) noexcept
     if (request.recorded != nullptr)
         return request.recorded->room.mixingTimeSeconds * sizeScale (request);
 
-    const auto& space = bundledSpaces[static_cast<std::size_t> (std::clamp (request.space, 0, static_cast<int> (bundledSpaces.size()) - 1))];
-    const auto scale = std::clamp (request.sizePercent, 10.0f, 400.0f) / 100.0;
-    const auto volume = static_cast<double> (space.width) * space.depth * space.height * scale * scale * scale;
+    const auto room = roomMetresOf (request);
+    const auto volume = room.width * room.depth * room.height;
 
     // About the square root of the volume in milliseconds (Polack).
     return std::clamp (std::sqrt (volume) / 1000.0, 0.01, 0.2);

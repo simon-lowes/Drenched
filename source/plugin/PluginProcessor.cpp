@@ -8,9 +8,13 @@
 
 #include <drenched/ClapCapture.h>
 #include <drenched/Mix.h>
+#include <drenched/RoomDescription.h>
 #include <drenched/RoomMatch.h>
+#include <drenched/SceneNet.h>
 #include <drenched/SofaResponse.h>
 #include <drenched/Spaces.h>
+
+#include <DrenchedScene.h>
 
 #include <algorithm>
 #include <cmath>
@@ -184,6 +188,8 @@ void DrenchedProcessor::cacheUiState()
 
     if (id == "user")
         index = userSpace;
+    else if (id == "described")
+        index = describedBase (ui.getProperty (UiIDs::roomKind, "").toString());
     else if (library::find (id) != nullptr)
         index = librarySpace;
     else
@@ -193,6 +199,11 @@ void DrenchedProcessor::cacheUiState()
 
     if (index == librarySpace)
         loadLibrarySpace (id, false);
+
+    const auto metres = describedSize (ui, id);
+    describedWidth.store (metres[0]);
+    describedDepth.store (metres[1]);
+    describedHeight.store (metres[2]);
 
     {
         const std::lock_guard lock (recordedLock);
@@ -219,6 +230,7 @@ std::optional<ImpulseResponseRequest> DrenchedProcessor::currentRequest (double 
     ImpulseResponseRequest request;
     request.sampleRate = sampleRate;
     request.space = spaceIndex.load();
+    request.roomMetres = { describedWidth.load(), describedDepth.load(), describedHeight.load() }; // zeros but for a described room
 
     if (request.space == userSpace)
     {
@@ -788,6 +800,265 @@ void DrenchedProcessor::matchRoomAsync (const juce::File& file, std::function<vo
     });
 }
 
+//==============================================================================
+// Describe a room
+
+namespace
+{
+    juce::String numbers (const float* values, std::size_t count)
+    {
+        juce::StringArray out;
+
+        for (std::size_t i = 0; i < count; ++i)
+            out.add (juce::String (static_cast<double> (values[i]), 3));
+
+        return out.joinIntoString (" ");
+    }
+
+    juce::Array<juce::var> numbersOf (const juce::String& text)
+    {
+        juce::Array<juce::var> out;
+
+        for (const auto& item : juce::StringArray::fromTokens (text, " ", ""))
+            if (const auto value = item.getDoubleValue(); std::isfinite (value))
+                out.add (value);
+
+        return out;
+    }
+}
+
+int DrenchedProcessor::describedBase (const juce::String& kind) noexcept
+{
+    // The modelled space whose early pattern and tail the described room borrows: the
+    // open air borrows the hall's sparse early reflections, the underground the car park's.
+    for (size_t i = 0; i < bundledSpaces.size(); ++i)
+        if (kind == juce::String (bundledSpaces[i].id).fromLastOccurrenceOf ("-", false, false))
+            return static_cast<int> (i);
+
+    if (kind == "outdoor")
+        return describedBase ("hall");
+
+    if (kind == "underground")
+        return describedBase ("garage");
+
+    return describedBase ("room");
+}
+
+std::array<float, 3> DrenchedProcessor::describedSize (const juce::ValueTree& ui, const juce::String& chosenId)
+{
+    std::array<float, 3> metres {};
+
+    if (chosenId != "described")
+        return metres;
+
+    const auto sides = juce::StringArray::fromTokens (ui.getProperty (UiIDs::roomSize, "").toString(), " ", "");
+
+    if (sides.size() != 3)
+        return metres;
+
+    for (int i = 0; i < 3; ++i)
+    {
+        const auto side = sides[i].getFloatValue();
+
+        if (! std::isfinite (side) || side <= 0.0f)
+            return {};
+
+        metres[static_cast<size_t> (i)] = side;
+    }
+
+    return metres;
+}
+
+juce::var DrenchedProcessor::describeRoom (const juce::String& words, const juce::String& name, bool apply, const juce::String& from)
+{
+    const auto text = words.trim().substring (0, 400);
+    const auto room = drenched::describeRoom (text.toStdString());
+    const auto shown = name.trim().isNotEmpty() ? name.trim().substring (0, 64) : juce::String (room.name);
+    const auto source = from == "photo" ? juce::String ("photo") : juce::String ("words");
+
+    auto object = std::make_unique<juce::DynamicObject>();
+    object->setProperty ("name", shown);
+    object->setProperty ("kind", juce::String (room.kind));
+    object->setProperty ("place", juce::String (room.place));
+    object->setProperty ("W", static_cast<double> (room.width));
+    object->setProperty ("D", static_cast<double> (room.depth));
+    object->setProperty ("H", static_cast<double> (room.height));
+    object->setProperty ("mat", juce::String (room.materials));
+
+    juce::Array<juce::var> bands;
+
+    for (const auto t : room.decaySeconds)
+        bands.add (static_cast<double> (t));
+
+    object->setProperty ("bands", bands);
+    object->setProperty ("pre", static_cast<double> (room.predelayMs));
+    object->setProperty ("dist", static_cast<double> (room.distancePercent));
+    object->setProperty ("el", static_cast<double> (room.earlyLatePercent));
+    object->setProperty ("words", text);
+
+    juce::Array<juce::var> understood;
+
+    for (const auto& word : room.understood)
+        understood.add (juce::String (word));
+
+    object->setProperty ("understood", understood);
+    object->setProperty ("known", room.knownRoom);
+    object->setProperty ("from", source);
+    object->setProperty ("applied", apply);
+
+    if (apply)
+    {
+        auto ui = getUiState();
+        const std::array<float, 3> size { room.width, room.depth, room.height };
+        ui.setProperty (UiIDs::roomWords, text, nullptr);
+        ui.setProperty (UiIDs::roomName, shown, nullptr);
+        ui.setProperty (UiIDs::roomFrom, source, nullptr);
+        ui.setProperty (UiIDs::roomKind, juce::String (room.kind), nullptr);
+        ui.setProperty (UiIDs::roomSize, numbers (size.data(), size.size()), nullptr);
+        ui.setProperty (UiIDs::roomDecay, numbers (room.decaySeconds.data(), room.decaySeconds.size()), nullptr);
+        ui.setProperty (UiIDs::roomPredelay, static_cast<double> (room.predelayMs), nullptr);
+        ui.setProperty (UiIDs::roomPlace, juce::String (room.place), nullptr);
+        ui.setProperty (UiIDs::roomMaterials, juce::String (room.materials), nullptr);
+        ui.setProperty (UiIDs::spaceId, "described", nullptr);
+        cacheUiState();
+    }
+
+    return juce::var (object.release());
+}
+
+juce::var DrenchedProcessor::describedRoomInfo()
+{
+    auto ui = getUiState();
+
+    if (! ui.hasProperty (UiIDs::roomSize))
+        return {};
+
+    const auto size = numbersOf (ui.getProperty (UiIDs::roomSize, "").toString());
+    const auto bands = numbersOf (ui.getProperty (UiIDs::roomDecay, "").toString());
+
+    if (size.size() != 3 || bands.size() != 8)
+        return {};
+
+    auto object = std::make_unique<juce::DynamicObject>();
+    object->setProperty ("name", ui.getProperty (UiIDs::roomName, "").toString());
+    object->setProperty ("kind", ui.getProperty (UiIDs::roomKind, "").toString());
+    object->setProperty ("place", ui.getProperty (UiIDs::roomPlace, "").toString());
+    object->setProperty ("W", size[0]);
+    object->setProperty ("D", size[1]);
+    object->setProperty ("H", size[2]);
+    object->setProperty ("mat", ui.getProperty (UiIDs::roomMaterials, "").toString());
+    object->setProperty ("bands", bands);
+    object->setProperty ("pre", static_cast<double> (ui.getProperty (UiIDs::roomPredelay, 0.0)));
+    object->setProperty ("words", ui.getProperty (UiIDs::roomWords, "").toString());
+    object->setProperty ("from", ui.getProperty (UiIDs::roomFrom, "words").toString());
+    return juce::var (object.release());
+}
+
+void DrenchedProcessor::lookAtPhotoAsync (const juce::String& name, std::function<std::vector<std::uint8_t>()> read,
+                                          std::function<void (const juce::var&)> done)
+{
+    std::weak_ptr<int> alive = lifetime;
+
+    analyser.addJob ([this, name, alive, read = std::move (read), done = std::move (done)]() mutable
+    {
+        juce::String words, error;
+        juce::Array<juce::var> seen;
+
+        try
+        {
+            const auto rgb = read();
+
+            if (rgb.size() != static_cast<std::size_t> (SceneNet::side * SceneNet::side * 3))
+                throw std::runtime_error ("the picture is not the size the model takes");
+
+            int size = 0;
+            const auto* data = DrenchedScene::getNamedResource ("places365_drsn", size);
+
+            if (data == nullptr)
+                throw std::runtime_error ("this build has no scene model");
+
+            // Read for each look: the model is only wanted now and then, and large.
+            const SceneNet model (reinterpret_cast<const std::uint8_t*> (data), static_cast<std::size_t> (size));
+            const auto reading = model.look (rgb.data());
+            words = sceneWords (reading);
+
+            for (const auto& category : reading.categories)
+            {
+                auto* object = new juce::DynamicObject();
+                object->setProperty ("name", juce::String (category.name).replaceCharacter ('_', ' '));
+                object->setProperty ("probability", static_cast<double> (category.probability));
+                object->setProperty ("indoors", category.indoors);
+                seen.add (juce::var (object));
+            }
+        }
+        catch (const std::exception& e)
+        {
+            error = e.what();
+        }
+
+        juce::MessageManager::callAsync ([this, alive, name, words, error, seen, done = std::move (done)]
+        {
+            if (alive.expired())
+                return;
+
+            if (error.isNotEmpty())
+            {
+                auto object = std::make_unique<juce::DynamicObject>();
+                object->setProperty ("name", name);
+                object->setProperty ("error", error);
+                done (juce::var (object.release()));
+                return;
+            }
+
+            auto result = describeRoom (words, name, true, "photo");
+            result.getDynamicObject()->setProperty ("seen", seen);
+            done (result);
+        });
+    });
+}
+
+void DrenchedProcessor::describePhotoAsync (const juce::File& file, std::function<void (const juce::var&)> done)
+{
+    lookAtPhotoAsync (file.getFileNameWithoutExtension(), [file]
+    {
+        if (! file.existsAsFile())
+            throw std::runtime_error ("the file isn't there");
+
+        auto image = juce::ImageFileFormat::loadFrom (file);
+
+        if (! image.isValid())
+            throw std::runtime_error ("Drenched reads JPEG, PNG and GIF pictures, and this isn't one it can read");
+
+        // Halved (each new pixel the mean of four) until it is a sensible size, then every
+        // pixel counted into the model's 224 x 224.
+        while (image.getWidth() > 2048 || image.getHeight() > 2048)
+            image = image.rescaled (std::max (1, image.getWidth() / 2), std::max (1, image.getHeight() / 2), juce::Graphics::highResamplingQuality);
+
+        const juce::Image::BitmapData bitmap (image, juce::Image::BitmapData::readOnly);
+        std::vector<std::uint8_t> rgb (static_cast<std::size_t> (bitmap.width) * static_cast<std::size_t> (bitmap.height) * 3);
+
+        for (int y = 0; y < bitmap.height; ++y)
+        {
+            auto* out = rgb.data() + static_cast<std::size_t> (y) * static_cast<std::size_t> (bitmap.width) * 3;
+
+            for (int x = 0; x < bitmap.width; ++x)
+            {
+                const auto colour = bitmap.getPixelColour (x, y);
+                out[3 * x] = colour.getRed();
+                out[3 * x + 1] = colour.getGreen();
+                out[3 * x + 2] = colour.getBlue();
+            }
+        }
+
+        return scaleForSceneNet (rgb.data(), bitmap.width, bitmap.height, 3, bitmap.width * 3);
+    }, std::move (done));
+}
+
+void DrenchedProcessor::describePhotoAsync (const juce::String& name, std::vector<std::uint8_t> rgb, std::function<void (const juce::var&)> done)
+{
+    lookAtPhotoAsync (name, [rgb = std::move (rgb)] { return rgb; }, std::move (done));
+}
+
 std::shared_ptr<const RecordedResponse> DrenchedProcessor::playingRecording() const
 {
     const auto built = builder->lastBuilt();
@@ -1225,7 +1496,11 @@ juce::String DrenchedProcessor::bugReportDetails()
                + (params.lowCpu.load() > 0.5f ? " (Low CPU)" : ""));
     lines.add ("Channels: " + layout.getMainInputChannelSet().getDescription() + " in, "
                + layout.getMainOutputChannelSet().getDescription() + " out");
-    lines.add ("Space: " + (space == "user" ? "your IR " + irName : space));
+    lines.add ("Space: " + (space == "user" ? "your IR " + irName
+                            : space == "described" ? "described room \"" + ui.getProperty (UiIDs::roomName, "").toString() + "\" ("
+                                                         + ui.getProperty (UiIDs::roomWords, "").toString() + "; "
+                                                         + ui.getProperty (UiIDs::roomSize, "").toString() + " m)"
+                            : space));
     lines.add ("Look: " + ui.getProperty (UiIDs::skin, settings::loadDefaultSkin()).toString()
                + ", view " + ui.getProperty (UiIDs::mode, "studio").toString());
 
@@ -1291,10 +1566,13 @@ juce::ValueTree DrenchedProcessor::findScene (int number)
     return number > 0 ? scenes().getChildWithProperty (SceneIDs::number, number) : juce::ValueTree();
 }
 
-juce::String DrenchedProcessor::spaceName (const juce::String& id, const juce::String& irName) const
+juce::String DrenchedProcessor::spaceName (const juce::String& id, const juce::String& irName, const juce::String& roomName) const
 {
     if (id == "user")
         return irName.isNotEmpty() ? irName : juce::String ("Your impulse response");
+
+    if (id == "described")
+        return roomName.isNotEmpty() ? roomName : juce::String ("Described room");
 
     if (const auto* space = library::find (id))
         return space->info["name"].toString();
@@ -1318,7 +1596,8 @@ juce::var DrenchedProcessor::sceneList()
             object->setProperty ("number", number);
             object->setProperty ("name", scene.getProperty (SceneIDs::name).toString());
             object->setProperty ("space", spaceName (scene.getProperty (SceneIDs::spaceId).toString(),
-                                                     scene.getProperty (SceneIDs::irName).toString()));
+                                                     scene.getProperty (SceneIDs::irName).toString(),
+                                                     scene.getProperty (UiIDs::roomName).toString()));
             list.add (juce::var (object.release()));
         }
     }
@@ -1357,6 +1636,13 @@ int DrenchedProcessor::storeScene (int number, const juce::String& name)
     {
         stored.setProperty (SceneIDs::irPath, ui.getProperty (UiIDs::irPath, "").toString(), nullptr);
         stored.setProperty (SceneIDs::irName, ui.getProperty (UiIDs::irName, "").toString(), nullptr);
+    }
+    else if (spaceId == "described")
+    {
+        // The room as described, so the scene plays it however the room is described later.
+        for (const auto* property : UiIDs::roomProperties)
+            if (ui.hasProperty (*property))
+                stored.setProperty (*property, ui.getProperty (*property), nullptr);
     }
 
     if (scene.isValid())
@@ -1460,6 +1746,10 @@ void DrenchedProcessor::recallScene (int number, bool loadNow)
             }
         }
     }
+
+    if (spaceId == "described" && scene.hasProperty (UiIDs::roomSize))
+        for (const auto* property : UiIDs::roomProperties)
+            ui.setProperty (*property, scene.getProperty (*property), nullptr);
 
     if (spaceId.isNotEmpty())
         ui.setProperty (UiIDs::spaceId, spaceId, nullptr);

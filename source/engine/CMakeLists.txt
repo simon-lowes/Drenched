@@ -14,6 +14,8 @@ add_library(drenched_engine STATIC
     src/ResponseEnvelope.cpp
     src/ReverbCloud.cpp
     src/RoomMatch.cpp
+    src/RoomDescription.cpp
+    src/SceneNet.cpp
     src/SpeakerTrim.cpp
     src/WetEqualiser.cpp
     src/ResponseAnalysis.cpp

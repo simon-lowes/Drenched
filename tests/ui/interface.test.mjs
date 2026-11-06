@@ -122,6 +122,12 @@ function pluginMessage (rnd, pick)
                               decay: Array.from ({ length: 200 }, (_, i) => -i * 0.4), decayStep: seconds / 199, rt60: decays() }];
     }
 
+    if (r < 0.975)
+        return ['described', pick ([{ looking: true, name }, { name, error: name },
+                                    { name, kind: pick (['room', 'chapel', 'hall', 'outdoor']), place: name, W: 4, D: 5, H: 2.5, mat: name, bands: decays(), pre: 8, dist: 40, el: 55,
+                                      words: name, understood: [name], known: rnd() < 0.5, from: pick (['words', 'photo']), applied: rnd() < 0.5,
+                                      seen: [{ name, probability: 0.7, indoors: true }] }])];
+
     return ['pasted', { target: pick (['licKey', 'licCode']), text: name }];
 }
 
@@ -575,7 +581,7 @@ test ('A dropped impulse response reaches the plugin whole, and nothing else is 
 
         // Only files Drenched can load are sent.
         window.__sent = [];
-        drop ('drop', [new File (['x'], 'photo.jpg')]);
+        drop ('drop', [new File (['x'], 'score.pdf')]);
         await new Promise (r => setTimeout (r, 50));
         out.otherSent = window.__sent.filter (([n]) => n === 'dropIr').length;
         out.otherNote = st.note;
@@ -594,10 +600,152 @@ test ('A dropped impulse response reaches the plugin whole, and nothing else is 
     assert.equal (result.start.keep, false);
     assert.ok (result.sameId && result.whole);
     assert.equal (result.otherSent, 0);
-    assert.match (result.otherNote, /photo\.jpg.*isn.t an impulse response/);
+    assert.match (result.otherNote, /score\.pdf.*isn.t an impulse response.*photograph/);
     assert.match (result.failedNote, /Drop it again/);
     assert.match (result.largeNote, /Huge\.wav.*too large to drop here.*Load your own IR/);
     assert.ok (page.url().includes ('index.html'));
+    assert.deepEqual (errors, []);
+});
+
+test ('Describe a room: words are previewed and applied, a photograph is sent scaled, and the room is a space', async () =>
+{
+    await page.goto ('about:blank');
+    await open ('aperture');
+
+    // Opened from the Spaces browser's tools, the window takes the keyboard in its field.
+    await page.focus ('[data-act="browse"]');
+    await page.keyboard.press ('Enter');
+    await page.waitForTimeout (50);
+    await page.click ('.brw [data-act="describe"]');
+    await page.waitForTimeout (50);
+    assert.equal (await page.evaluate (() => document.activeElement.id), 'desc-q');
+    assert.equal (await page.evaluate (() => document.querySelector ('[data-act="describego"]').disabled), true, 'nothing to hear yet');
+
+    // Typing asks for a preview (apply false) once the typing pauses, and only then.
+    await page.evaluate (() => { window.__sent = []; });
+    await page.keyboard.type ('small tiled bathroom');
+    const previews = await sentWith ('describe', 'words');
+    assert.deepEqual (previews, [{ words: 'small tiled bathroom', apply: false }]);
+
+    const preview = { name: 'Small tiled bathroom', kind: 'room', place: 'a bathroom', W: 1.5, D: 1.8, H: 2.2, mat: 'Tiles', bands: [1.2, 1.4, 1.6, 1.8, 1.8, 1.6, 1.2, 0.8],
+                      pre: 2, dist: 30, el: 60, words: 'small tiled bathroom', understood: ['small', 'tiled', 'bathroom'], known: true, from: 'words', applied: false };
+    await fromPlugin ('described', preview);
+    await drawn();
+    const read = await page.evaluate (() => document.getElementById ('desc-r').textContent);
+    assert.match (read, /bathroom.*1\.5.*1\.8.*2\.2 m.*tiles/);
+    assert.match (read, /small, tiled, bathroom/);
+    assert.equal (await page.evaluate (() => document.querySelector ('[data-act="describego"]').disabled), false);
+    assert.equal (await page.evaluate (() => document.activeElement.id), 'desc-q', 'the redraw kept the keyboard in the field');
+
+    // Enter hears it: the same words, applied. The plugin's answer makes the room the space and closes the window.
+    await page.evaluate (() => { window.__sent = []; });
+    await page.keyboard.press ('Enter');
+    assert.deepEqual (await sentWith ('describe', 'apply'), [{ words: 'small tiled bathroom', apply: true }]);
+    await fromPlugin ('described', Object.assign ({}, preview, { applied: true }));
+    await drawn();
+    let state = await page.evaluate (() => ({ open: st.desc, space: SPACES[st.sp].id, name: SPACES[st.sp].name, described: DESCRIBED >= 0, note: st.note,
+                                               head: document.querySelector ('#live .screen h1, #live .screen .name, #live .screen .sp-name')?.textContent || '' }));
+    assert.equal (state.open, false);
+    assert.equal (state.space, 'described');
+    assert.equal (state.name, 'Small tiled bathroom');
+    assert.ok (state.described);
+    assert.match (state.note, /Small tiled bathroom.*bathroom/);
+
+    // Reopened, the window remembers the words; the browser's tool names the room.
+    await page.focus ('[data-act="browse"]');
+    await page.keyboard.press ('Enter');
+    await page.waitForTimeout (50);
+    assert.match (await page.evaluate (() => document.querySelector ('.brw [data-act="describe"]').textContent), /Describe a room.*Small tiled bathroom/);
+    await page.click ('.brw [data-act="describe"]');
+    await page.waitForTimeout (50);
+    assert.equal (await page.evaluate (() => document.getElementById ('desc-q').value), 'small tiled bathroom');
+
+    // Photograph asks the plugin to choose one; the window stays open and says so.
+    await page.evaluate (() => { window.__sent = []; });
+    await page.click ('[data-act="photo"]');
+    assert.deepEqual (await page.evaluate (() => window.__sent.filter (([n]) => n === 'describePhoto')), [['describePhoto', {}]]);
+    assert.equal (await page.evaluate (() => st.desc), true);
+
+    // While the plugin looks, the field and buttons wait; an error frees them and is said.
+    await fromPlugin ('described', { looking: true, name: 'kitchen' });
+    await drawn();
+    assert.deepEqual (await page.evaluate (() => [document.getElementById ('desc-q').disabled, document.querySelector ('[data-act="photo"]').disabled]), [true, true]);
+    await fromPlugin ('described', { name: 'kitchen', error: 'the picture is upside down' });
+    await drawn();
+    assert.deepEqual (await page.evaluate (() => [document.getElementById ('desc-q').disabled, st.descBusy]), [false, null]);
+    assert.match (await page.evaluate (() => st.note), /kitchen.*couldn.t be read.*upside down/);
+
+    // Escape closes it and gives the keyboard back.
+    await page.keyboard.press ('Escape');
+    await page.waitForTimeout (50);
+    assert.deepEqual (await page.evaluate (() => [st.desc, document.querySelector ('#live [inert]') === null]), [false, true]);
+
+    // A photograph dropped on the window is scaled here to 224 x 224 and sent as RGB bytes.
+    const dropped = await page.evaluate (async () =>
+    {
+        const canvas = document.createElement ('canvas');
+        canvas.width = 640;
+        canvas.height = 480;
+        const g = canvas.getContext ('2d');
+        g.fillStyle = '#c04020';
+        g.fillRect (0, 0, 640, 480);
+        g.fillStyle = '#2040c0';
+        g.fillRect (320, 0, 320, 480);
+        const blob = await new Promise (r => canvas.toBlob (r, 'image/png'));
+        const data = new DataTransfer();
+        data.items.add (new File ([blob], 'My Kitchen.PNG', { type: 'image/png' }));
+        window.__sent = [];
+        document.querySelector ('#live .screen').dispatchEvent (new DragEvent ('drop', { bubbles: true, cancelable: true, dataTransfer: data }));
+
+        for (let wait = 0; wait < 200 && ! window.__sent.some (([n]) => n === 'describePhoto'); ++wait)
+            await new Promise (r => setTimeout (r, 20));
+
+        const sent = window.__sent.filter (([n]) => n === 'describePhoto').map (([, p]) => p);
+        const rgb = sent.length ? Uint8Array.from (atob (sent[0].rgb), c => c.charCodeAt (0)) : new Uint8Array (0);
+        const at = (x, y) => [rgb[(y * 224 + x) * 3], rgb[(y * 224 + x) * 3 + 1], rgb[(y * 224 + x) * 3 + 2]];
+        return { count: sent.length, name: sent[0]?.name, bytes: rgb.length, left: at (20, 100), right: at (200, 100), busy: st.descBusy, note: st.note };
+    });
+    assert.equal (dropped.count, 1);
+    assert.equal (dropped.name, 'My Kitchen');
+    assert.equal (dropped.bytes, 224 * 224 * 3);
+    assert.ok (dropped.left[0] > 150 && dropped.left[2] < 80, 'left half red: ' + dropped.left);
+    assert.ok (dropped.right[2] > 150 && dropped.right[0] < 80, 'right half blue: ' + dropped.right);
+    assert.equal (dropped.busy, 'My Kitchen');
+    assert.match (dropped.note, /Looking at My Kitchen/);
+
+    // The plugin's answer: the room from the photograph, named for the file, with what it saw.
+    await fromPlugin ('described', { name: 'My Kitchen', kind: 'room', place: 'a kitchen', W: 4, D: 3, H: 2.4, mat: 'Tiles and wood', bands: [0.8, 0.7, 0.6, 0.6, 0.5, 0.5, 0.4, 0.3],
+                                     pre: 5, dist: 35, el: 55, words: 'kitchen, tiles, wood', understood: ['kitchen', 'tiles', 'wood'], known: true, from: 'photo', applied: true,
+                                     seen: [{ name: 'kitchen', probability: 0.81, indoors: true }, { name: 'galley', probability: 0.1, indoors: true }] });
+    await drawn();
+    state = await page.evaluate (() => ({ space: SPACES[st.sp].id, name: SPACES[st.sp].name, rec: SPACES[st.sp].rec, busy: st.descBusy, note: st.note }));
+    assert.equal (state.space, 'described');
+    assert.equal (state.name, 'My Kitchen');
+    assert.match (state.rec, /photograph/);
+    assert.equal (state.busy, null);
+    assert.match (state.note, /My Kitchen.*kitchen \(81%\)/);
+
+    // Every look draws the window with its field, its two buttons and the hint, over an inert screen.
+    for (const look of await page.evaluate (() => SKINS.map (x => x.id)))
+    {
+        await page.goto ('about:blank');
+        await open (look);
+        await page.focus ('[data-act="browse"]');
+        await page.keyboard.press ('Enter');
+        await page.waitForTimeout (50);
+        await page.click ('.brw [data-act="describe"]');
+        await page.waitForTimeout (50);
+        const seen = await page.evaluate (() =>
+        {
+            const dlg = document.querySelector ('#live .dsc');
+            const box = (sel) => { const r = dlg?.querySelector (sel)?.getBoundingClientRect(); return r && r.width > 0 && r.height > 0; };
+            return { dialog: !! dlg, field: box ('#desc-q'), hear: box ('[data-act="describego"]'), photo: box ('[data-act="photo"]'), hint: box ('.ct'),
+                     inert: [...document.querySelector ('#live .screen').children].every (c => c === dlg || c.hasAttribute ('inert')),
+                     focus: document.activeElement.id };
+        });
+        assert.deepEqual (seen, { dialog: true, field: true, hear: true, photo: true, hint: true, inert: true, focus: 'desc-q' }, look);
+    }
+
     assert.deepEqual (errors, []);
 });
 

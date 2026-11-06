@@ -37,6 +37,8 @@ struct ImpulseResponseRequest
 {
     double sampleRate = 48000.0;
     int space = 0;                         // index into bundledSpaces
+    std::array<float, 3> roomMetres {};    // a described room's width, depth and height, played instead of the
+                                           // bundled space's shoebox; all 0 (how every earlier version played) = the space's
     std::array<float, 8> decaySeconds {};  // RT60 per octave band, 63 Hz .. 8 kHz
     std::array<float, 8> rightDecaySeconds {}; // the right-hand side's own curve; all 0 = decaySeconds on both (see decayFor())
     float sizePercent = 100.0f;            // 50 .. 150, scales the room
@@ -109,6 +111,18 @@ float listenerDistanceMetres (int space, float sizePercent, float distancePercen
 
 /** The request's Size as a factor on the room's dimensions, 0.5 .. 1.5. */
 double sizeScale (const ImpulseResponseRequest& request) noexcept;
+
+/** The shoebox a synthesised room is modelled as, in metres, with Size applied:
+    the described room's when the request has one, else the bundled space's. */
+struct RoomMetres
+{
+    double width, depth, height;
+};
+
+RoomMetres roomMetresOf (const ImpulseResponseRequest& request) noexcept;
+
+/** The listener's distance for a request, from its own room (see above). */
+float listenerDistanceMetres (const ImpulseResponseRequest& request) noexcept;
 
 /** The RT60 per octave band an output decays at, 0.05 .. 20 s. `right` says
     where the output is: 0 on the left, 1 on the right, 0.5 in the centre,

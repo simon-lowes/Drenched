@@ -35,7 +35,8 @@ target_include_directories(drenched_plugin_tests PRIVATE
 target_compile_definitions(drenched_plugin_tests PRIVATE
     $<TARGET_PROPERTY:Drenched,COMPILE_DEFINITIONS>
     DRENCHED_SESSIONS_DIR="${PROJECT_SOURCE_DIR}/tests/sessions"
-    DRENCHED_UI_TESTS_DIR="${PROJECT_SOURCE_DIR}/tests/ui")
+    DRENCHED_UI_TESTS_DIR="${PROJECT_SOURCE_DIR}/tests/ui"
+    DRENCHED_TEST_DATA_DIR="${PROJECT_SOURCE_DIR}/tests/data")
 
 # A hang (for example waiting on a message loop) fails in two minutes, not CTest's 25.
 catch_discover_tests(drenched_plugin_tests ADD_TAGS_AS_LABELS PROPERTIES TIMEOUT 120)
