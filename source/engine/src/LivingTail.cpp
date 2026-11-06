@@ -610,10 +610,8 @@ LivingTailDesign designLivingTail (const ImpulseResponseRequest& request, const 
     }
     else
     {
-        const auto spaceIndex = std::clamp (request.space, 0, static_cast<int> (bundledSpaces.size()) - 1);
-        const auto& room = bundledSpaces[static_cast<std::size_t> (spaceIndex)];
-        const auto scale = sizeScale (request);
-        W = room.width * scale, D = room.depth * scale, H = room.height * scale;
+        const auto room = roomMetresOf (request);
+        W = room.width, D = room.depth, H = room.height;
     }
 
     const auto volume = W * D * H;

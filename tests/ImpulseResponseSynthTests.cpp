@@ -4,11 +4,13 @@
 
 #include "TestHelpers.h"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numeric>
 #include <vector>
 
@@ -248,4 +250,38 @@ TEST_CASE ("A centred output decays at the mean rate of the two sides", "[irsynt
     // Without a right-hand curve every output plays the one curve.
     request.rightDecaySeconds = {};
     CHECK (decayFor (request, 1.0)[4] == 2.0);
+}
+
+TEST_CASE ("A described room plays its own size", "[irsynth][describe]")
+{
+    // The bundled space's own sides, asked for as a described room, are the same room:
+    // the response is bit-identical, so sessions before described rooms play as they did.
+    const auto space = bundledSpaces[3];
+    auto plain = requestFor (3);
+    auto same = plain;
+    same.roomMetres = { space.width, space.depth, space.height };
+    REQUIRE (synthesiseImpulseResponse (plain).paths[0] == synthesiseImpulseResponse (same).paths[0]);
+
+    const auto metres = roomMetresOf (same);
+    REQUIRE (metres.width == Catch::Approx (space.width));
+    REQUIRE (metres.depth == Catch::Approx (space.depth));
+
+    // Size scales a described room as it does a bundled one.
+    same.sizePercent = 150.0f;
+    REQUIRE (roomMetresOf (same).height == Catch::Approx (space.height * 1.5f));
+
+    // A tiny room has its walls closer: its early reflections arrive sooner, so more of
+    // the response's first 10 ms is reflection, and its distance range is shorter.
+    auto tiny = plain;
+    tiny.roomMetres = { 2.2f, 2.6f, 2.4f };
+    tiny.decaySeconds.fill (0.8f);
+    auto big = tiny;
+    big.roomMetres = { 20.0f, 30.0f, 10.0f };
+    REQUIRE (listenerDistanceMetres (tiny) < listenerDistanceMetres (big));
+    REQUIRE (synthesiseImpulseResponse (tiny).paths[0] != synthesiseImpulseResponse (big).paths[0]);
+
+    // Nonsense sides (a damaged session) fall back to the bundled space.
+    auto broken = plain;
+    broken.roomMetres = { -1.0f, 0.0f, std::numeric_limits<float>::quiet_NaN() };
+    REQUIRE (synthesiseImpulseResponse (broken).paths[0] == synthesiseImpulseResponse (plain).paths[0]);
 }

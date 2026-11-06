@@ -45,6 +45,14 @@ juce_add_binary_data(DrenchedLibrary
 
 set_target_properties(DrenchedLibrary PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# The scene recognition model Describe a room looks at photographs with (library/scene/README.md).
+juce_add_binary_data(DrenchedScene
+    NAMESPACE DrenchedScene
+    HEADER_NAME DrenchedScene.h
+    SOURCES "${CMAKE_SOURCE_DIR}/library/scene/places365.drsn")
+
+set_target_properties(DrenchedScene PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # Which build this is, so testers' bug reports and installers can be told apart while
 # the version stays the same between beta drops. CI numbers each run (GITHUB_RUN_NUMBER);
 # a local build has no number. The commit is read when CMake configures.
@@ -164,6 +172,7 @@ target_link_libraries(Drenched
         drenched_engine
         drenched_licence
         DrenchedLibrary
+        DrenchedScene
         DrenchedUI
         juce::juce_audio_utils
         juce::juce_dsp

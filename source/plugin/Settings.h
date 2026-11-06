@@ -114,6 +114,21 @@ namespace settings
         file.saveIfNeeded();
     }
 
+    /** The folder a photograph was last chosen from (Describe a room). */
+    inline juce::File loadPhotoFolder()
+    {
+        juce::PropertiesFile file (options());
+        const juce::File folder (file.getValue ("photoFolder"));
+        return folder.isDirectory() ? folder : juce::File::getSpecialLocation (juce::File::userPicturesDirectory);
+    }
+
+    inline void savePhotoFolder (const juce::File& folder)
+    {
+        juce::PropertiesFile file (options());
+        file.setValue ("photoFolder", folder.getFullPathName());
+        file.saveIfNeeded();
+    }
+
     /** Where captured spaces are saved: Documents/Drenched/Captures. */
     inline juce::File capturesFolder()
     {

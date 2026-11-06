@@ -146,6 +146,26 @@ namespace UiIDs
     inline const juce::Identifier irName { "irName" };
     inline const juce::Identifier irError { "irError" };
     inline const juce::Identifier irEvent { "irEvent" };
+
+    // A described room (Describe a room: words, or a photograph), the space "described":
+    // the words it was made from, its name, where they came from ("words" or "photo"),
+    // the interface's kind, its size in metres ("width depth height"), the decay those
+    // gave (eight seconds, 63 Hz to 8 kHz, separated by spaces), its pre-delay, and the
+    // lines about it. The size and decay are kept, not worked out again, so the room
+    // plays the same whatever a later version makes of the words.
+    inline const juce::Identifier roomWords { "roomWords" };
+    inline const juce::Identifier roomName { "roomName" };
+    inline const juce::Identifier roomFrom { "roomFrom" };
+    inline const juce::Identifier roomKind { "roomKind" };
+    inline const juce::Identifier roomSize { "roomSize" };
+    inline const juce::Identifier roomDecay { "roomDecay" };
+    inline const juce::Identifier roomPredelay { "roomPredelay" };
+    inline const juce::Identifier roomPlace { "roomPlace" };
+    inline const juce::Identifier roomMaterials { "roomMaterials" };
+
+    /** Every property of a described room, for a scene to keep and give back. */
+    inline const std::array<const juce::Identifier*, 9> roomProperties { &roomWords, &roomName, &roomFrom, &roomKind, &roomSize,
+                                                                         &roomDecay, &roomPredelay, &roomPlace, &roomMaterials };
 }
 
 /** Scenes: named sets of every setting and the space, recalled from the interface or by

@@ -39,13 +39,16 @@ window that should be silent but sounds at -100 dB (or the other way round) stil
 | `v0.1-modelled-gated.session` | 0.1 (session version 1) | A modelled space by id, Reverse, Gate, direct colour, cross-feed |
 | `v0.2-everything.session` | 0.2 before release (session version 2) | Every parameter off its default but Freeze (which would leave the impulse dry), the right decays unlinked, the wet EQ, cloud size, listener and source positions, playing a file of the person's own (`v0.2-everything.wav`) with speaker trims and locks; three scenes: a modelled space, a library space and that file, scene 3 playing and changed since |
 | `v0.2-file-level.session` | 0.2 before release (session version 2, with `loadedLevel`) | The first session to say a loaded response plays at the level it has at its own rate (`loadedLevel="fileRate"`): a 96 kHz file of the person's own (`v0.2-file-level.wav`), heard here at 48 kHz, where the sessions before it play 3 dB quieter; Size, early/late balance, mix and pre-delay moved |
+| `v0.2-described.session` | 0.2 before release (session version 2, the first build with Describe a room) | A room described in words playing ("stone chapel with wooden pews, 12 m long", named Village chapel, Mix 70%, 8 kHz decay shortened); scene 1 a described bathroom, scene 2 a modelled space. The room is kept as it was described then, so the sound must stay the same however the describer changes |
 
 The beta 1 sessions were made by building the beta 1 source and saving from it; their
 `.expected` sound matched what beta 1 itself rendered to 0.00 dB in every band. The 0.2
 session was saved from main at `02f0639`, the build that first wrote session version 2
 in full (scenes, the wet EQ, unlinked decays), before 0.2 was released. The file-level
 session was saved by the build that first wrote `loadedLevel` (branch
-`claude/loaded-room-level`), before 0.2 was released.
+`claude/loaded-room-level`), before 0.2 was released. The described-room session
+was saved by the build that first wrote described rooms (branch
+`claude/project-thread-yahae3`), by its own test with `DRENCHED_UPDATE_SESSIONS=1`.
 
 Sessions without `loadedLevel` (every one before it) play a loaded file or library
 recording at unit energy at the session's rate, which differs from its level at its own

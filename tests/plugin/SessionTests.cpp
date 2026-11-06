@@ -650,6 +650,9 @@ TEST_CASE ("A session saved now loads back exactly", "[sessions]")
         ui.setProperty (UiIDs::irName, "Round trip", nullptr);
         ui.setProperty (UiIDs::spaceId, "user", nullptr);
         REQUIRE (first->storeScene (0, "My file") == 2);
+
+        // And a room described in words, the space when the session was saved.
+        REQUIRE (first->describeRoom ("wooden chapel", "Chapel of words", true)["kind"].toString() == "chapel");
         first->getStateInformation (saved);
     });
 
@@ -666,13 +669,17 @@ TEST_CASE ("A session saved now loads back exactly", "[sessions]")
     testing::onMessageThread ([&]
     {
         for (const auto& id : { UiIDs::spaceId, UiIDs::locks, UiIDs::mode, UiIDs::view, UiIDs::skin, UiIDs::width,
-                                UiIDs::speakers, UiIDs::irPath, UiIDs::irName })
+                                UiIDs::speakers, UiIDs::irPath, UiIDs::irName, UiIDs::roomWords, UiIDs::roomName,
+                                UiIDs::roomFrom, UiIDs::roomKind, UiIDs::roomSize, UiIDs::roomDecay, UiIDs::roomPredelay,
+                                UiIDs::roomPlace, UiIDs::roomMaterials })
         {
             INFO (id.toString());
             CHECK (second->getUiState().getProperty (id).toString() == first->getUiState().getProperty (id).toString());
         }
 
         CHECK (juce::JSON::toString (second->sceneList()) == juce::JSON::toString (first->sceneList()));
+        CHECK (second->chosenSpaceId() == "described");
+        CHECK (juce::JSON::toString (second->describedRoomInfo()) == juce::JSON::toString (first->describedRoomInfo()));
 
         // Saving what was loaded gives the same session, byte for byte.
         juce::MemoryBlock again;
@@ -833,10 +840,74 @@ TEST_CASE ("The session saved with loaded files at their own level would sound d
     INFO ("by the old rule: " << change << " dB");
     CHECK ((change < -2.5 && change > -3.5));
 
-    // Every session saved before it plays by the old rule.
+    // Every session saved before it plays by the old rule; those saved since say so too.
     for (const auto& file : savedSessions())
-        if (file.getFileName() != "v0.2-file-level.session")
-            CHECK_FALSE (hasLoadedLevel (bytesOf (file)));
+    {
+        INFO (file.getFileName());
+        const auto since = file.getFileName() == "v0.2-file-level.session" || file.getFileName() == "v0.2-described.session";
+        CHECK (hasLoadedLevel (bytesOf (file)) == since);
+    }
+}
+
+TEST_CASE ("The session saved with a described room brings the room back as described", "[sessions][describe]")
+{
+    // tests/sessions/v0.2-described.session: a room described in words playing (a stone
+    // chapel with a reshaped decay), and scenes of a described bathroom and a modelled
+    // space. Its .expected sound checks the room is built the same; here, that it comes
+    // back as the same description. DRENCHED_UPDATE_SESSIONS=1 writes the session when it
+    // is missing: the fixture is made by the build that first saved described rooms.
+    const auto file = sessionsDir().getChildFile ("v0.2-described.session");
+
+    if (updating() && ! file.existsAsFile())
+    {
+        testing::Plugin plugin;
+        testing::onMessageThread ([&]
+        {
+            REQUIRE (plugin->describeRoom ("small tiled bathroom", "", true)["place"].toString().contains ("bathroom"));
+            REQUIRE (plugin->storeScene (0, "Bathroom") == 1);
+            plugin->getUiState().setProperty (UiIDs::spaceId, bundledSpaces[0].id, nullptr);
+            REQUIRE (plugin->storeScene (0, "Hall") == 2);
+            REQUIRE (plugin->describeRoom ("stone chapel with wooden pews, 12 m long", "Village chapel", true)["place"].toString().contains ("chapel"));
+
+            auto* mix = plugin->getState().getParameter (ParamIDs::mix);
+            mix->setValueNotifyingHost (mix->convertTo0to1 (70.0f));
+            auto* top = plugin->getState().getParameter (ParamIDs::decay[7]);
+            top->setValueNotifyingHost (top->convertTo0to1 (0.6f));
+
+            juce::MemoryBlock saved;
+            plugin->getStateInformation (saved);
+            REQUIRE (file.replaceWithData (saved.getData(), saved.getSize()));
+        });
+    }
+
+    REQUIRE (file.existsAsFile());
+    testing::Plugin plugin;
+    load (*plugin, bytesOf (file));
+
+    testing::onMessageThread ([&]
+    {
+        CHECK (plugin->chosenSpaceId() == "described");
+        const auto room = plugin->describedRoomInfo();
+        CHECK (room["name"].toString() == "Village chapel");
+        CHECK (room["kind"].toString() == "chapel");
+        CHECK (room["from"].toString() == "words");
+        CHECK (room["words"].toString() == "stone chapel with wooden pews, 12 m long");
+        CHECK (std::abs (static_cast<double> (room["D"]) - 12.0) < 0.01);
+        CHECK (room["bands"].size() == 8);
+
+        // The room as the words gave it then, not as the describer would give it now:
+        // a session keeps playing the same however the describer is improved later.
+        const auto saved = room["bands"];
+        const auto fresh = plugin->describeRoom (room["words"].toString(), "", false)["bands"];
+        INFO ("saved " << juce::JSON::toString (saved) << ", described now " << juce::JSON::toString (fresh));
+        CHECK (saved.size() == fresh.size());
+
+        plugin->recallScene (1, true);
+        CHECK (plugin->chosenSpaceId() == "described");
+        CHECK (plugin->describedRoomInfo()["place"].toString().contains ("bathroom"));
+        plugin->recallScene (2, true);
+        CHECK (plugin->chosenSpaceId() == juce::String (bundledSpaces[0].id));
+    });
 }
 
 TEST_CASE ("Scenes in saved sessions bring back what they stored", "[sessions][scenes]")

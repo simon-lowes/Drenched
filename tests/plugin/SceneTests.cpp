@@ -246,6 +246,56 @@ TEST_CASE ("A scene brings back every setting and the space", "[scenes]")
     CHECK (list[1]["name"].toString() == "Scene 2");
 }
 
+TEST_CASE ("A scene of a described room brings the room back as it was described", "[scenes][describe]")
+{
+    testing::Plugin plugin;
+    auto& p = *plugin;
+
+    testing::onMessageThread ([&]
+    {
+        const auto first = p.describeRoom ("small tiled bathroom", "Loo", true);
+        REQUIRE (first["place"].toString().contains ("bathroom"));
+        REQUIRE (p.storeScene (0, "") == 1);
+
+        const auto second = p.describeRoom ("stone cathedral", "", true);
+        REQUIRE (second["place"].toString().contains ("cathedral"));
+        REQUIRE (p.storeScene (0, "") == 2);
+
+        chooseSpace (p, bundledSpaces[0].id);
+        REQUIRE (p.storeScene (0, "") == 3);
+
+        p.recallScene (1);
+    });
+
+    CHECK (p.chosenSpaceId() == "described");
+    auto room = testing::onMessageThread ([&] { return p.describedRoomInfo(); });
+    CHECK (room["name"].toString() == "Loo");
+    CHECK (room["kind"].toString() == "room");
+    CHECK (room["place"].toString().contains ("bathroom"));
+    CHECK (room["words"].toString() == "small tiled bathroom");
+    CHECK (static_cast<double> (room["H"]) < 3.0);
+
+    testing::onMessageThread ([&] { p.recallScene (2); });
+    room = testing::onMessageThread ([&] { return p.describedRoomInfo(); });
+    CHECK (room["kind"].toString() == "chapel");
+    CHECK (room["place"].toString().contains ("cathedral"));
+    CHECK (static_cast<double> (room["H"]) > 10.0);
+
+    // The scene list names each by the room's name.
+    const auto list = testing::onMessageThread ([&] { return p.sceneList(); });
+    REQUIRE (list.size() == 3);
+    CHECK (list[0]["space"].toString() == "Loo");
+    CHECK (list[1]["space"].toString().isNotEmpty());
+    CHECK (list[1]["space"].toString() != "Loo");
+    CHECK (list[2]["space"].toString() == juce::String (bundledSpaces[0].name));
+
+    // Recalling the modelled space leaves the described room where it was, to come back to.
+    testing::onMessageThread ([&] { p.recallScene (3); });
+    CHECK (p.chosenSpaceId() == juce::String (bundledSpaces[0].id));
+    room = testing::onMessageThread ([&] { return p.describedRoomInfo(); });
+    CHECK (room["place"].toString().contains ("cathedral"));
+}
+
 TEST_CASE ("Automating the scene parameter recalls the scene", "[scenes]")
 {
     testing::Plugin plugin;
