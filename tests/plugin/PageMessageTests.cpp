@@ -430,6 +430,11 @@ TEST_CASE ("The window's own messages go to the window", "[bridge]")
 
     b.send ("licencePage");
     CHECK (b.window.opened == juce::StringArray { b.licence.manager->status()["page"].toString() });
+
+    // The tips were closed: the window remembers, so they are offered once.
+    b.send ("tipsSeen");
+    b.send ("tipsSeen", R"({"anything": 1})");
+    CHECK (b.window.tips == 2);
 }
 
 TEST_CASE ("Report a bug shows what a report sends, and sends it to the relay", "[bridge][report][messageloop]")

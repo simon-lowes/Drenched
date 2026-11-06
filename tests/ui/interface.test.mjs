@@ -1745,3 +1745,101 @@ test ('The wet EQ on the main display: the graph switch, and adding, soloing and
         assert.deepEqual (errors, [], look);
     }
 });
+
+test ('The tips light a control in every look, Studio and Stage, and are offered once', async (t) =>
+{
+    await page.goto ('about:blank');
+    await open ('anodised');
+    const looks = await page.evaluate (() => SKINS.map (s => s.id));
+
+    /** Where the tour is: its spot and card on the 1200x760 screen, and the control the tip names. */
+    const tour = () => page.evaluate (() =>
+    {
+        const screen = document.querySelector ('#live .screen'), d = screen.querySelector ('.tour');
+        if (! d) return null;
+        const k = screen.getBoundingClientRect().width / 1200;
+        const box = (e) => { const r = e.getBoundingClientRect(), s = screen.getBoundingClientRect(); return { l: (r.left - s.left) / k, t: (r.top - s.top) / k, r: (r.right - s.left) / k, b: (r.bottom - s.top) / k }; };
+        const step = st.tour >= 0 ? st.tourList[st.tour] : null, tip = step ? Object.assign ({}, TIPS[step.i], step.alt ? TIPS[step.i].alt : {}) : null;
+        let target = tip ? [...screen.querySelectorAll (tip.sel)].find (e => ! e.closest ('.tour')) : null;
+        if (target && tip.up) target = target.parentElement;
+        return { step: st.tour, count: st.tourList ? st.tourList.length : 0, lit: d.classList.contains ('lit'), welcome: d.classList.contains ('welcome'),
+                 spot: box (d.querySelector ('.tour-spot')), card: box (d.querySelector ('.tour-card')), target: target ? box (target) : null,
+                 title: d.querySelector ('h2').textContent, counter: (d.querySelector ('.tour-hd em') || {}).textContent || '',
+                 behindInert: [...screen.children].every (c => c === d || c.hasAttribute ('inert')), focusIn: d.contains (document.activeElement) };
+    });
+    const inside = (a, b) => a.l >= b.l - 0.5 && a.t >= b.t - 0.5 && a.r <= b.r + 0.5 && a.b <= b.b + 0.5;
+    const apart = (a, b) => a.r <= b.l || a.l >= b.r || a.b <= b.t || a.t >= b.b;
+    const screenBox = { l: 0, t: 0, r: 1200, b: 760 };
+
+    for (const look of looks)
+        for (const mode of ['studio', 'stage'])
+            await t.test (look + ', ' + mode, async () =>
+            {
+                await open (look);
+                if (mode === 'stage') { await page.click ('[data-act="mode"][data-v="stage"]'); await drawn(); }
+                // ? opens the tips at the first one (the welcome is for the first opening only)
+                await page.keyboard.press ('?');
+                await drawn();
+                let at = await tour();
+                assert.ok (at && at.step === 0 && ! at.welcome && at.behindInert && at.focusIn, look + ': ? opened ' + JSON.stringify (at));
+                assert.ok (at.count >= (mode === 'stage' ? 5 : 9), look + ': ' + at.count + ' tips');
+                const titles = [];
+
+                for (let i = 0; ; ++i)
+                {
+                    at = await tour();
+                    if (! at) break;
+                    assert.equal (at.step, i);
+                    assert.equal (at.counter, (i + 1) + ' of ' + at.count);
+                    titles.push (at.title);
+                    // the control is lit whole, the card is on the screen and off the control
+                    assert.ok (at.lit && at.target, look + ' ' + at.title + ': no control lit ' + JSON.stringify (at));
+                    assert.ok (inside (at.target, at.spot), look + ' ' + at.title + ': the spot misses its control ' + JSON.stringify (at));
+                    assert.ok (inside (at.card, screenBox), look + ' ' + at.title + ': card off the screen ' + JSON.stringify (at.card));
+                    assert.ok (apart (at.card, at.target) || inside (at.card, at.spot), look + ' ' + at.title + ': the card covers its control ' + JSON.stringify (at));
+                    assert.ok (at.focusIn && at.behindInert, look + ' ' + at.title + ': keyboard ' + JSON.stringify (at));
+                    await page.keyboard.press (i % 2 ? 'ArrowRight' : 'Enter'); // Enter on Next, or the arrow key
+                    await drawn();
+                }
+
+                assert.equal (titles.length, titles[0] ? new Set (titles).size : 0, 'each tip once: ' + titles);
+                assert.ok (titles.includes ('The look') && titles.includes ('The strip') && titles.includes ('The decay graph'), look + ': ' + titles);
+                assert.equal (await page.evaluate (() => !! document.querySelector ('#live [inert]')), false, 'nothing left inert');
+                assert.deepEqual (errors, []);
+            });
+
+    // Back, Escape and Skip; the first opening is the welcome, and closing it tells the plugin
+    // once, so it is not offered again. Opened on purpose, nothing is told.
+    await page.goto ('about:blank');
+    await page.goto (page0 + '?k=aperture&tips=1#aperture');
+    await page.waitForTimeout (100);
+    let at = await tour();
+    assert.ok (at && at.welcome && at.step === -1 && ! at.lit && inside (at.card, screenBox), 'welcome: ' + JSON.stringify (at));
+    for (let i = 0; i < 3; ++i) await page.click ('.tour [data-act="tournext"]');
+    assert.equal ((await tour()).step, 2, 'Show me, then Next twice');
+    await page.keyboard.press ('ArrowLeft');
+    await drawn();
+    assert.equal ((await tour()).step, 1, 'ArrowLeft went back');
+    await page.click ('.tour [data-act="tourback"]');
+    assert.equal ((await tour()).step, 0, 'Back went back');
+    await page.keyboard.press ('ArrowLeft');
+    assert.equal ((await tour()).step, 0, 'the first tip has no back');
+    const sentBefore = await page.evaluate (() => window.__sent.filter (s => s[0] === 'tipsSeen').length);
+    assert.equal (sentBefore, 0);
+    await page.keyboard.press ('Escape');
+    await drawn();
+    assert.equal (await tour(), null, 'Escape closed the tips');
+    assert.deepEqual (await page.evaluate (() => window.__sent.filter (s => s[0] === 'tipsSeen')), [['tipsSeen', {}]], 'the plugin is told once');
+
+    await page.click ('[data-act="browse"]');
+    await page.click ('.brw [data-act="tips"]');
+    await drawn();
+    at = await tour();
+    assert.ok (at && at.step === 0 && ! at.welcome, 'Tips in the Spaces window: ' + JSON.stringify (at));
+    assert.equal (await page.evaluate (() => !! document.querySelector ('.brw')), false, 'the Spaces window closed');
+    await page.click ('.tour [data-act="tourskip"]');
+    await drawn();
+    assert.equal (await tour(), null, 'Skip closed the tips');
+    assert.equal (await page.evaluate (() => window.__sent.filter (s => s[0] === 'tipsSeen').length), 1, 'opened on purpose, nothing more is told');
+    assert.deepEqual (errors, []);
+});

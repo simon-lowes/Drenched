@@ -60,6 +60,7 @@ private:
     void chooseImpulseResponse (bool keepSettings) override;
     void chooseRecordingToMatch() override;
     void lookChosen (const juce::String& skin) override;
+    void tipsSeen() override;
     void openInBrowser (const juce::URL&) override;
     void copyToClipboard (const juce::String&) override;
     juce::String clipboardText() override;

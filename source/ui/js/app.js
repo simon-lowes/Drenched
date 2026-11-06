@@ -328,6 +328,42 @@ function licActivate(){if(JUCE)JUCE.emitEvent('licenceActivate',{licence:st.licK
    report Drenched saved last time is offered here too, and sent only if the person chooses. ---- */
 st.rep=false;st.repText='';st.repMail='';st.repShow=false;
 st.report={state:'idle',message:'',crash:false,details:'',steps:'',crashText:''};
+/* ---- the tips: a spotlight on one control at a time, with a card beside it. The card is
+   drawn like any window; where it and the spot go is measured after the page is drawn
+   (tourFit), since every look lays the controls out differently. ---- */
+var tourNew=false;
+function tourSteps(){var sc=live.firstElementChild,out=[];if(!sc)return out;var has=function(sel){var n=sel&&sc.querySelector(sel);return !!n&&!n.closest('.tour');};TIPS.forEach(function(t,i){if(has(t.sel))out.push({i:i,alt:false});else if(t.alt&&has(t.alt.sel))out.push({i:i,alt:true});});return out;}
+/* the tip at a step of the tour, with the words and control it shows there */
+function tourTip(list,i){var e=list[Math.min(i,list.length-1)],t=TIPS[e.i];return e.alt?Object.assign({},t,t.alt):t;}
+function openTour(welcome){st.browse=false;st.hint=null;st.tourList=null;st.tour=welcome?-1:0;tourNew=!!welcome;}
+function closeTour(){st.tour=null;st.tourList=null;if(tourNew&&JUCE)JUCE.emitEvent('tipsSeen',{});tourNew=false;}
+function tourList(){if(!st.tourList)st.tourList=tourSteps();return st.tourList;}
+function tourNext(){var n=tourList().length;if(st.tour<0&&n)st.tour=0;else if(st.tour+1<n)st.tour++;else closeTour();}
+function tourBack(){if(st.tour>0)st.tour--;}
+function tourHTML(){var i=st.tour,list=i<0?null:tourList(),n=list?list.length:0,tip=null,body;
+ if(i>=0){if(!n)return '';i=Math.min(i,n-1);tip=tourTip(list,i);}
+ if(i<0)body='<h2 id="tour-h">Welcome to Drenched</h2><p>Quick tips point out what each part of the screen does, in the look you\u2019re in. They take about a minute. See them again any time from Tips in the Spaces window, or with the ? key.</p>'+
+  '<div class="tour-ft"><button class="tour-b" data-act="tourskip">Not now</button><span class="tour-sp"></span><button class="cgo" data-act="tournext">Show me</button></div>';
+ else body='<div class="tour-hd"><h2 id="tour-h">'+tip.t+'</h2><em>'+(i+1)+' of '+n+'</em></div><p>'+tip.b+'</p>'+
+  '<div class="tour-ft"><button class="tour-b" data-act="tourskip">Skip</button><span class="tour-sp"></span>'+(i>0?'<button class="tour-b" data-act="tourback">Back</button>':'')+'<button class="cgo" data-act="tournext">'+(i===n-1?'Done':'Next')+'</button></div>';
+ return '<div class="tour'+(i<0?' welcome':'')+'" role="dialog" aria-modal="true" aria-labelledby="tour-h" tabindex="-1" data-fid="dlg-tour"><div class="tour-spot" aria-hidden="true"></div><div class="tour-card">'+body+'</div></div>';}
+/* The spot takes the control's place on the 1200x760 screen (the screen is scaled, so the
+   measurements are scaled back) and the card sits below it, else above, else beside it. A tip
+   whose control has gone (a view changed under it) is shown in the middle, without a spot. */
+function tourFit(){var d=live.querySelector('.tour');if(!d)return;var sc=live.firstElementChild,spot=d.querySelector('.tour-spot'),card=d.querySelector('.tour-card'),i=st.tour,tip=i>=0&&st.tourList&&st.tourList.length?tourTip(st.tourList,i):null,n=tip?sc.querySelector(tip.sel):null;
+ if(n&&n.closest('.tour'))n=null;if(n&&tip.up&&n.parentElement!==sc)n=n.parentElement;
+ var sr=sc.getBoundingClientRect(),k=sr.width/W||1,cw=card.offsetWidth,ch=card.offsetHeight,pad=8,S=null;
+ if(n){var r=n.getBoundingClientRect();if(r.width>0&&r.height>0){S={l:Math.max(0,(r.left-sr.left)/k-pad),t:Math.max(0,(r.top-sr.top)/k-pad)};S.w=Math.min(W-S.l,r.width/k+2*pad);S.h=Math.min(H-S.t,r.height/k+2*pad);}}
+ d.classList.toggle('lit',!!S);
+ if(S){spot.style.left=S.l+'px';spot.style.top=S.t+'px';spot.style.width=S.w+'px';spot.style.height=S.h+'px';}
+ var m=14,x,y;
+ if(!S){x=(W-cw)/2;y=(H-ch)/2;}
+ else if(S.t+S.h+m+ch<=H-12){y=S.t+S.h+m;x=S.l+S.w/2-cw/2;}
+ else if(S.t-m-ch>=12){y=S.t-m-ch;x=S.l+S.w/2-cw/2;}
+ else if(S.l+S.w+m+cw<=W-12){x=S.l+S.w+m;y=S.t+S.h/2-ch/2;}
+ else if(S.l-m-cw>=12){x=S.l-m-cw;y=S.t+S.h/2-ch/2;}
+ else{x=S.l+S.w/2-cw/2;y=S.t+S.h-m-ch;}
+ card.style.left=clamp(x,12,W-12-cw)+'px';card.style.top=clamp(y,12,H-12-ch)+'px';}
 function onReport(m){if(!m)return;var was=st.report.state;st.report=Object.assign({},st.report,m);if(st.report.state==='sent'&&was!=='sent')st.repText='';schedule();}
 function reportHTML(){var R=st.report,crash=!!R.crash,busy=R.state==='sending',dis=busy?' disabled':'';
  var sent=[R.details,R.steps?'What Drenched last did:\n'+R.steps:'',crash&&R.crashText?'Crash:\n'+R.crashText:''].filter(Boolean).join('\n\n');
@@ -408,13 +444,13 @@ function fitText(){var sc=live.querySelector('.screen');if(!sc)return;
 if(document.fonts&&document.fonts.addEventListener)document.fonts.addEventListener('loadingdone',function(){fitText();});
 function drawLive(){var a=document.activeElement,af=a&&live.contains(a)?a:null,fid=af?af.getAttribute('data-fid'):null,bl=live.querySelector('.brw-list'),blt=bl?bl.scrollTop:0;
  var text=!!af&&af.matches('input,textarea'),v=text?af.value:'',s0=text?af.selectionStart:0,s1=text?af.selectionEnd:0,all=text&&s0===0&&s1===v.length,typed=text&&af!==committed&&v!==af.defaultValue?af:null;
- resetIds();var html=screenHTML(st.skin,viewState());if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.rep)html=html.slice(0,-6)+reportHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.wf)html=html.slice(0,-6)+wfHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';html=uniqueFids(html);
+ resetIds();var html=screenHTML(st.skin,viewState());if(st.capture)html=html.slice(0,-6)+captureHTML()+'</div>';if(st.lic)html=html.slice(0,-6)+licenceHTML()+'</div>';if(st.rep)html=html.slice(0,-6)+reportHTML()+'</div>';if(st.credits)html=html.slice(0,-6)+creditsHTML()+'</div>';if(st.spk)html=html.slice(0,-6)+speakersHTML()+'</div>';if(st.scn)html=html.slice(0,-6)+scenesHTML()+'</div>';if(st.eq)html=html.slice(0,-6)+eqHTML()+'</div>';if(st.wf)html=html.slice(0,-6)+wfHTML()+'</div>';if(st.skins)html=html.slice(0,-6)+pickerHTML()+'</div>';if(st.tour!=null)html=html.slice(0,-6)+tourHTML()+'</div>';html=uniqueFids(html);
  var t=document.createElement('template');t.innerHTML=html;morphKids(live,t.content,typed);
  var kept=!!af&&live.contains(af);
  if(kept&&typed){if(af.value!==v){af.value=v;af.setSelectionRange(s0,s1);}}
  else if(kept&&text&&(af.value!==af.defaultValue||af.value!==v)){af.value=af.defaultValue;if(all)af.select();else af.selectionStart=af.selectionEnd=af.value.length;}
  var sc=live.firstElementChild;if(sc)sc.classList.toggle('held',!!drag);
- landmarks();fitText();fit();syncDisplays();cutNote();menuFit();noteTimer();
+ landmarks();fitText();fit();syncDisplays();cutNote();menuFit();tourFit();noteTimer();
  if(blt){var bl2=live.querySelector('.brw-list');if(bl2&&bl2.scrollTop!==blt)bl2.scrollTop=blt;}
  var dl=topDialog();modal(dl);
  if(fid&&!kept){var n=live.querySelector('[data-fid="'+fid+'"]');if(n&&!n.closest('[inert]')){n.focus({preventScroll:true});if(n.matches('input,textarea'))n.selectionStart=n.selectionEnd=n.value.length;}}
@@ -438,7 +474,7 @@ function menuFit(){var pm=live.querySelector('.pc-menu');if(!pm)return;var sc=li
 var noteShown=null,noteAt=0,noteT=0;
 function noteTimer(){if(st.note===noteShown)return;noteShown=st.note;noteAt=Date.now();clearTimeout(noteT);
  if(st.note)noteT=setTimeout(function(){if(st.note===noteShown&&!st.noteOpen){st.note=null;renderLive();}},st.note===errNote?15000:9000);}
-function dialogOpen(){return !!(st.skins||st.browse||st.capture||st.lic||st.rep||st.credits||st.spk||st.scn||st.eq||st.wf);}
+function dialogOpen(){return !!(st.skins||st.browse||st.capture||st.lic||st.rep||st.credits||st.spk||st.scn||st.eq||st.wf||st.tour!=null);}
 function topDialog(){var sc=live.firstElementChild,d=null;if(sc)for(var c=sc.firstElementChild;c;c=c.nextElementSibling)if(c.getAttribute('role')==='dialog')d=c;return d;}
 function modal(d){var sc=live.firstElementChild;if(sc)for(var c=sc.firstElementChild;c;c=c.nextElementSibling){var bg=!!d&&c!==d;if(bg!==c.hasAttribute('inert')){if(bg)c.setAttribute('inert','');else c.removeAttribute('inert');}}}
 function tabStops(d){return Array.prototype.filter.call(d.querySelectorAll('button,input,textarea,[tabindex]'),function(x){return !x.disabled&&x.getAttribute('tabindex')!=='-1'&&!x.closest('[inert]')&&x.getClientRects().length>0;});}
@@ -550,7 +586,9 @@ document.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,A
  if(e.key==='Escape'&&t.matches&&t.matches('input[data-type],input[data-spk],input[data-scn]')&&t.value!==t.defaultValue){t.value=t.defaultValue;t.select();e.preventDefault();return;}
  if(e.key==='Escape'&&st.posOpen&&!dialogOpen()){st.posOpen=false;e.preventDefault();renderLive();var pb=live.querySelector('.pc-b');if(pb)pb.focus({preventScroll:true});return;}
  if(e.key==='Escape'&&st.noteOpen&&!dialogOpen()){st.noteOpen=null;e.preventDefault();renderLive();return;}
- if(e.key==='Escape'&&dialogOpen()){if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.wf)st.wf=false;else if(st.eq)st.eq=false;else if(st.scn)st.scn=false;else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.rep)st.rep=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
+ if(st.tour!=null&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='ArrowRight'||e.key==='ArrowLeft')&&!(t.matches&&t.matches('input,textarea'))){if(e.key==='ArrowRight')tourNext();else tourBack();e.preventDefault();renderLive();sync();syncUi();return;}
+ if(e.key==='?'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!dialogOpen()&&!(t.matches&&t.matches('input,textarea'))){openTour(false);e.preventDefault();renderLive();return;}
+ if(e.key==='Escape'&&dialogOpen()){if(st.tour!=null)closeTour();else if(st.skins||st.browse){st.skins=false;st.browse=false;}else if(st.wf)st.wf=false;else if(st.eq)st.eq=false;else if(st.scn)st.scn=false;else if(st.spk)st.spk=false;else if(st.credits)st.credits=false;else if(st.rep)st.rep=false;else if(st.lic)st.lic=false;else st.capture=false;e.preventDefault();renderLive();return;}
  if(e.ctrlKey||e.metaKey||e.altKey||!t.matches)return;
  var pm=t.closest('.pc-menu');if(pm&&(e.key==='ArrowDown'||e.key==='ArrowUp'||e.key==='Home'||e.key==='End')){var pit=Array.prototype.slice.call(pm.querySelectorAll('.pc-i')),pc=pit.indexOf(t),pn=e.key==='Home'?0:e.key==='End'?pit.length-1:clamp(pc+(e.key==='ArrowDown'?1:-1),0,pit.length-1);if(pit[pn])pit[pn].focus({preventScroll:true});e.preventDefault();return;}
  var bw=st.browse&&t.closest&&t.closest('.brw');
@@ -693,6 +731,10 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'prev':changeSpace((st.sp+SPACES.length-1)%SPACES.length);break;
   case 'next':changeSpace((st.sp+1)%SPACES.length);break;
   case 'skins':st.skins=!st.skins;break;
+  case 'tips':openTour(false);break;
+  case 'tournext':tourNext();break;
+  case 'tourback':tourBack();break;
+  case 'tourskip':closeTour();break;
   case 'skin':if(SKINS.some(function(x){return x.id===v;})){st.skin=v;st.note='<b>'+esc(skinOf(v).name)+'.</b> Click the Drenched name to change the look again.';st.hint=null;}st.skins=false;break;
  }
  // the control that opened a window gets the keyboard back when it closes (see drawLive)
@@ -766,9 +808,9 @@ function sendDropped(f,keep){var id=Date.now()%1e9,at=0;dropping=f.name;
    function(){JUCE.emitEvent('dropIr',{stage:'cancel',id:id});dropping=null;errNote=st.note='<b>'+esc(f.name)+'</b> couldn\u2019t be read.';schedule();});})();}
 var init=null;
 try{var d=window.__JUCE__&&window.__JUCE__.initialisationData&&window.__JUCE__.initialisationData.drenched;if(d&&d.length)init=d[0];}catch(_){}
-if(init){setLibrary(init.library);Object.assign(st,{sp:0,bands:SPACES[0].bands.slice(),rbands:SPACES[0].bands.slice(),pre:SPACES[0].pre});applyFromHost(init);if(init.licence)Object.assign(st.licence,init.licence);if(init.report){Object.assign(st.report,init.report);if(init.report.crash)st.rep=true;}st.bits=+init.bits||64;}
+if(init){setLibrary(init.library);Object.assign(st,{sp:0,bands:SPACES[0].bands.slice(),rbands:SPACES[0].bands.slice(),pre:SPACES[0].pre});applyFromHost(init);if(init.licence)Object.assign(st.licence,init.licence);if(init.report){Object.assign(st.report,init.report);if(init.report.crash)st.rep=true;}st.bits=+init.bits||64;if(init.tipsSeen===false&&!st.rep)openTour(true);}
 else{setLibrary(PREVIEW_LIBRARY);Object.assign(st,{sp:0,bands:SPACES[0].bands.slice(),rbands:SPACES[0].bands.slice(),pre:SPACES[0].pre});}
-try{var hs=(location.hash||'').slice(1);if(SKINS.some(function(x){return x.id===hs;}))st.skin=hs;}catch(_){}
+try{var hs=(location.hash||'').slice(1);if(SKINS.some(function(x){return x.id===hs;}))st.skin=hs;if(/[?&]tips\b/.test(location.search))openTour(true);}catch(_){}
 Object.assign(lastSent,paramValues(st));Object.assign(lastUi,uiState(st));
 renderLive();
 if(JUCE){JUCE.addEventListener('state',applyFromHost);JUCE.addEventListener('meters',onMeters);JUCE.addEventListener('capture',onCapture);JUCE.addEventListener('licence',onLicence);JUCE.addEventListener('report',onReport);JUCE.addEventListener('pasted',onPasted);JUCE.addEventListener('matched',onMatched);JUCE.addEventListener('analysis',onAnalysis);JUCE.addEventListener('dropFailed',onDropFailed);JUCE.addEventListener('spectrum',onSpectrum);JUCE.emitEvent('ready',{});if(st.rep)JUCE.emitEvent('reportOpen',{});

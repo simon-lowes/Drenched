@@ -67,6 +67,8 @@ If Drenched doesn't appear, rescan plug-ins in your host. Logic Pro lists it und
 
 A new instance opens on the first recorded space, St Paul's Hall, with the decay graph showing that room's measured decay. The default look is **Aperture**; there are eleven others (see [Looks](#looks)), and every one has the same controls.
 
+The first time Drenched opens on a computer it offers the **Tips**: eleven short cards, one at a time, each lighting the control it is about (the space, the decay graph, typing a value, Freeze, A and B, locks, All parameters, the windows, the strip and the look), in the look you have open. **Show me** starts them, **Not now** skips them, and they are not offered again. Next, Back, the arrow keys and Escape move through them. To see them again at any time, press **?** or click **Tips** in the Spaces window's tools; in Stage view the tips are about Stage.
+
 The screen has four parts:
 
 - **The space**: its name and a picture or drawing. Click its description to open the Spaces browser; the arrows beside it step through spaces.
@@ -248,6 +250,10 @@ A scene stores every setting and the space under a name, up to 32 per session: o
 - Automate the **Scene** parameter to change rooms on the cut. **Off** leaves the settings alone.
 - Freeze and Low CPU are not stored; they stay as they are.
 - Playing, scenes follow automation within about a twentieth of a second, plus the moment a recorded space or your own file takes to load, the first time; the room plays on as it was until then. A scene whose file can't be found shows it as missing, as a session does, so you can find it in Spaces. An offline bounce changes the scene, room and all, at the point the automation moves, the same in every bounce.
+
+### Tips
+
+The short tour of the screen from [First look](#first-look): press **?** (with no value field focused) or click **Tips** in the Spaces window's tools. Each tip lights one control and says what it does; a control the look or view doesn't have is left out.
 
 ### Reverb speakers
 

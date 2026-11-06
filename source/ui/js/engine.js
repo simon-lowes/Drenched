@@ -135,7 +135,7 @@ function ghostBands(s){return s.link?null:s.side==='R'?s.bands:s.rbands;}
 function sideName(s){return s.side==='R'?'Right':'Left';}
 /* the aria label of a point or a typed band value, with its side while unlinked */
 function bandLabel(s,i){return (s.link?'':sideName(s)+' ')+(s.link?'Decay':'decay')+' at '+FREQ[i]+'Hz';}
-function newState(){var sp=SPACES[0];return eqDefaults({sp:0,bands:sp.bands.slice(),rbands:sp.bands.slice(),link:true,side:'L',mix:30,pre:sp.pre,size:100,bright:0,el:55,dist:40,lx:50,sx:50,output:0,preSync:0,xover:320,locut:80,hicut:14000,width:100,duck:0,mono:0,living:0,move:20,moveRate:0.7,rev:0,gate:0,attack:0,dLvl:0,dDel:0,dCol:0,xfeed:100,cloud:100,cpu:0,mode:'studio',slot:'A',slots:{A:null,B:null},freeze:false,adv:false,browse:false,view:'plan',locks:{},hint:null,note:null,peek:null,posOpen:false,fade:null,lastBand:4,skin:'aperture',skins:false,inL:-60,inR:-60,outL:-60,outR:-60,mh:{},clip:{}});}
+function newState(){var sp=SPACES[0];return eqDefaults({sp:0,bands:sp.bands.slice(),rbands:sp.bands.slice(),link:true,side:'L',mix:30,pre:sp.pre,size:100,bright:0,el:55,dist:40,lx:50,sx:50,output:0,preSync:0,xover:320,locut:80,hicut:14000,width:100,duck:0,mono:0,living:0,move:20,moveRate:0.7,rev:0,gate:0,attack:0,dLvl:0,dDel:0,dCol:0,xfeed:100,cloud:100,cpu:0,mode:'studio',slot:'A',slots:{A:null,B:null},freeze:false,adv:false,browse:false,view:'plan',locks:{},hint:null,note:null,peek:null,posOpen:false,fade:null,lastBand:4,skin:'aperture',skins:false,tour:null,tourList:null,inL:-60,inR:-60,outL:-60,outR:-60,mh:{},clip:{}});}
 var st=newState();
 function spOf(s){return SPACES[s.sp];}
 function getV(s,k){return k==='decay'?decayOf(curBands(s)):s[k];}
@@ -508,6 +508,23 @@ function segAB(s){return '<div class="seg" role="group" aria-label="Compare"><bu
 /* The strip's line: a note left by the last action, or else a line about the control under
    the pointer or the keyboard (s.peek, set by the page: a parameter, a point on the graph, a
    wet EQ band or a button), or else nothing. */
+/* The tips: a short tour on first opening, and from Tips in the Spaces window or the ? key.
+   Each points at a real control (sel, the first match outside the tour); one whose control the
+   look or view lacks is left out, or shown at alt (another control, with its own words) when it
+   has one. up: the control's parent is lit, the whole strip for its line. */
+var TIPS=[
+ {sel:'[role="region"][aria-label="Space"]',t:'The space',b:'The room you are hearing: its name, place and picture. Click the description to browse every space, or step through them with the arrows. Drop a WAV, AIFF, FLAC or SOFA file on the window to load your own.'},
+ {sel:'[role="region"][aria-label="Decay"]',t:'The decay graph',b:'How long each octave band rings, 63 Hz to 8 kHz, as measured in the room. Drag a point to reshape it; hold Shift for fine steps. Unlink gives the left and right their own curves.'},
+ {sel:'[role="region"][aria-label="Controls"]',t:'The main controls',b:'Mix, Decay, Pre-delay, Size, Brightness, Early/Late and Distance. Drag any of them up or down, or nudge one with the arrow keys once it has the keyboard. A small dot beside a control means it differs from the captured space.'},
+ {sel:'input.ro',t:'Type a value',b:'Click a value to type one, in whatever unit you think in: 800 ms, 1,5 s, 12k or off. Enter keeps it; Escape puts the old value back.'},
+ {sel:'[data-act="freeze"]',t:'Freeze',b:'Holds the tail as it sounds now, for as long as it is on. Below the crossover it keeps fading, so the bass never builds up.'},
+ {sel:'[data-act="slot"]',t:'A and B',b:'Two snapshots of every setting and the space. B starts as a copy of A, and changes go to whichever is selected, so switch between them to compare.'},
+ {sel:'[data-act="lock"]',t:'Locks',b:'A new space brings its own decay and pre-delay. A lock holds your value through the change. Mix has one in every look; Stage view shows them all.'},
+ {sel:'[data-act="adv"]',t:'All parameters',b:'Opens the deeper controls in place: the wet low and high cuts, width, ducking, mono below, living tail, reverse and gate, direct sound, cross-feed and Low CPU.'},
+ {sel:'[data-act="eq"]',t:'Wet EQ and Waterfall',b:'Wet EQ shapes the reverb alone, six bands over its live spectrum. Waterfall shows the response you are hearing, measured. The Spaces window\u2019s tools hold the rest: Scenes, Capture a space, Reverb speakers and your own impulse responses.'},
+ {sel:'.hint',up:true,t:'The strip',b:'This line describes whatever the pointer or the keyboard is on, with its value and the captured space\u2019s. The In and Out meters hold their peaks, and a lamp lights at full scale.'},
+ {sel:'.wmb[data-act="skins"]',t:'The look',b:'Click the Drenched name to choose one of twelve looks. Every value stays where it is. To see these tips again, press ? or open Tips in the Spaces window.',
+  alt:{sel:'[data-act="adv"]',b:'This look has no Drenched name on screen: All parameters has a Look button, for one of twelve looks. Every value stays where it is. To see these tips again, press ? or open Tips in the Spaces window.'}}];
 var ACT_HELP={freeze:'<b>Freeze</b> holds the tail as it sounds now, for as long as it is on. Below the crossover it keeps fading, so the bass never builds up.',
  match:'<b>Match a room</b> listens to a recording made in a room and sets the decay to match it.',
  adv:'<b>All parameters</b> opens every setting in place: direct sound, gate, reverse, living tail, width and more.',
@@ -609,7 +626,7 @@ function browserHTML(s){var R=browseResults(s),n=R.rows.length,cur=clamp(s.brwCu
  var lost=spOf(s)&&spOf(s).missing?spOf(s):null;
  var tools=(lost?tool('findir','mload','Find '+esc(lost.name)+'\u2026','Keeps your settings'):'')+tool('loadir','mload','Load your own IR\u2026','WAV, AIFF, FLAC, SOFA')+tool('capture','mcap','Capture a space\u2026','Sweep or clap, and record')+tool('speakers','mspk','Reverb speakers\u2026','Level and delay each')+
   tool('eq','meq','Wet EQ\u2026',eqFlat(s)?'Six bands, flat':eqUsed(s)+(eqUsed(s)===1?' band':' bands')+' in use')+tool('wf','mwf','Waterfall\u2026','Decay and live spectrum')+tool('scenes','mscn','Scenes\u2026',s.scenes&&s.scenes.length?s.scenes.length+' stored':'For each shot')+
-  (LIBRARY.length?tool('credits','mcred','Recording credits\u2026',LIBRARY.length+' recorded'):'')+tool('report','mrep','Report a bug\u2026','Send what went wrong')+(s.licence&&s.licence.state==='beta'?'':tool('licence','mlic','Licence\u2026',s.licence&&s.licence.state==='licensed'?'Activated':s.licence&&s.licence.state==='ended'?'Trial ended':'Trial'));
+  (LIBRARY.length?tool('credits','mcred','Recording credits\u2026',LIBRARY.length+' recorded'):'')+tool('report','mrep','Report a bug\u2026','Send what went wrong')+tool('tips','mtips','Tips\u2026','A short tour of the screen')+(s.licence&&s.licence.state==='beta'?'':tool('licence','mlic','Licence\u2026',s.licence&&s.licence.state==='licensed'?'Activated':s.licence&&s.licence.state==='ended'?'Trial ended':'Trial'));
  return '<div class="cap brw'+(R.ref?' sim':'')+'" role="dialog" aria-modal="true" aria-labelledby="brw-h" tabindex="-1" data-fid="dlg-brw"><div class="cbox"><div class="chd"><h2 id="brw-h">Spaces</h2><span class="brw-n">'+SPACES.length+' to choose from. Type to search, the arrow keys move, Enter picks, and Shift with Enter lists the ones that sound like the highlighted space.</span><button class="cx" data-act="browse" aria-label="Close">Close</button></div>'+
   '<div class="brw-top"><input id="brw-q" data-fid="brw-q" type="text" value="'+esc(q)+'" placeholder="Search by name, place, kind or microphone" autocomplete="off" spellcheck="false" role="combobox" aria-label="Search the spaces" aria-autocomplete="list" aria-expanded="true" aria-controls="brw-list"'+(n?' aria-activedescendant="brw-r'+cur+'"':'')+'>'+simb+'</div>'+
   '<div class="brw-kinds" role="group" aria-label="Kind">'+chips+'</div>'+
