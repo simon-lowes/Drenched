@@ -908,24 +908,34 @@ TEST_CASE ("A chosen photograph a phone stored on its side is looked at upright"
     DRENCHED_NEEDS_MESSAGE_LOOP();
     Bridge b;
 
-    juce::MemoryBlock upright;
-    REQUIRE (juce::File (DRENCHED_TEST_DATA_DIR).getChildFile ("scene").getChildFile ("chapel.rgb").loadFileAsData (upright));
-    constexpr int side = SceneNet::side;
-    const auto* u = static_cast<const std::uint8_t*> (upright.getData());
+    // The picture is kept in the repository, so that an ordinary run reads a JPEG as the
+    // plugin does and never writes one: the JPEG writer JUCE carries shifts negative
+    // numbers, which the undefined behaviour sanitizer stops at.
+    // DRENCHED_UPDATE_SESSIONS=1 makes the picture again.
+    const auto scenes = juce::File (DRENCHED_TEST_DATA_DIR).getChildFile ("scene");
+    const auto kept = scenes.getChildFile ("chapel-sideways.jpg");
 
-    // As a phone stores a portrait shot: a quarter turn anticlockwise, orientation 6.
-    std::vector<std::uint8_t> stored (upright.getSize());
+    if (updating())
+    {
+        juce::MemoryBlock upright;
+        REQUIRE (scenes.getChildFile ("chapel.rgb").loadFileAsData (upright));
+        constexpr int side = SceneNet::side;
+        const auto* u = static_cast<const std::uint8_t*> (upright.getData());
 
-    for (int y = 0; y < side; ++y)
-        for (int x = 0; x < side; ++x)
-            for (int c = 0; c < 3; ++c)
-                stored[static_cast<size_t> (((side - 1 - x) * side + y) * 3 + c)] = u[(y * side + x) * 3 + c];
+        // As a phone stores a portrait shot: a quarter turn anticlockwise, orientation 6.
+        std::vector<std::uint8_t> stored (upright.getSize());
 
-    const auto jpeg = jpegWithOrientation (stored, side, side, 6);
-    const juce::TemporaryFile temp (".jpg");
-    REQUIRE (temp.getFile().replaceWithData (jpeg.getData(), jpeg.getSize()));
+        for (int y = 0; y < side; ++y)
+            for (int x = 0; x < side; ++x)
+                for (int c = 0; c < 3; ++c)
+                    stored[static_cast<size_t> (((side - 1 - x) * side + y) * 3 + c)] = u[(y * side + x) * 3 + c];
 
-    const auto room = lookAtFile (b, temp.getFile());
+        const auto jpeg = jpegWithOrientation (stored, side, side, 6);
+        REQUIRE (kept.replaceWithData (jpeg.getData(), jpeg.getSize()));
+    }
+
+    REQUIRE (kept.existsAsFile());
+    const auto room = lookAtFile (b, kept);
     REQUIRE (room["error"].isVoid());
     REQUIRE (room["seen"].size() == 5);
     CHECK (room["seen"][0]["name"].toString() == "church/indoor");
