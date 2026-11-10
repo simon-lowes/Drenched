@@ -312,6 +312,23 @@ TEST_CASE ("ui sets the interface state the page owns, and nothing else", "[brid
         CHECK (b.ui (UiIDs::speakers).toString().length() == 1024);
     }
 
+    SECTION ("the graph is one of the two there are; anything else is the decay graph")
+    {
+        b.send ("ui", R"({"graph": "decay"})");
+        CHECK (b.ui (UiIDs::graph) == "decay");
+
+        for (const auto* json : { R"({"graph": "EQ"})", R"({"graph": 1})", R"({"graph": ["eq"]})", R"({"graph": null})" })
+        {
+            INFO (json);
+            b.send ("ui", R"({"graph": "eq"})");
+            b.send ("ui", json);
+            CHECK (b.ui (UiIDs::graph) == "decay");
+        }
+
+        b.send ("ui", "{\"graph\": \"" + juce::String::repeatedString ("eq", 100000) + "\"}");
+        CHECK (b.ui (UiIDs::graph) == "decay");
+    }
+
     tree.removeListener (&watcher);
 }
 
@@ -393,6 +410,19 @@ TEST_CASE ("eqSolo listens to one EQ band alone until the page lets go, reloads,
     CHECK (b.plugin->eqSoloBand() == WetEqualiser::noSolo);
     b.send ("eqSolo");
     CHECK (b.plugin->eqSoloBand() == WetEqualiser::noSolo);
+
+    // Only a whole band number the engine has: anything else is no solo, never a guess
+    // (an out-of-range band once left the dry sound muted with no band heard alone).
+    for (const auto* json : { R"({"band": 12})", R"({"band": -2})", R"({"band": 2.5})", R"({"band": 1e10})",
+                              R"({"band": -1e10})", R"({"band": "3"})", R"({"band": true})", R"({"band": [3]})",
+                              R"({"band": null})" })
+    {
+        INFO (json);
+        b.send ("eqSolo", R"({"band": 3})");
+        REQUIRE (b.plugin->eqSoloBand() == 3);
+        b.send ("eqSolo", json);
+        CHECK (b.plugin->eqSoloBand() == WetEqualiser::noSolo);
+    }
 
     // The page reloading (its solo button gone) ends a solo too.
     b.send ("eqSolo", R"({"band": 0})");

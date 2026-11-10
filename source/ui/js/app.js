@@ -367,7 +367,10 @@ st.report={state:'idle',message:'',crash:false,details:'',steps:'',crashText:''}
    drawn like any window; where it and the spot go is measured after the page is drawn
    (tourFit), since every look lays the controls out differently. ---- */
 var tourNew=false;
-function tourSteps(){var sc=live.firstElementChild,out=[];if(!sc)return out;var has=function(sel){var n=sel&&sc.querySelector(sel);return !!n&&!n.closest('.tour');};TIPS.forEach(function(t,i){if(has(t.sel))out.push({i:i,alt:false});else if(t.alt&&has(t.alt.sel))out.push({i:i,alt:true});});return out;}
+/* a tip's control: the first match on the screen itself, never one in a window (the tour's own,
+   or the Spaces window that Tips is closing while the list is made) */
+function tourTarget(sc,sel){if(!sc||!sel)return null;var ns=sc.querySelectorAll(sel);for(var k=0;k<ns.length;k++)if(!ns[k].closest('[role="dialog"]'))return ns[k];return null;}
+function tourSteps(){var sc=live.firstElementChild,out=[];if(!sc)return out;var has=function(sel){return !!tourTarget(sc,sel);};TIPS.forEach(function(t,i){if(has(t.sel))out.push({i:i,alt:false});else if(t.alt&&has(t.alt.sel))out.push({i:i,alt:true});});return out;}
 /* the tip at a step of the tour, with the words and control it shows there */
 function tourTip(list,i){var e=list[Math.min(i,list.length-1)],t=TIPS[e.i];return e.alt?Object.assign({},t,t.alt):t;}
 function openTour(welcome){st.browse=false;st.hint=null;st.tourList=null;st.tour=welcome?-1:0;tourNew=!!welcome;}
@@ -385,8 +388,8 @@ function tourHTML(){var i=st.tour,list=i<0?null:tourList(),n=list?list.length:0,
 /* The spot takes the control's place on the 1200x760 screen (the screen is scaled, so the
    measurements are scaled back) and the card sits below it, else above, else beside it. A tip
    whose control has gone (a view changed under it) is shown in the middle, without a spot. */
-function tourFit(){var d=live.querySelector('.tour');if(!d)return;var sc=live.firstElementChild,spot=d.querySelector('.tour-spot'),card=d.querySelector('.tour-card'),i=st.tour,tip=i>=0&&st.tourList&&st.tourList.length?tourTip(st.tourList,i):null,n=tip?sc.querySelector(tip.sel):null;
- if(n&&n.closest('.tour'))n=null;if(n&&tip.up&&n.parentElement!==sc)n=n.parentElement;
+function tourFit(){var d=live.querySelector('.tour');if(!d)return;var sc=live.firstElementChild,spot=d.querySelector('.tour-spot'),card=d.querySelector('.tour-card'),i=st.tour,tip=i>=0&&st.tourList&&st.tourList.length?tourTip(st.tourList,i):null,n=tip?tourTarget(sc,tip.sel):null;
+ if(n&&tip.up&&n.parentElement!==sc)n=n.parentElement;
  var sr=sc.getBoundingClientRect(),k=sr.width/W||1,cw=card.offsetWidth,ch=card.offsetHeight,pad=8,S=null;
  if(n){var r=n.getBoundingClientRect();if(r.width>0&&r.height>0){S={l:Math.max(0,(r.left-sr.left)/k-pad),t:Math.max(0,(r.top-sr.top)/k-pad)};S.w=Math.min(W-S.l,r.width/k+2*pad);S.h=Math.min(H-S.t,r.height/k+2*pad);}}
  d.classList.toggle('lit',!!S);
@@ -407,7 +410,7 @@ function reportHTML(){var R=st.report,crash=!!R.crash,busy=R.state==='sending',d
   '<label class="ll" for="rep-text">'+(crash?'What were you doing, if you remember?':'What were you doing, and what went wrong?')+'</label>'+
   '<div class="lrow top"><textarea id="rep-text" data-fid="rep-text" data-in="repText" placeholder="Step by step: what you did, what you expected, and what happened instead"'+dis+'>'+esc(st.repText)+'</textarea></div>'+
   '<label class="ll" for="rep-mail">Your email, if you\u2019d like a reply (optional)</label>'+
-  '<div class="lrow"><input id="rep-mail" data-fid="rep-mail" data-in="repMail" type="email" autocomplete="email" spellcheck="false" value="'+esc(st.repMail)+'"'+dis+'></div>'+
+  '<div class="lrow"><input id="rep-mail" data-fid="rep-mail" data-in="repMail" type="text" inputmode="email" autocomplete="email" spellcheck="false" value="'+esc(st.repMail)+'"'+dis+'></div>'+
   '<button class="ldisc" data-act="repshow" aria-expanded="'+st.repShow+'">What\u2019s sent with it</button>'+
   (st.repShow?'<pre class="rpre" tabindex="0" aria-label="What\u2019s sent with it">'+esc(sent||'\u2026')+'</pre>':'')+
   '<p class="lmsg'+(R.state==='failed'?' err':'')+'">'+esc(R.message||'')+'</p>'+
