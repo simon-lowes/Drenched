@@ -1,0 +1,7 @@
+# What the undefined behaviour sanitizer is told to let pass. Only code that is not ours
+# and that we cannot change belongs here, one line each, with why.
+
+# JUCE's own copy of libjpeg keeps its bit buffer in a signed long and shifts bits off the
+# top of it (jdhuff.c, jfdctint.c). The bits shifted out are never read. Reading a JPEG a
+# person chose for Describe a room goes through it.
+shift-base:/jpglib/
