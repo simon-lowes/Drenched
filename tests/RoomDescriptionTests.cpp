@@ -328,7 +328,7 @@ TEST_CASE ("Numbers that are not sizes leave the room its size", "[describe]")
     REQUIRE (describeRoom ("a tunnel 0.3 km long").depth == Catch::Approx (300.0f));
 }
 
-TEST_CASE ("\"in\" after a number is a word, not inches", "[describe]")
+TEST_CASE ("The word in after a number is a word, not inches", "[describe]")
 {
     const auto a = describeRoom ("a room 5 by 4 in the basement");
     REQUIRE (a.depth == 5.0f);
