@@ -823,6 +823,115 @@ TEST_CASE ("A whole photograph the page sends is looked at in the background, th
     CHECK (b.window.interface == 1);
 }
 
+namespace
+{
+    /** A JPEG of a picture given as rows of RGB, with an Exif segment saying the
+        orientation, as a camera writes it. */
+    juce::MemoryBlock jpegWithOrientation (const std::vector<std::uint8_t>& rgb, int width, int height, int orientation)
+    {
+        juce::Image image (juce::Image::RGB, width, height, false);
+
+        for (int y = 0; y < height; ++y)
+            for (int x = 0; x < width; ++x)
+            {
+                const auto* p = rgb.data() + static_cast<size_t> ((y * width + x) * 3);
+                image.setPixelAt (x, y, juce::Colour (p[0], p[1], p[2]));
+            }
+
+        juce::MemoryOutputStream encoded;
+        juce::JPEGImageFormat jpeg;
+        jpeg.setQuality (0.97f);
+        REQUIRE (jpeg.writeImageToStream (image, encoded));
+
+        // Exif, big-endian: IFD0 with the one tag.
+        const std::uint8_t exif[] { 0xFF, 0xE1, 0x00, 0x22, 'E', 'x', 'i', 'f', 0, 0,
+                                    'M', 'M', 0, 42, 0, 0, 0, 8,
+                                    0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, static_cast<std::uint8_t> (orientation), 0, 0,
+                                    0, 0, 0, 0 };
+        juce::MemoryBlock out;
+        out.append (encoded.getData(), 2); // the start of image
+        out.append (exif, sizeof (exif));
+        out.append (static_cast<const char*> (encoded.getData()) + 2, encoded.getDataSize() - 2);
+        return out;
+    }
+
+    juce::var lookAtFile (Bridge& b, const juce::File& file)
+    {
+        juce::var result;
+        auto done = false;
+        b.plugin->describePhotoAsync (file, [&] (const juce::var& r) { result = r; done = true; });
+        REQUIRE (testing::pumpUntil ([&] { return done; }, 60000));
+        return result;
+    }
+}
+
+TEST_CASE ("A picture file that says it is enormous is refused before it is decoded", "[bridge][describe][messageloop]")
+{
+    DRENCHED_NEEDS_MESSAGE_LOOP();
+    Bridge b;
+
+    // A PNG of 1,000,000 x 1,000,000 pixels in a few kilobytes: decoding it would want
+    // 4 TB, which JUCE's PNG reader does not check before writing.
+    juce::MemoryOutputStream png;
+    const std::uint8_t signature[] { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n' };
+    png.write (signature, sizeof (signature));
+    juce::MemoryOutputStream ihdr;
+    ihdr.write ("IHDR", 4);
+    ihdr.writeIntBigEndian (1000000);
+    ihdr.writeIntBigEndian (1000000);
+    const std::uint8_t format[] { 8, 2, 0, 0, 0 };
+    ihdr.write (format, sizeof (format));
+    png.writeIntBigEndian (13);
+    png.write (ihdr.getData(), ihdr.getDataSize());
+    png.writeIntBigEndian (0); // the check, unread
+    juce::MemoryBlock zeros (4096, true);
+    png.writeIntBigEndian (static_cast<int> (zeros.getSize()));
+    png.write ("IDAT", 4);
+    png.write (zeros.getData(), zeros.getSize());
+    png.writeIntBigEndian (0);
+
+    const juce::TemporaryFile temp (".png");
+    REQUIRE (temp.getFile().replaceWithData (png.getData(), png.getDataSize()));
+
+    const auto result = lookAtFile (b, temp.getFile());
+    CHECK (result["error"].toString().contains ("isn't one it can read"));
+    CHECK (b.ui (UiIDs::spaceId).toString() != "described");
+
+    // And a file that is no picture at all says the same.
+    const juce::TemporaryFile text (".jpg");
+    REQUIRE (text.getFile().replaceWithText ("not a picture"));
+    CHECK (lookAtFile (b, text.getFile())["error"].toString().contains ("isn't one it can read"));
+}
+
+TEST_CASE ("A chosen photograph a phone stored on its side is looked at upright", "[bridge][describe][messageloop]")
+{
+    DRENCHED_NEEDS_MESSAGE_LOOP();
+    Bridge b;
+
+    juce::MemoryBlock upright;
+    REQUIRE (juce::File (DRENCHED_TEST_DATA_DIR).getChildFile ("scene").getChildFile ("chapel.rgb").loadFileAsData (upright));
+    constexpr int side = SceneNet::side;
+    const auto* u = static_cast<const std::uint8_t*> (upright.getData());
+
+    // As a phone stores a portrait shot: a quarter turn anticlockwise, orientation 6.
+    std::vector<std::uint8_t> stored (upright.getSize());
+
+    for (int y = 0; y < side; ++y)
+        for (int x = 0; x < side; ++x)
+            for (int c = 0; c < 3; ++c)
+                stored[static_cast<size_t> (((side - 1 - x) * side + y) * 3 + c)] = u[(y * side + x) * 3 + c];
+
+    const auto jpeg = jpegWithOrientation (stored, side, side, 6);
+    const juce::TemporaryFile temp (".jpg");
+    REQUIRE (temp.getFile().replaceWithData (jpeg.getData(), jpeg.getSize()));
+
+    const auto room = lookAtFile (b, temp.getFile());
+    REQUIRE (room["error"].isVoid());
+    REQUIRE (room["seen"].size() == 5);
+    CHECK (room["seen"][0]["name"].toString() == "church/indoor");
+    CHECK (room["kind"].toString() == "chapel");
+}
+
 TEST_CASE ("Every event name the page may send is handled, and no other", "[bridge]")
 {
     Bridge b;

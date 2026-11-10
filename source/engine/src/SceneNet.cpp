@@ -27,11 +27,17 @@ struct Reader
     const std::uint8_t* data;
     std::size_t size, at = 0;
 
-    void take (void* out, std::size_t n)
+    /** Throws unless n more bytes are there: called before anything is made to hold
+        them, so a cut or broken file is never answered with a huge allocation. */
+    void need (std::size_t n) const
     {
         if (n > size - at)
             throw SceneNetProblem ("the scene model file is cut short");
+    }
 
+    void take (void* out, std::size_t n)
+    {
+        need (n);
         std::memcpy (out, data + at, n);
         at += n;
     }
@@ -56,6 +62,9 @@ struct Reader
 
     std::vector<float> floats (std::size_t n)
     {
+        if (n > (size - at) / sizeof (float))
+            throw SceneNetProblem ("the scene model file is cut short");
+
         std::vector<float> out (n);
         take (out.data(), n * sizeof (float)); // little-endian file, little-endian hosts
 
@@ -69,6 +78,7 @@ struct Reader
     std::vector<std::string> names (int n)
     {
         const auto length = count (1u << 20);
+        need (static_cast<std::size_t> (length));
         std::string blob (static_cast<std::size_t> (length), '\0');
         take (blob.data(), blob.size());
 
@@ -159,10 +169,12 @@ struct SceneNet::Model
             c.inChannels = in.count (4096);
             c.size = in.count (15);
             c.stride = in.count (4);
-            c.pad = static_cast<int> (in.u32());
+            const auto pad = in.u32();
 
-            if (c.pad > 7)
+            if (pad > 7)
                 throw SceneNetProblem ("the scene model file pads a convolution more than makes sense");
+
+            c.pad = static_cast<int> (pad);
 
             // Each layer takes the last one's channels, except a downsample, which
             // takes the block's input like its first convolution.
@@ -173,6 +185,7 @@ struct SceneNet::Model
 
             const auto n = static_cast<std::size_t> (c.outChannels) * static_cast<std::size_t> (c.inChannels)
                          * static_cast<std::size_t> (c.size * c.size);
+            in.need (n);
             c.weights.resize (n);
             in.take (c.weights.data(), n);
             c.scale = in.floats (static_cast<std::size_t> (c.outChannels));
@@ -190,6 +203,7 @@ struct SceneNet::Model
         if (fcRows != classes || features != channels)
             throw SceneNetProblem ("the scene model file's classifier does not fit its features");
 
+        in.need (static_cast<std::size_t> (classes) * static_cast<std::size_t> (features));
         fcWeights.resize (static_cast<std::size_t> (classes) * static_cast<std::size_t> (features));
         in.take (fcWeights.data(), fcWeights.size());
         fcScale = in.floats (static_cast<std::size_t> (classes));
@@ -203,17 +217,53 @@ struct SceneNet::Model
         if (convolutions.empty() || convolutions.front().name != "conv1")
             throw SceneNetProblem ("the scene model file does not start with the first convolution");
 
+        // And every map the forward pass makes fits what reads it: each convolution's
+        // input has the channels it takes and is at least its kernel, and a block's
+        // shortcut (its input, or the downsample of it) is the shape of what it adds to.
+        // look() relies on this to read inside every map.
+        struct Shape
+        {
+            int channels, height, width;
+            bool operator== (const Shape& o) const noexcept { return channels == o.channels && height == o.height && width == o.width; }
+        };
+
+        const auto through = [] (const Shape& in, const Convolution& c)
+        {
+            if (c.inChannels != in.channels)
+                throw SceneNetProblem ("the scene model file's convolutions do not fit together");
+
+            const auto padded = std::min (in.height, in.width) + 2 * c.pad;
+
+            if (padded < c.size)
+                throw SceneNetProblem ("the scene model file's maps get smaller than its kernels");
+
+            return Shape { c.outChannels, (in.height + 2 * c.pad - c.size) / c.stride + 1, (in.width + 2 * c.pad - c.size) / c.stride + 1 };
+        };
+
+        auto shape = through ({ 3, side, side }, convolutions.front());
+
         for (std::size_t i = 1; i < convolutions.size();)
         {
             if (i + 1 >= convolutions.size() || convolutions[i].name.find (".conv1") == std::string::npos
                 || convolutions[i + 1].name.find (".conv2") == std::string::npos)
                 throw SceneNetProblem ("the scene model file's blocks are not residual blocks");
 
+            const auto added = through (through (shape, convolutions[i]), convolutions[i + 1]);
             i += 2;
 
+            auto shortcut = shape;
+
             if (i < convolutions.size() && convolutions[i].name.find ("downsample") != std::string::npos)
-                ++i;
+                shortcut = through (shape, convolutions[i++]);
+
+            if (! (shortcut == added))
+                throw SceneNetProblem ("the scene model file's blocks do not add up");
+
+            shape = added;
         }
+
+        if (shape.channels != features)
+            throw SceneNetProblem ("the scene model file's classifier does not fit its features");
     }
 
     /** out = convolution (in), with its bias, as im2col then a blocked matrix product. */
@@ -684,6 +734,243 @@ std::vector<std::uint8_t> scaleForSceneNet (const std::uint8_t* pixels, int widt
         }
     }
 
+    return out;
+}
+
+//==============================================================================
+namespace
+{
+
+std::uint32_t bigEndian16 (const std::uint8_t* p) noexcept { return (static_cast<std::uint32_t> (p[0]) << 8) | p[1]; }
+std::uint32_t littleEndian16 (const std::uint8_t* p) noexcept { return static_cast<std::uint32_t> (p[0]) | (static_cast<std::uint32_t> (p[1]) << 8); }
+
+std::uint32_t bigEndian32 (const std::uint8_t* p) noexcept
+{
+    return (static_cast<std::uint32_t> (p[0]) << 24) | (static_cast<std::uint32_t> (p[1]) << 16)
+         | (static_cast<std::uint32_t> (p[2]) << 8) | p[3];
+}
+
+/** The Orientation tag (0x0112) of IFD0 in a JPEG's Exif segment, or 1. */
+int exifOrientation (const std::uint8_t* exif, std::size_t size) noexcept
+{
+    if (size < 14 || std::memcmp (exif, "Exif\0\0", 6) != 0)
+        return 1;
+
+    const auto* tiff = exif + 6;
+    const auto length = size - 6;
+    const auto little = tiff[0] == 'I' && tiff[1] == 'I';
+
+    if (! little && ! (tiff[0] == 'M' && tiff[1] == 'M'))
+        return 1;
+
+    const auto u16 = [&] (std::size_t at) { return little ? littleEndian16 (tiff + at) : bigEndian16 (tiff + at); };
+    const auto u32 = [&] (std::size_t at)
+    {
+        return little ? (u16 (at) | (u16 (at + 2) << 16)) : ((u16 (at) << 16) | u16 (at + 2));
+    };
+
+    if (u16 (2) != 42)
+        return 1;
+
+    const auto ifd = static_cast<std::size_t> (u32 (4));
+
+    if (ifd > length || length - ifd < 2)
+        return 1;
+
+    const auto entries = static_cast<std::size_t> (u16 (ifd));
+
+    for (std::size_t e = 0; e < entries; ++e)
+    {
+        const auto at = ifd + 2 + 12 * e;
+
+        if (at > length || length - at < 12)
+            break;
+
+        if (u16 (at) == 0x0112 && u16 (at + 2) == 3) // a SHORT
+        {
+            const auto value = static_cast<int> (u16 (at + 8));
+            return value >= 1 && value <= 8 ? value : 1;
+        }
+    }
+
+    return 1;
+}
+
+void readJpeg (const std::uint8_t* b, std::size_t size, PictureHeader& header) noexcept
+{
+    std::size_t at = 2; // after the start of image
+
+    while (at + 4 <= size)
+    {
+        if (b[at] != 0xFF)
+            return; // not a marker where one should be: broken
+
+        const auto marker = b[at + 1];
+
+        if (marker == 0xFF) // fill
+        {
+            ++at;
+            continue;
+        }
+
+        at += 2;
+
+        if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD8))
+            continue; // markers with nothing after them
+
+        if (marker == 0xD9 || marker == 0xDA)
+            return; // the end, or the image data, before any frame header
+
+        const auto length = static_cast<std::size_t> (bigEndian16 (b + at));
+
+        if (length < 2 || length > size - at)
+            return;
+
+        const auto* payload = b + at + 2;
+        const auto payloadSize = length - 2;
+
+        if (marker == 0xE1 && header.orientation == 1)
+            header.orientation = exifOrientation (payload, payloadSize);
+
+        // The frame header: SOF0 .. SOF15 but for DHT (C4), JPG (C8) and DAC (CC).
+        if (marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC)
+        {
+            if (payloadSize >= 5)
+            {
+                header.height = bigEndian16 (payload + 1);
+                header.width = bigEndian16 (payload + 3);
+            }
+
+            return;
+        }
+
+        at += length;
+    }
+}
+
+void readGif (const std::uint8_t* b, std::size_t size, PictureHeader& header) noexcept
+{
+    if (size < 13)
+        return;
+
+    // The logical screen, then the first image's own size, which is what a decoder makes.
+    auto width = littleEndian16 (b + 6), height = littleEndian16 (b + 8);
+    std::size_t at = 13;
+
+    if ((b[10] & 0x80) != 0)
+        at += 3u * (2u << (b[10] & 7));
+
+    while (at < size)
+    {
+        if (b[at] == 0x21) // an extension: its label, then blocks until an empty one
+        {
+            at += 2;
+
+            while (at < size && b[at] != 0)
+                at += 1u + b[at];
+
+            ++at;
+        }
+        else if (b[at] == 0x2C) // the first image
+        {
+            if (size - at >= 9)
+            {
+                width = std::max (width, littleEndian16 (b + at + 5));
+                height = std::max (height, littleEndian16 (b + at + 7));
+            }
+
+            break;
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    header.width = width;
+    header.height = height;
+}
+
+} // namespace
+
+PictureHeader readPictureHeader (const std::uint8_t* b, std::size_t size) noexcept
+{
+    PictureHeader header;
+
+    if (b == nullptr)
+        return header;
+
+    if (size >= 24 && std::memcmp (b, "\x89PNG\r\n\x1a\n", 8) == 0 && std::memcmp (b + 12, "IHDR", 4) == 0)
+    {
+        header.format = PictureHeader::Format::png;
+        header.width = bigEndian32 (b + 16);
+        header.height = bigEndian32 (b + 20);
+    }
+    else if (size >= 4 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF)
+    {
+        header.format = PictureHeader::Format::jpeg;
+        readJpeg (b, size, header);
+    }
+    else if (size >= 6 && (std::memcmp (b, "GIF87a", 6) == 0 || std::memcmp (b, "GIF89a", 6) == 0))
+    {
+        header.format = PictureHeader::Format::gif;
+        readGif (b, size, header);
+    }
+
+    return header;
+}
+
+bool pictureCanBeRead (const PictureHeader& header) noexcept
+{
+    return header.format != PictureHeader::Format::unknown
+        && header.width > 0 && header.height > 0
+        && header.width <= largestPictureSide && header.height <= largestPictureSide
+        && static_cast<std::uint64_t> (header.width) * header.height <= largestPicturePixels;
+}
+
+std::vector<std::uint8_t> orientPicture (const std::uint8_t* rgb, int& width, int& height, int orientation)
+{
+    const auto w = std::max (width, 0), h = std::max (height, 0);
+
+    if (orientation < 1 || orientation > 8)
+        orientation = 1;
+
+    const auto turned = orientation >= 5; // 5 .. 8 swap the sides
+    const auto seenWidth = turned ? h : w, seenHeight = turned ? w : h;
+    std::vector<std::uint8_t> out (static_cast<std::size_t> (w) * static_cast<std::size_t> (h) * 3);
+
+    if (rgb == nullptr)
+        return out;
+
+    for (int y = 0; y < seenHeight; ++y)
+    {
+        for (int x = 0; x < seenWidth; ++x)
+        {
+            // The stored pixel seen at (x, y).
+            int sx = x, sy = y;
+
+            switch (orientation)
+            {
+                case 2: sx = w - 1 - x; break;                    // mirrored left to right
+                case 3: sx = w - 1 - x; sy = h - 1 - y; break;    // upside down
+                case 4: sy = h - 1 - y; break;                    // mirrored top to bottom
+                case 5: sx = y; sy = x; break;                    // transposed
+                case 6: sx = y; sy = h - 1 - x; break;            // stored a quarter turn anticlockwise
+                case 7: sx = w - 1 - y; sy = h - 1 - x; break;    // transversed
+                case 8: sx = w - 1 - y; sy = x; break;            // stored a quarter turn clockwise
+                default: break;
+            }
+
+            const auto* p = rgb + (static_cast<std::size_t> (sy) * static_cast<std::size_t> (w) + static_cast<std::size_t> (sx)) * 3;
+            auto* o = out.data() + (static_cast<std::size_t> (y) * static_cast<std::size_t> (seenWidth) + static_cast<std::size_t> (x)) * 3;
+            o[0] = p[0];
+            o[1] = p[1];
+            o[2] = p[2];
+        }
+    }
+
+    width = seenWidth;
+    height = seenHeight;
     return out;
 }
 

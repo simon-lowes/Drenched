@@ -278,3 +278,190 @@ TEST_CASE ("Long descriptions get a short name", "[describe]")
     REQUIRE (room.kind == "garage");
     REQUIRE (understood (room, "glass"));
 }
+
+TEST_CASE ("A full stop ends a sentence, not the word before it", "[describe]")
+{
+    const auto bathroom = describeRoom ("A small tiled bathroom.");
+    REQUIRE (bathroom.knownRoom);
+    REQUIRE (bathroom.place == "a bathroom");
+    REQUIRE (understood (bathroom, "tiled"));
+
+    const auto church = describeRoom ("It's a stone church.");
+    REQUIRE (church.kind == "chapel");
+
+    const auto hall = describeRoom ("Concert hall. Very reverberant.");
+    REQUIRE (hall.place == "a concert hall");
+    REQUIRE (understood (hall, "very reverberant"));
+
+    const auto high = describeRoom ("a cathedral, 3.5 m high.");
+    REQUIRE (high.height == 3.5f);
+    REQUIRE (high.depth > 50.0f); // the cathedral's own length, not the 3.5
+
+    // the points that belong to numbers stay
+    REQUIRE (describeRoom ("bedroom 3.5 by 4.2 m.").width == 3.5f);
+    REQUIRE (describeRoom ("bedroom of 12 sq.m").width * describeRoom ("bedroom of 12 sq.m").depth == Catch::Approx (12.0f).margin (0.01));
+}
+
+TEST_CASE ("Numbers that are not sizes leave the room its size", "[describe]")
+{
+    const auto plain = describeRoom ("concert hall");
+
+    for (const auto* words : { "concert hall with a 2 second reverb", "concert hall, 2.5 s decay", "concert hall, RT60 3 s",
+                               "concert hall, 20 ms pre-delay", "concert hall built in 1890", "concert hall, 1890s",
+                               "concert hall number 2", "concert hall with a 3 piece band", "concert hall, 500 Hz boom",
+                               "concert hall, -6 dB" })
+    {
+        INFO (words);
+        const auto room = describeRoom (words);
+        REQUIRE (room.width == plain.width);
+        REQUIRE (room.depth == plain.depth);
+        REQUIRE (room.height == plain.height);
+    }
+
+    // a size still says itself with a unit, a direction or in a row
+    REQUIRE (describeRoom ("concert hall, 30 m").depth == 30.0f);
+    REQUIRE (describeRoom ("concert hall 30 long").depth == 30.0f);
+    REQUIRE (describeRoom ("concert hall 30 by 20").width == 20.0f);
+
+    // kilometres are metres too, kept to what the model holds
+    REQUIRE (describeRoom ("a tunnel 2 km long").depth == 400.0f);
+    REQUIRE (describeRoom ("a tunnel 0.3 km long").depth == Catch::Approx (300.0f));
+}
+
+TEST_CASE ("\"in\" after a number is a word, not inches", "[describe]")
+{
+    const auto a = describeRoom ("a room 5 by 4 in the basement");
+    REQUIRE (a.depth == 5.0f);
+    REQUIRE (a.width == 4.0f);
+
+    const auto b = describeRoom ("a hall 30 by 20 in Vienna");
+    REQUIRE (b.depth == 30.0f);
+    REQUIRE (b.width == 20.0f);
+
+    REQUIRE (describeRoom ("a booth 40 inches wide").width == Catch::Approx (1.016f));
+}
+
+TEST_CASE ("A unit written once is every side's in the row", "[describe]")
+{
+    for (const auto* words : { "20 by 30 feet garage", "garage 20 x 30 ft", "garage 20 ft by 30", "garage 20' x 30'" })
+    {
+        INFO (words);
+        const auto room = describeRoom (words);
+        REQUIRE (room.width == Catch::Approx (6.096f));
+        REQUIRE (room.depth == Catch::Approx (9.144f));
+    }
+
+    // feet and inches together
+    const auto bedroom = describeRoom ("12'6\" x 10' bedroom");
+    REQUIRE (bedroom.depth == Catch::Approx (3.81f));
+    REQUIRE (bedroom.width == Catch::Approx (3.048f));
+    REQUIRE (describeRoom ("hall 40 ft 6 inches long").depth == Catch::Approx (12.3444f));
+
+    // square feet are the feet squared
+    REQUIRE (describeRoom ("bedroom of 200 square feet").width * describeRoom ("bedroom of 200 square feet").depth == Catch::Approx (18.58f).margin (0.01));
+
+    // a row in metres stays in metres
+    const auto metres = describeRoom ("garage 5 by 4");
+    REQUIRE (metres.depth == 5.0f);
+    REQUIRE (metres.width == 4.0f);
+}
+
+TEST_CASE ("Square metres are not a town square", "[describe]")
+{
+    const auto living = describeRoom ("a 40 square metre living room");
+    REQUIRE (living.place == "a living room");
+    REQUIRE (living.kind == "room");
+    REQUIRE (living.width * living.depth == Catch::Approx (40.0f).margin (0.01));
+    REQUIRE (living.width != Catch::Approx (living.depth)); // its own proportions, not squared
+
+    const auto hall = describeRoom ("300 cubic metres hall");
+    REQUIRE (hall.place == "a concert hall");
+    REQUIRE (hall.width != Catch::Approx (hall.depth)); // "cubic" is not a shape here
+
+    REQUIRE (describeRoom ("town square").kind == "outdoor");
+    REQUIRE (describeRoom ("market square").kind == "outdoor");
+    REQUIRE (describeRoom ("a square room").width == Catch::Approx (describeRoom ("a square room").depth));
+}
+
+TEST_CASE ("Each size, sound and place counts once", "[describe]")
+{
+    // the kind's own name is not read again as a size or a sound
+    REQUIRE (describeRoom ("long corridor").depth == 40.0f);
+    REQUIRE (describeRoom ("small room").width == 2.8f);
+    REQUIRE (! understood (describeRoom ("echo chamber"), "echo"));
+
+    // a qualified size is that size, not that and the plain one too
+    const auto small = describeRoom ("small bedroom"), quite = describeRoom ("quite small bedroom"), plain = describeRoom ("bedroom");
+    REQUIRE (volume (small) < volume (quite));
+    REQUIRE (volume (quite) < volume (plain));
+    REQUIRE (! understood (quite, "small"));
+
+    REQUIRE (describeRoom ("very long hall").depth == Catch::Approx (describeRoom ("hall").depth * 2.8f));
+    REQUIRE (describeRoom ("very high hall").height == Catch::Approx (describeRoom ("hall").height * 2.2f));
+
+    const auto very = describeRoom ("very reverberant church"), once = describeRoom ("reverberant church"), church = describeRoom ("church");
+    REQUIRE (! understood (very, "reverberant"));
+    REQUIRE (mid (very) / mid (church) == Catch::Approx (1.9f).epsilon (0.02));
+    REQUIRE (mid (once) / mid (church) == Catch::Approx (1.35f).epsilon (0.02));
+
+    // a size word with the plain room still sizes it
+    REQUIRE (volume (describeRoom ("a large room")) > volume (describeRoom ("a room")));
+    REQUIRE (describeRoom ("a long room").depth > describeRoom ("a room").depth);
+}
+
+TEST_CASE ("A measurement of nothing never makes a room of nothing", "[describe]")
+{
+    const std::string huge (320, '9'); // past what a double holds
+
+    for (const auto& words : { std::string ("0 m long, 40 square metres"), std::string ("hall 0 m high, seats 800"),
+                               std::string ("0 m wide room, 300 cubic metres"), std::string ("0 by 0 by 0 metres"),
+                               std::string ("0.0 m long room"), std::string ("seats 0"), "hall " + huge + " m long, 40 square metres",
+                               "hall " + huge + " seats", "room " + huge + " cubic metres" })
+    {
+        INFO (words);
+        const auto room = describeRoom (words);
+
+        for (const auto t : room.decaySeconds)
+        {
+            REQUIRE (std::isfinite (t));
+            REQUIRE (t >= 0.1f);
+            REQUIRE (t <= 20.0f);
+        }
+
+        for (const auto side : { room.width, room.depth, room.height })
+        {
+            REQUIRE (std::isfinite (side));
+            REQUIRE (side >= 0.6f);
+        }
+
+        REQUIRE (std::isfinite (room.predelayMs));
+        REQUIRE (std::isfinite (room.earlyLatePercent));
+    }
+}
+
+TEST_CASE ("A long name is never cut inside a character", "[describe]")
+{
+    for (const auto* words : { "50x40\xe3\x83\xa1\xe3\x83\xbc\xe3\x83\x88\xe3\x83\xab\xe3\x81\xae\xe5\xa4\xa7\xe3\x81\x8d\xe3\x81\xaa\xe3\x82\xb3\xe3\x83\xb3\xe3\x82\xb5\xe3\x83\xbc\xe3\x83\x88\xe3\x83\x9b\xe3\x83\xbc\xe3\x83\xab",
+                               "\xe5\xa4\xa7\xe8\x81\x96\xe5\xa0\x82\xf0\x9f\x8e\xb5\xf0\x9f\x8e\xb5\xf0\x9f\x8e\xb5\xf0\x9f\x8e\xb5\xf0\x9f\x8e\xb5\xf0\x9f\x8e\xb5\xf0\x9f\x8e\xb5\xf0\x9f\x8e\xb5\xf0\x9f\x8e\xb5\xf0\x9f\x8e\xb5\xf0\x9f\x8e\xb5\xf0\x9f\x8e\xb5 stone" })
+    {
+        const auto name = describeRoom (words).name;
+        REQUIRE (name.size() <= 48);
+        REQUIRE_THAT (name, Catch::Matchers::EndsWith ("..."));
+
+        // every character before the ellipsis is whole UTF-8
+        const auto body = name.substr (0, name.size() - 3);
+
+        for (std::size_t i = 0; i < body.size();)
+        {
+            const auto lead = static_cast<unsigned char> (body[i]);
+            const std::size_t length = lead < 0x80 ? 1 : (lead >> 5) == 6 ? 2 : (lead >> 4) == 14 ? 3 : (lead >> 3) == 30 ? 4 : 0;
+            REQUIRE (length > 0);
+            REQUIRE (i + length <= body.size());
+
+            for (std::size_t k = 1; k < length; ++k)
+                REQUIRE ((static_cast<unsigned char> (body[i + k]) & 0xC0) == 0x80);
+
+            i += length;
+        }
+    }
+}

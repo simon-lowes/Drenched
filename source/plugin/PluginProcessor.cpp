@@ -1024,10 +1024,25 @@ void DrenchedProcessor::describePhotoAsync (const juce::File& file, std::functio
         if (! file.existsAsFile())
             throw std::runtime_error ("the file isn't there");
 
-        auto image = juce::ImageFileFormat::loadFrom (file);
+        constexpr auto cantRead = "Drenched reads JPEG, PNG and GIF pictures, and this isn't one it can read";
+        constexpr juce::int64 largestFile = 256 * 1024 * 1024;
+        juce::MemoryBlock bytes;
+
+        if (file.getSize() > largestFile || ! file.loadFileAsData (bytes))
+            throw std::runtime_error (cantRead);
+
+        // The header first: a decoder holds every pixel at once and may not say when it
+        // can't get the memory (JUCE's PNG reader then writes through a null pointer), so
+        // a picture that says it is enormous, even in a file of a few bytes, is not decoded.
+        const auto header = readPictureHeader (static_cast<const std::uint8_t*> (bytes.getData()), bytes.getSize());
+
+        if (! pictureCanBeRead (header))
+            throw std::runtime_error (cantRead);
+
+        auto image = juce::ImageFileFormat::loadFrom (bytes.getData(), bytes.getSize());
 
         if (! image.isValid())
-            throw std::runtime_error ("Drenched reads JPEG, PNG and GIF pictures, and this isn't one it can read");
+            throw std::runtime_error (cantRead);
 
         // Halved (each new pixel the mean of four) until it is a sensible size, then every
         // pixel counted into the model's 224 x 224.
@@ -1050,7 +1065,14 @@ void DrenchedProcessor::describePhotoAsync (const juce::File& file, std::functio
             }
         }
 
-        return scaleForSceneNet (rgb.data(), bitmap.width, bitmap.height, 3, bitmap.width * 3);
+        // Upright, as the camera saw it: decoders give the rows as stored, and a phone stores
+        // a portrait photograph on its side with an EXIF orientation saying so.
+        auto width = bitmap.width, height = bitmap.height;
+
+        if (header.orientation != 1)
+            rgb = orientPicture (rgb.data(), width, height, header.orientation);
+
+        return scaleForSceneNet (rgb.data(), width, height, 3, width * 3);
     }, std::move (done));
 }
 
