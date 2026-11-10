@@ -646,3 +646,54 @@ TEST_CASE ("A captured space is saved, then plays", "[plugin][messageloop][captu
     if (! folderExisted)
         folder.deleteRecursively();
 }
+
+TEST_CASE ("Matching a recording there isn't the memory to listen to says so", "[match][messageloop]")
+{
+    DRENCHED_NEEDS_MESSAGE_LOOP();
+
+    if (! testing::AllocationCounter::seesMalloc())
+        SKIP ("JUCE's own allocations can't be refused in this build");
+
+    // Listening to a many-channel recording takes a block of every channel at once: 16 MB
+    // for 64 channels. Out of memory (a 32-bit host above all), the loader thread must hand
+    // back an error: an exception there is swallowed, and the page would wait for ever.
+    const auto dir = scratch ("drenched-match-memory");
+    const auto file = dir.getChildFile ("many channels.wav");
+
+    {
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> writer (wav.createWriterFor (file.createOutputStream().release(), 48000.0, 64, 16, {}, 0));
+        REQUIRE (writer != nullptr);
+        juce::AudioBuffer<float> silence (64, 48000);
+        silence.clear();
+
+        for (int second = 0; second < 6; ++second)
+            REQUIRE (writer->writeFromAudioSampleBuffer (silence, 0, silence.getNumSamples()));
+    }
+
+    auto plugin = std::make_unique<testing::Plugin>();
+    juce::var answer;
+    bool answered = false;
+
+    {
+        const testing::RefusedAllocations noRoom (16u << 20);
+
+        testing::onMessageThread ([&]
+        {
+            (*plugin)->matchRoomAsync (file, [&] (const juce::var& result)
+            {
+                answer = result;
+                answered = true;
+            });
+        });
+
+        testing::pumpUntil ([&] { return answered; }, 20000);
+    }
+
+    REQUIRE (answered);
+    CHECK (answer["error"].toString().contains ("enough memory"));
+    CHECK (answer["error"].toString().contains (file.getFileName()));
+
+    plugin.reset();
+    dir.deleteRecursively();
+}

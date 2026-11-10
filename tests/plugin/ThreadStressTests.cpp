@@ -657,3 +657,99 @@ TEST_CASE ("The host can prepare the plugin on its own thread while the interfac
     REQUIRE (testing::builderIdle (p));
     CHECK (p.roomIsCurrent());
 }
+
+TEST_CASE ("A save from another thread while a session loaded off it is applied saves that session", "[plugin][stress][sessions-thread]")
+{
+    // The host loads a session on a thread of its own, then saves from one (autosave, undo
+    // history) while the message thread is applying it. The save must be that session, not
+    // the interface state before it with the new session's parameters. Applying is slowest
+    // when the message thread has to read the session's file itself: here it appears only
+    // after the host's thread looked for it.
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("drenched-save-while-applying");
+    dir.deleteRecursively();
+    REQUIRE (dir.createDirectory());
+    const auto file = dir.getChildFile ("arrives late.wav");
+
+    testing::Plugin plugin;
+    auto& p = *plugin;
+
+    juce::MemoryBlock loaded;
+
+    testing::onMessageThread ([&]
+    {
+        p.prepareToPlay (48000.0, 512);
+        p.getUiState().setProperty (UiIDs::locks, "before", nullptr);
+
+        juce::MemoryBlock data;
+        p.getStateInformation (data);
+        auto xml = juce::AudioProcessor::getXmlFromBinary (data.getData(), static_cast<int> (data.getSize()));
+        REQUIRE (xml != nullptr);
+        auto session = juce::ValueTree::fromXml (*xml);
+        session.getChildWithProperty ("id", ParamIDs::mix).setProperty ("value", 11.0, nullptr);
+        auto ui = session.getOrCreateChildWithName (UiIDs::tree, nullptr);
+        ui.setProperty (UiIDs::locks, "loaded", nullptr);
+        ui.setProperty (UiIDs::spaceId, "user", nullptr);
+        ui.setProperty (UiIDs::irPath, file.getFullPathName(), nullptr);
+        juce::AudioProcessor::copyXmlToBinary (*session.createXml(), loaded);
+    });
+
+    std::thread ([&] { p.setStateInformation (loaded.getData(), static_cast<int> (loaded.getSize())); }).join();
+
+    {
+        // Long enough to read that applying it takes a while.
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> writer (wav.createWriterFor (file.createOutputStream().release(), 96000.0, 8, 16, {}, 0));
+        REQUIRE (writer != nullptr);
+        juce::AudioBuffer<float> noise (8, 96000);
+        juce::Random random (5);
+
+        for (int second = 0; second < 30; ++second)
+        {
+            for (int ch = 0; ch < 8; ++ch)
+                for (int n = 0; n < noise.getNumSamples(); ++n)
+                    noise.setSample (ch, n, (random.nextFloat() - 0.5f) * std::exp (-0.2f * static_cast<float> (second)));
+
+            REQUIRE (writer->writeFromAudioSampleBuffer (noise, 0, noise.getNumSamples()));
+        }
+    }
+
+    std::atomic<bool> done { false };
+    std::atomic<int> saves { 0 }, mixedUp { 0 };
+
+    std::thread host ([&]
+    {
+        while (! done.load())
+        {
+            juce::MemoryBlock data;
+            p.getStateInformation (data);
+            auto xml = juce::AudioProcessor::getXmlFromBinary (data.getData(), static_cast<int> (data.getSize()));
+            const auto session = juce::ValueTree::fromXml (*xml);
+            const auto mix = static_cast<double> (session.getChildWithProperty ("id", ParamIDs::mix).getProperty ("value"));
+            const auto locks = session.getChildWithName (UiIDs::tree).getProperty (UiIDs::locks).toString();
+            ++saves;
+
+            if (std::abs (mix - 11.0) < 0.01 && locks != "loaded")
+                ++mixedUp;
+        }
+    });
+
+    while (saves.load() < 10)
+        std::this_thread::yield();
+
+    // What the timer does at its next tick; a save on the message thread does it too.
+    testing::onMessageThread ([&] { juce::MemoryBlock data; p.getStateInformation (data); });
+
+    const auto after = saves.load();
+
+    while (saves.load() < after + 10)
+        std::this_thread::yield();
+
+    done.store (true);
+    host.join();
+
+    CHECK (mixedUp.load() == 0);
+    CHECK (testing::onMessageThread ([&] { return p.getUiState().getProperty (UiIDs::locks).toString(); }) == "loaded");
+
+    testing::onMessageThread ([&] { p.releaseResources(); });
+    dir.deleteRecursively();
+}

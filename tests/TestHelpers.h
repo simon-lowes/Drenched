@@ -96,4 +96,16 @@ namespace testing
         /** Whether malloc and free are counted too (glibc, without a sanitizer). */
         static bool seesMalloc() noexcept;
     };
+
+    /** While alive, allocations of at least this many bytes fail on every thread, as when
+        memory has run out: operator new throws std::bad_alloc, and where
+        AllocationCounter::seesMalloc() malloc and its kin return nullptr. One at a time. */
+    class RefusedAllocations
+    {
+    public:
+        explicit RefusedAllocations (std::size_t atLeastBytes);
+        ~RefusedAllocations();
+        RefusedAllocations (const RefusedAllocations&) = delete;
+        RefusedAllocations& operator= (const RefusedAllocations&) = delete;
+    };
 }

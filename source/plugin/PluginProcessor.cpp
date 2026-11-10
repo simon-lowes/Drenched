@@ -790,7 +790,21 @@ void DrenchedProcessor::matchRoomAsync (const juce::File& file, std::function<vo
 
     loader.addJob ([file, alive, done = std::move (done)]() mutable
     {
-        auto result = matchRecording (file);
+        juce::var result;
+
+        // Listening allocates. Out of memory (a 32-bit host above all), the pool would
+        // swallow the exception and the page wait for an answer that never comes, so it
+        // says so instead, as the other loader jobs do.
+        try
+        {
+            result = matchRecording (file);
+        }
+        catch (const std::exception&)
+        {
+            auto object = std::make_unique<juce::DynamicObject>();
+            object->setProperty ("error", "There isn't enough memory to listen to " + file.getFileName() + ".");
+            result = juce::var (object.release());
+        }
 
         juce::MessageManager::callAsync ([alive, done = std::move (done), result = std::move (result)]
         {
@@ -1755,6 +1769,18 @@ void DrenchedProcessor::recallScene (int number, bool loadNow)
             {
                 juce::String error;
                 auto response = readImpulseResponse (file, error);
+
+                // As when it is read in the background (sceneImpulseResponseRead): a file that
+                // can't be read is missing, so a bounce plays what playback did, rather than
+                // the last file under the scene's name.
+                if (response == nullptr)
+                {
+                    const std::lock_guard lock (recordedLock);
+                    recorded.reset();
+                    recordedPath = now;
+                    recordedMissing = true;
+                }
+
                 applyLoadedImpulseResponse (file, std::move (response), error, false);
             }
             else
@@ -2328,16 +2354,30 @@ void DrenchedProcessor::setStateInformation (const void* data, int sizeInBytes)
 
 void DrenchedProcessor::applyPendingSession()
 {
-    juce::ValueTree session;
+    juce::ValueTree waiting, session;
 
     {
         const std::lock_guard lock (savedLock);
-        session = std::exchange (pendingSession, {});
+        waiting = pendingSession;
         sessionWaiting.store (false);
+
+        // A copy becomes the state, so the session waiting stays as it was loaded: until it
+        // has been applied, a host saving from another thread saves it (getStateInformation),
+        // not the session before it with the new parameters.
+        if (waiting.isValid())
+            session = waiting.createCopy();
     }
 
-    if (session.isValid())
-        applySession (session);
+    if (! session.isValid())
+        return;
+
+    applySession (session);
+
+    // Now savedSession holds it. A session loaded meanwhile waits on.
+    const std::lock_guard lock (savedLock);
+
+    if (pendingSession == waiting)
+        pendingSession = {};
 }
 
 void DrenchedProcessor::applySessionOffline()

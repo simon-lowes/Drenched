@@ -691,3 +691,45 @@ TEST_CASE ("A scene whose file is still being read leaves the room as it was", "
     testing::onMessageThread ([&] { p.releaseResources(); });
     dir.deleteRecursively();
 }
+
+TEST_CASE ("A scene whose file can't be read plays it as missing in a bounce too", "[scenes][offline]")
+{
+    // A bounce reads a scene's file at once (recallScene with loadNow, as followSceneOffline
+    // does); playback reads it in the background. A file that can't be read must play the
+    // same in both: missing, not the file played before under the scene's name.
+    RecordingCache::shared().clear();
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("drenched-scene-unreadable");
+    dir.deleteRecursively();
+    const auto plate = writePlate (dir);
+    const auto gone = dir.getChildFile ("gone.wav");
+
+    testing::Plugin plugin;
+    auto& p = *plugin;
+
+    testing::onMessageThread ([&]
+    {
+        p.getUiState().setProperty (UiIDs::irPath, gone.getFullPathName(), nullptr);
+        p.getUiState().setProperty (UiIDs::irName, "gone", nullptr);
+        chooseSpace (p, "user");
+        REQUIRE (p.storeScene (0, "Gone") == 1);
+
+        // The session plays plate.wav (read here as the background read would hand it over).
+        juce::String error;
+        auto loaded = DrenchedProcessor::readImpulseResponse (plate, error);
+        REQUIRE (loaded != nullptr);
+        p.getUiState().setProperty (UiIDs::irPath, plate.getFullPathName(), nullptr);
+        p.sceneImpulseResponseRead (plate, std::move (loaded), error);
+        REQUIRE (p.impulseResponseInfo()["name"].toString() == "plate");
+
+        p.prepareToPlay (48000.0, 512);
+        p.recallScene (1, true);
+    });
+
+    REQUIRE (testing::builderIdle (p));
+    const auto info = testing::onMessageThread ([&] { return p.impulseResponseInfo(); });
+    CHECK (static_cast<bool> (info["missing"]));
+    CHECK (info["name"].toString() == "gone");
+
+    testing::onMessageThread ([&] { p.releaseResources(); });
+    dir.deleteRecursively();
+}
