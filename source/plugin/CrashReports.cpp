@@ -175,7 +175,20 @@ namespace
         }
     }
 
-    // crash-<seconds since 1970>.txt in the folder.
+    // The process's id, read when the handlers go in.
+    std::uint64_t processId = 0;
+
+    void appendNumber (char* path, size_t& length, size_t size, std::uint64_t t) noexcept
+    {
+        char digits[24];
+        int n = 0;
+        do { digits[n++] = static_cast<char> ('0' + t % 10); t /= 10; } while (t != 0 && n < 24);
+        while (n > 0 && length + 1 < size)
+            path[length++] = digits[--n];
+    }
+
+    // crash-<seconds since 1970>-<process id>.txt in the folder: a host and its plugin
+    // processes share the folder, and a shared cause can crash two of them in one second.
     void reportPath (char* path, size_t size) noexcept
     {
         copyText (path, size, folderPath.data());
@@ -184,12 +197,10 @@ namespace
         for (; *prefix != 0 && length + 1 < size; ++prefix)
             path[length++] = *prefix;
 
-        char digits[24];
-        int n = 0;
-        auto t = static_cast<std::uint64_t> (std::time (nullptr));
-        do { digits[n++] = static_cast<char> ('0' + t % 10); t /= 10; } while (t != 0 && n < 24);
-        while (n > 0 && length + 1 < size)
-            path[length++] = digits[--n];
+        appendNumber (path, length, size, static_cast<std::uint64_t> (std::time (nullptr)));
+        if (length + 1 < size)
+            path[length++] = '-';
+        appendNumber (path, length, size, processId);
 
         const char* suffix = ".txt";
         for (; *suffix != 0 && length + 1 < size; ++suffix)
@@ -201,6 +212,10 @@ namespace
    #if JUCE_WINDOWS
 
     PVOID vectoredHandler = nullptr;
+
+    // The report's writer, here rather than on the stack (see writeReport) and made when the
+    // module loads, so the handler never runs a first-use initialiser.
+    Writer reportWriter;
     void (__cdecl* previousAbort) (int) = nullptr;
     bool abortInstalled = false;
 
@@ -227,7 +242,8 @@ namespace
         if (GetModuleHandleExA (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                                 reinterpret_cast<LPCSTR> (address), &module) && module != nullptr)
         {
-            char name[MAX_PATH] = {};
+            static char name[MAX_PATH];
+            name[0] = 0;
             GetModuleFileNameA (module, name, MAX_PATH);
             out << (isOurs (address) ? "Drenched" : baseName (name)) << "+";
             out.hex (address - reinterpret_cast<std::uintptr_t> (module));
@@ -243,15 +259,18 @@ namespace
         if (writing.exchange (true))
             return;
 
-        char path[pathLength + 40];
+        // Static, not on the stack: a stack overflow is handled on the thread whose stack
+        // has just run out (writing lets only one thread in here).
+        static char path[pathLength + 40];
         reportPath (path, sizeof (path));
 
-        wchar_t widePath[pathLength + 40] = {};
+        static wchar_t widePath[pathLength + 40];
         if (MultiByteToWideChar (CP_UTF8, 0, path, -1, widePath, static_cast<int> (std::size (widePath))) == 0)
             return;
 
-        Writer out;
-        out.file = CreateFileW (widePath, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        auto& out = reportWriter;
+        out.used = 0;
+        out.file = CreateFileW (widePath, GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (out.file == INVALID_HANDLE_VALUE)
             return;
 
@@ -268,7 +287,7 @@ namespace
         }
         out << "\n" << aboutText.data() << "\n\nStack (module+offset):\n";
 
-        void* frames[48];
+        static void* frames[48];
         const auto count = RtlCaptureStackBackTrace (0, 48, frames, nullptr);
         for (USHORT i = 0; i < count; ++i)
         {
@@ -323,6 +342,7 @@ namespace
         const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*> (base + static_cast<std::uintptr_t> (dos->e_lfanew));
         moduleStart = base;
         moduleEnd = base + nt->OptionalHeader.SizeOfImage;
+        processId = GetCurrentProcessId();
 
         vectoredHandler = AddVectoredExceptionHandler (0, onException);
         previousAbort = std::signal (SIGABRT, onAbort);
@@ -420,7 +440,7 @@ namespace
             reportPath (path, sizeof (path));
 
             Writer out;
-            out.file = ::open (path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+            out.file = ::open (path, O_WRONLY | O_CREAT | O_EXCL, 0600);
 
             if (out.file >= 0)
             {
@@ -471,43 +491,42 @@ namespace
             return;
 
         moduleBase = info.dli_fbase;
+        processId = static_cast<std::uint64_t> (getpid());
+
+        // Kept loaded from now on, so the handler is never left pointing at unloaded code:
+        // another Drenched binary (VST3 and CLAP in one host), or anything else that chains
+        // to it, may hand crashes on to it after this one's instances have all gone.
+        dlopen (info.dli_fname, RTLD_NOW | RTLD_NOLOAD | RTLD_NODELETE);
+
+        // The first backtrace() loads the unwinder, which allocates; done here, so the
+        // handler doesn't do it inside a crash in malloc.
+        void* warm[1];
+        backtrace (warm, 1);
 
         for (size_t i = 0; i < fatalSignals.size(); ++i)
         {
             struct sigaction action {};
             action.sa_sigaction = onSignal;
-            action.sa_flags = SA_SIGINFO;
+            // On the alternate stack when the thread has one: a host's handler set up for
+            // stack overflows only runs if this one, which hands crashes on to it, does too.
+            action.sa_flags = SA_SIGINFO | SA_ONSTACK;
             sigemptyset (&action.sa_mask);
             replaced[i] = sigaction (fatalSignals[i], &action, &previous[i]) == 0;
         }
     }
 
-    void removeHandlers() noexcept
-    {
-        for (size_t i = 0; i < fatalSignals.size(); ++i)
-        {
-            if (! replaced[i])
-                continue;
-
-            // Only if it is still ours: something later may have put its own in.
-            struct sigaction current {};
-            if (sigaction (fatalSignals[i], nullptr, &current) == 0
-                && (current.sa_flags & SA_SIGINFO) != 0 && current.sa_sigaction == onSignal)
-                sigaction (fatalSignals[i], &previous[i], nullptr);
-
-            replaced[i] = false;
-        }
-    }
-
    #endif
 
+   #if JUCE_WINDOWS
     // Takes the handlers away when the module unloads, so nothing calls into unloaded code.
+    // (On macOS and Linux the module stays loaded instead: see installHandlers.)
     struct Remover
     {
         ~Remover() { if (installed.load()) removeHandlers(); }
     };
 
     Remover remover;
+   #endif
 }
 
 //==============================================================================

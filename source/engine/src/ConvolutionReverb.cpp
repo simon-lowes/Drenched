@@ -808,7 +808,9 @@ const ReverbControls& ConvolutionReverb::finiteControls (const ReverbControls& a
         kept.eq[band].shape = asked.eq[band].shape;
     }
 
-    kept.soloBand = asked.soloBand;
+    // Only a real band is a solo: anything else would mute the dry and solo nothing.
+    kept.soloBand = asked.soloBand >= 0 && asked.soloBand < static_cast<int> (WetEqualiser::numBands)
+                        ? asked.soloBand : WetEqualiser::noSolo;
 
     for (std::size_t k = 0; k < maxChannels; ++k)
     {

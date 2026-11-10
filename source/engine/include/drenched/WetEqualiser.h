@@ -97,7 +97,7 @@ private:
     std::array<Biquad::Coefficients, numBands> coefficients {};
     std::array<std::array<Svf, numBands>, maxChannels> filters {};
 
-    int solo = noSolo, soloDesigned = noSolo;
+    int solo = noSolo, soloDesigned = noSolo, soloKind = -1;
     float soloHeard = 0.0f, soloFrom = 0.0f; // how much of the soloed band is heard, 0 to 1
     std::array<Svf, maxChannels> soloFilters {};
 };

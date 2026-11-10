@@ -2049,6 +2049,11 @@ void DrenchedProcessor::render (juce::AudioBuffer<float>& buffer, bool bypassed)
         controls.outputGain = 1.0f;
     }
 
+    // A solo mutes the dry and plays the band's reverberation, so it would undo both of
+    // those: bypassed or unlicensed, nothing is soloed.
+    if (bypassed || ! licence->isAudioAllowed())
+        controls.soloBand = WetEqualiser::noSolo;
+
     if (isNonRealtime())
     {
         const ScopedRealtimeCheckOff offline;

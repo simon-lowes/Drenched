@@ -629,6 +629,40 @@ TEST_CASE ("A soloed EQ band is heard alone while the window shows it, and never
     CHECK (dryClick (play (*bounce, click, [] (int) { return block; })));
 }
 
+TEST_CASE ("Bypassed, a soloed EQ band can't mute the dry sound", "[plugin][host]")
+{
+    // A solo mutes the dry and plays one band of the reverberation; bypass (and the dry-only
+    // sound after the trial) must still be the input as it came in.
+    constexpr int block = 512;
+    std::vector<float> click (static_cast<size_t> (block * 40), 0.0f);
+    const auto at = static_cast<size_t> (block * 4);
+    click[at] = 1.0f;
+
+    testing::Plugin p;
+    prepare (*p, 48000.0, block);
+    setParameter (*p, ParamIDs::mix, 50.0f);
+    p->setEqSolo (0);
+
+    std::vector<float> out (click.size(), 0.0f);
+    juce::MidiBuffer midi;
+
+    for (size_t pos = 0; pos + block <= click.size(); pos += block)
+    {
+        juce::AudioBuffer<float> buffer (2, block);
+
+        for (int c = 0; c < 2; ++c)
+            buffer.copyFrom (c, 0, click.data() + pos, block);
+
+        p->processBlockBypassed (buffer, midi);
+
+        for (int i = 0; i < block; ++i)
+            out[pos + static_cast<size_t> (i)] = buffer.getSample (0, i);
+    }
+
+    CHECK (out[at] == 1.0f);
+    CHECK (energy (out, at + 1) < 1.0e-9);
+}
+
 TEST_CASE ("A session the host loads on a thread of its own plays in a bounce started at once", "[plugin][host]")
 {
     // A host can load a project or preset on a worker thread and bounce straight away,
