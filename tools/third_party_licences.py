@@ -49,6 +49,8 @@ SHIPPED = [
     ("Monocypher", DEPS / "monocypher-src" / "LICENCE.md"),
     ("libmysofa", DEPS / "mysofa-src" / "LICENSE"),
     ("miniz", DEPS / "miniz-src" / "LICENSE"),
+    ("Microsoft WebView2 SDK (Windows)", ROOT / "packaging" / "licences" / "WebView2-SDK-LICENSE.txt"),
+    ("Places365 category and attribute lists (in the scene model)", ROOT / "library" / "scene" / "LICENSE-places365-lists.txt"),
     ("Typefaces (SIL Open Font Licence 1.1)", ROOT / "source" / "ui" / "fonts" / "LICENSE-OFL.txt"),
 ]
 

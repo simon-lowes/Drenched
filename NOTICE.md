@@ -21,7 +21,10 @@ added to this repository.
 | [Monocypher](https://monocypher.org) 4.0.2 | Checking the signature on activation codes (Ed25519) | BSD-2-Clause or CC0-1.0, used under CC0 (Loup Vaillant, Michael Savage, Fabio Scotoni) |
 | [libmysofa](https://github.com/hoene/libmysofa) 1.3.5 | Reading SOFA impulse response files | BSD-3-Clause (Symonics GmbH, Christian Hoene) |
 | [miniz](https://github.com/richgel999/miniz) 3.0.2 (its inflater only) | Decompressing SOFA files | MIT (Rich Geldreich, RAD Game Tools, Valve Software) |
-| [Microsoft WebView2 SDK](https://developer.microsoft.com/microsoft-edge/webview2/) | Interface web view on Windows (loader linked statically) | Microsoft WebView2 SDK licence (redistributable) |
+| [Microsoft WebView2 SDK](https://developer.microsoft.com/microsoft-edge/webview2/) 1.0.2903.40 | Interface web view on Windows (loader linked statically) | BSD-3-Clause-style (Microsoft Corporation; text in the NuGet package, copied to `packaging/licences/`) |
+| [pluginval](https://github.com/Tracktion/pluginval) 1.0.4 | Plug-in validation in CI only: built and run as a separate program, never linked or shipped | GPL-3.0 |
+| [clap-validator](https://github.com/free-audio/clap-validator) 0.3.2 | CLAP validation in CI only (not shipped) | MIT |
+| [FFmpeg](https://ffmpeg.org) with [soxr](https://sourceforge.net/projects/soxr/), [NumPy](https://numpy.org) | Preparing the recorded-space library in `tools/library/build_library.py` (separate programs run by hand; not linked or shipped) | FFmpeg LGPL/GPL builds, soxr LGPL-2.1, NumPy BSD-3-Clause |
 
 JUCE compiles these into the plug-in from its own source tree:
 
@@ -147,6 +150,13 @@ in) into the plugin's own file, read by `source/engine/src/SceneNet.cpp`; no
 machine-learning runtime ships. The converter needs
 [PyTorch](https://pytorch.org) (BSD-3-Clause) and NumPy, run by hand and not
 shipped.
+
+The category and attribute names inside the model file (`categories_places365.txt`,
+`IO_places365.txt`, `labels_sunattribute.txt` from the CSAILVision/places365
+repository) are under the MIT licence, Copyright (c) 2017 Bolei Zhou and MIT
+CSAIL Computer Vision; the text is in
+[library/scene/LICENSE-places365-lists.txt](library/scene/LICENSE-places365-lists.txt)
+and in the licences file the installers ship.
 
 ## Images
 

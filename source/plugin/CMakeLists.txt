@@ -154,7 +154,19 @@ target_compile_definitions(Drenched PRIVATE DRENCHED_BETA=$<BOOL:${DRENCHED_BETA
 option(DRENCHED_ALLOW_TEST_LICENCE "Allow a release build with the test key and a local server" OFF)
 if(NOT DRENCHED_BETA AND NOT DRENCHED_ALLOW_TEST_LICENCE)
     file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../licence/src/Licence.cpp" licenceSource)
-    string(REGEX MATCH "// BEGIN SERVER KEY[^\n]*\n[ \t]*return testKey\\(\\);" usesTestKey "${licenceSource}")
+    # Whatever the spelling (testKey (), drenched::testKey()...): any mention of testKey
+    # between the markers is the test key.
+    string(FIND "${licenceSource}" "// BEGIN SERVER KEY" keyStart)
+    string(FIND "${licenceSource}" "// END SERVER KEY" keyEnd)
+    set(usesTestKey ON)
+    if(keyStart GREATER -1 AND keyEnd GREATER keyStart)
+        math(EXPR keyLength "${keyEnd} - ${keyStart}")
+        string(SUBSTRING "${licenceSource}" ${keyStart} ${keyLength} serverKeyBlock)
+        string(FIND "${serverKeyBlock}" "testKey" testKeyAt)
+        if(testKeyAt EQUAL -1)
+            set(usesTestKey OFF)
+        endif()
+    endif()
     if(usesTestKey)
         message(FATAL_ERROR "Release build (DRENCHED_BETA=OFF) still uses the test licence key: "
                             "run server/scripts/make-keys.mjs to write the production key into Licence.cpp.")
