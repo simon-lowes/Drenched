@@ -941,6 +941,94 @@ TEST_CASE ("Freeze and crossover moves never allocate", "[reverb][freeze][realti
     REQUIRE (counter.count() == 0);
 }
 
+TEST_CASE ("At host rates down to 8 kHz the living tail plays, and Freeze holds the room", "[reverb][living][freeze]")
+{
+    // The tail's decay bands are centred up to 8 kHz. At 12 kHz and below the top ones lie
+    // above Nyquist, where they have nothing to fit; fitted anyway, they left the design
+    // singular, every number in it NaN, the reverb restarting every block and Freeze
+    // silent.
+    for (const auto sr : { 8000.0, 11025.0, 12000.0, 16000.0 })
+    {
+        INFO (sr << " Hz");
+        auto request = hall (sr);
+        request.livingPercent = 50.0f;
+
+        const auto design = designLivingTail (request, synthesiseImpulseResponse (request));
+        REQUIRE (design.valid);
+        CHECK (std::isfinite (design.outputGain));
+        CHECK (design.outputGain > 0.0f);
+
+        for (std::size_t i = 0; i < LivingTailDesign::numLines; ++i)
+        {
+            CHECK (std::isfinite (design.broadband[i]));
+
+            for (const auto& shelf : design.shelves[i])
+                CHECK ((std::isfinite (shelf.b0) && std::isfinite (shelf.b1) && std::isfinite (shelf.b2)
+                        && std::isfinite (shelf.a1) && std::isfinite (shelf.a2)));
+        }
+
+        ConvolutionReverb reverb;
+        reverb.prepare (sr);
+        KernelBuilder builder (reverb);
+        builder.buildNow (request);
+
+        ReverbControls c;
+        c.mix = 1.0f;
+        const auto noise = testing::noise (static_cast<std::size_t> (sr), 31);
+        const auto out = playWithFreeze (reverb, noise, 4.0, 0.8, 1.0e9, sr, c);
+
+        CHECK (reverb.recoveries() == 0);
+        CHECK (std::all_of (out.begin(), out.end(), [] (float x) { return std::isfinite (x); }));
+
+        // Playing, then held: the frozen room is still there seconds later.
+        const auto playing = energyDb (out, 0.5, 0.8, sr) - 10.0 * std::log10 (0.3);
+        const auto held = energyDb (out, 3.0, 4.0, sr);
+        INFO ("playing " << playing << " dB a second, held " << held << " dB a second");
+        CHECK (held > playing - 30.0);
+    }
+}
+
+TEST_CASE ("Freezing a held note adds no hiss above it", "[reverb][living][freeze]")
+{
+    // Freeze switches the tail's loop filters to lossless above the crossover. Switched in
+    // one step, the filters' states no longer matched their coefficients, which left a
+    // broadband transient in the loop that the frozen (lossless) loop then kept for good:
+    // hiss 47 dB under a frozen 2 kHz note, 21 dB over what the note had above 6 kHz.
+    constexpr double sr = 48000.0;
+    auto request = hall (sr);
+    request.livingPercent = 100.0f;
+
+    ConvolutionReverb reverb;
+    reverb.prepare (sr);
+    KernelBuilder builder (reverb);
+    builder.buildNow (request);
+
+    ReverbControls c;
+    c.mix = 1.0f;
+    std::vector<float> note (static_cast<std::size_t> (6.0 * sr));
+
+    for (std::size_t n = 0; n < note.size(); ++n)
+        note[n] = 0.3f * static_cast<float> (std::sin (2.0 * std::numbers::pi * 2000.0 * static_cast<double> (n) / sr));
+
+    const auto out = playWithFreeze (reverb, note, 6.0, 2.0, 1.0e9, sr, c);
+
+    auto high = out;
+
+    for (int k = 0; k < 4; ++k)
+    {
+        Biquad hp;
+        hp.setCoefficients (Biquad::highPass (sr, 6000.0));
+        hp.process (high.data(), high.size());
+    }
+
+    // Energy above 6 kHz a second: the frozen note may keep what it had there, no more.
+    const auto before = energyDb (high, 1.0, 2.0, sr);
+    const auto frozen = energyDb (high, 4.0, 6.0, sr) - 10.0 * std::log10 (2.0);
+    INFO ("above 6 kHz: " << before << " dB playing, " << frozen << " dB frozen; the whole frozen "
+                          << energyDb (out, 4.0, 6.0, sr) - 10.0 * std::log10 (2.0) << " dB");
+    CHECK (frozen < before + 10.0); // switched in one step: +21 dB
+}
+
 TEST_CASE ("Benchmark: CPU use per space", "[.benchmark]")
 {
     for (const double sr : { 48000.0, 96000.0 })
@@ -1145,6 +1233,43 @@ TEST_CASE ("The tail reported to hosts covers the pre-delay, the response and th
     CHECK (reported (false, 1000.0f, 40.0f) >= plain + 1.04 - 1.0e-6);
     CHECK (reported (true, 0.0f, 0.0f) >= plain + ConvolutionReverb::lowCpuLatency (48000.0) / 48000.0 - 1.0e-6);
     CHECK (reported (false, 0.0f, 1.0e6f) <= plain + SpeakerTrim::maxDelayMs / 1000.0 + 1.0e-6);
+}
+
+TEST_CASE ("The tail reported to hosts covers the living tail, however short the response", "[reverb][tail][living]")
+{
+    // The living tail hears the input later than the convolution and rings at the room's
+    // own decay, whatever length the response was cut to: the sample budget shortens a
+    // long response, never the tail. The reported tail must cover it.
+    constexpr double sr = 48000.0;
+    auto request = hall (sr);
+    request.livingPercent = 100.0f;
+
+    ConvolutionReverb reverb;
+    reverb.prepare (sr);
+    KernelBuilder builder (reverb, std::chrono::milliseconds (30), 4 * 4800); // 0.1 s a path
+    builder.buildNow (request);
+    REQUIRE (builder.shortenedTo() > 0.0);
+
+    ReverbControls c;
+    c.mix = 1.0f;
+    std::vector<float> l (static_cast<std::size_t> (3.0 * sr), 0.0f), r (l.size(), 0.0f);
+    l[0] = r[0] = 1.0f;
+    run (reverb, l, r, c);
+    const auto reported = reverb.tailSeconds();
+
+    float loudest = 0.0f;
+    std::size_t last = 0;
+
+    for (const auto x : l)
+        loudest = std::max (loudest, std::abs (x));
+
+    for (std::size_t n = 0; n < l.size(); ++n)
+        if (std::abs (l[n]) > loudest * 1.0e-3f)
+            last = n;
+
+    INFO ("reported " << reported << " s; the output is above -60 dB until " << static_cast<double> (last) / sr << " s");
+    CHECK (reported >= static_cast<double> (last) / sr);
+    CHECK (reported < static_cast<double> (last) / sr + 2.0); // and not wildly more
 }
 
 //==============================================================================
@@ -1588,6 +1713,47 @@ TEST_CASE ("Swapping to the same room while sound plays changes nothing", "[reve
     CHECK (worstL.error < 1.0e-5f);
     CHECK (worstR.error < 1.0e-5f);
     CHECK (drainRetired (swapped).size() == 2);
+}
+
+TEST_CASE ("In low-CPU mode the outgoing room rings to its very end, even a reversed one", "[reverb][swap][latency]")
+{
+    // A kernel with a latency plays everything it hears that much later, so it must be
+    // kept that much longer once it hands over. Retired on time for no latency, it was
+    // cut off mid-sound: a reversed response, loudest at its end, stopped with a jump.
+    // Between identical rooms the handover is transparent, so the output must null
+    // against the same room never swapped.
+    constexpr double sr = 48000.0;
+    const auto latency = ConvolutionReverb::lowCpuLatency (sr);
+    auto room = noiseResponses (9600, 900, 3000.0);
+
+    for (auto& path : room.paths)
+        std::reverse (path.begin(), path.end());
+
+    constexpr std::size_t swapAt = 12000;
+    const auto length = swapAt + 9600 + 1920 + latency + 4800;
+    const auto inputL = testing::noise (length, 73), inputR = testing::noise (length, 74);
+
+    ConvolutionReverb unswapped;
+    unswapped.prepare (sr);
+    unswapped.submit (std::make_unique<ReverbKernel> (room, LivingTailDesign {}, latency));
+    auto wantedL = inputL, wantedR = inputR;
+    run (unswapped, wantedL, wantedR, neutral(), 240);
+
+    std::vector<std::unique_ptr<ReverbKernel>> kernels;
+
+    for (int k = 0; k < 2; ++k)
+        kernels.push_back (std::make_unique<ReverbKernel> (room, LivingTailDesign {}, latency));
+
+    ConvolutionReverb swapped;
+    swapped.prepare (sr);
+    auto l = inputL, r = inputR;
+    playSwapping (swapped, l, r, kernels, { 0, swapAt });
+
+    const auto worstL = worstError (l, wantedL, 0), worstR = worstError (r, wantedR, 0);
+    INFO ("worst error " << worstL.error << " at " << worstL.at << " (left), " << worstR.error << " at " << worstR.at << " (right)");
+    CHECK (worstL.error < 1.0e-5f);
+    CHECK (worstR.error < 1.0e-5f);
+    CHECK (drainRetired (swapped).size() == 1);
 }
 
 TEST_CASE ("Forty swaps while nothing frees kernels neither allocate nor lose a kernel", "[reverb][swap][realtime]")

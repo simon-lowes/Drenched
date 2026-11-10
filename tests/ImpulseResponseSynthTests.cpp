@@ -285,3 +285,59 @@ TEST_CASE ("A described room plays its own size", "[irsynth][describe]")
     broken.roomMetres = { -1.0f, 0.0f, std::numeric_limits<float>::quiet_NaN() };
     REQUIRE (synthesiseImpulseResponse (broken).paths[0] == synthesiseImpulseResponse (plain).paths[0]);
 }
+
+TEST_CASE ("In a room too small for the usual margins, the sources and the listener stay inside it", "[irsynth][describe]")
+{
+    // The sources keep clear of the side walls and the listener of the stage and the back
+    // wall. A described room can be as small as 60 cm, and half that at the smallest Size,
+    // too small for those margins: the stage and the listener then share what room there
+    // is, rather than standing outside the walls.
+    for (const auto width : { 0.6f, 1.0f, 1.19f, 2.0f, 8.0f })
+    {
+        for (const auto depth : { 0.6f, 1.1f, 1.29f, 2.2f, 12.0f })
+        {
+            for (const auto size : { 50.0f, 100.0f, 150.0f })
+            {
+                for (const auto across : { 0.0f, 0.5f, 1.0f })
+                {
+                    for (const auto distance : { 0.0f, 100.0f })
+                    {
+                        auto request = requestFor (0);
+                        request.roomMetres = { width, depth, 2.4f };
+                        request.sizePercent = size;
+                        request.sourceX = request.listenerX = across;
+                        request.distancePercent = distance;
+
+                        const auto [W, D, H] = roomMetresOf (request);
+                        const auto positions = listeningPositionsOf (request);
+                        const auto inside = [&] (const ListeningPositions::Point& p)
+                        {
+                            return p.x >= 0.0 && p.x <= W && p.y >= 0.0 && p.y <= D && p.z >= 0.0 && p.z <= H;
+                        };
+
+                        INFO (W << " x " << D << " x " << H << " m, across " << across << ", distance " << distance);
+
+                        for (const auto& p : positions.sources)
+                            CHECK (inside (p));
+
+                        for (const auto& p : positions.receivers)
+                            CHECK (inside (p));
+
+                        // The listener faces the stage from further down the room.
+                        CHECK (positions.receivers[0].y > positions.sources[0].y);
+                    }
+                }
+            }
+        }
+    }
+
+    // The smallest room of all still plays a finite response.
+    auto request = requestFor (0);
+    request.roomMetres = { 0.6f, 0.6f, 0.6f };
+    request.sizePercent = 50.0f;
+    const auto response = synthesiseImpulseResponse (request);
+    REQUIRE (response.length() > 0);
+
+    for (const auto& path : response.paths)
+        CHECK (std::all_of (path.begin(), path.end(), [] (float x) { return std::isfinite (x); }));
+}

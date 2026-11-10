@@ -249,6 +249,33 @@ RoomMetres roomMetresOf (const ImpulseResponseRequest& request) noexcept
     return { room.width * scale, room.depth * scale, room.height * scale };
 }
 
+ListeningPositions listeningPositionsOf (const ImpulseResponseRequest& request) noexcept
+{
+    const auto [W, D, H] = roomMetresOf (request);
+
+    // Within lo .. hi, or halfway between them in a room too small for both margins.
+    const auto within = [] (double v, double lo, double hi) { return lo <= hi ? std::clamp (v, lo, hi) : 0.5 * (lo + hi); };
+
+    // Two sources across the stage, either side of where the sound is placed
+    // (kept clear of the side walls), two receivers 60 cm apart, the listener
+    // at least 50 cm in front of the stage and 30 cm from the back wall. A room
+    // too shallow for that puts the stage in its front part and the listener
+    // halfway from there to the back wall.
+    const auto roomy = D >= 1.3;
+    const auto sourceY = roomy ? std::clamp (D * 0.12, 0.5, 4.0) : std::min (0.5, 0.4 * D);
+    const auto sourceZ = std::min (1.6, H * 0.6);
+    const auto sourceSpread = std::min (1.5, W * 0.15);
+    const auto sourceX = within (static_cast<double> (request.sourceX) * W, sourceSpread + 0.3, W - sourceSpread - 0.3);
+    const auto listenerY = roomy ? std::clamp (static_cast<double> (listenerDistanceMetres (request)), sourceY + 0.5, D - 0.3)
+                                 : 0.5 * (sourceY + D);
+    const auto listenerX = within (static_cast<double> (request.listenerX) * W, 0.6, W - 0.6);
+    const auto listenerZ = std::min (1.4, H * 0.5);
+    const auto ears = std::min (0.3, W * 0.25);
+
+    return { { { { sourceX - sourceSpread, sourceY, sourceZ }, { sourceX + sourceSpread, sourceY, sourceZ } } },
+             { { { listenerX - ears, listenerY, listenerZ }, { listenerX + ears, listenerY, listenerZ } } } };
+}
+
 ImpulseResponseSet synthesiseImpulseResponse (const ImpulseResponseRequest& request)
 {
     const auto sr = request.sampleRate;
@@ -282,20 +309,10 @@ ImpulseResponseSet synthesiseImpulseResponse (const ImpulseResponseRequest& requ
         reverberantEnergy[side] = 1.0 / (criticalDistance * criticalDistance);
     }
 
-    // Positions: two sources across the stage, either side of where the sound
-    // is placed (kept clear of the side walls), two receivers 60 cm apart.
-    const auto sourceY = std::clamp (D * 0.12, 0.5, 4.0);
-    const auto sourceZ = std::min (1.6, H * 0.6);
-    const auto sourceSpread = std::min (1.5, W * 0.15);
-    const auto sourceX = std::clamp (static_cast<double> (request.sourceX) * W, sourceSpread + 0.3, W - sourceSpread - 0.3);
-    const auto listenerY = std::clamp (static_cast<double> (listenerDistanceMetres (request)), sourceY + 0.5, D - 0.3);
-    const auto listenerX = std::clamp (static_cast<double> (request.listenerX) * W, 0.6, W - 0.6);
-    const auto listenerZ = std::min (1.4, H * 0.5);
-
-    const std::array<Vec3, 2> sources { Vec3 { sourceX - sourceSpread, sourceY, sourceZ },
-                                        Vec3 { sourceX + sourceSpread, sourceY, sourceZ } };
-    const std::array<Vec3, 2> receivers { Vec3 { listenerX - 0.3, listenerY, listenerZ },
-                                          Vec3 { listenerX + 0.3, listenerY, listenerZ } };
+    const auto positions = listeningPositionsOf (request);
+    const auto toVec = [] (const ListeningPositions::Point& p) { return Vec3 { p.x, p.y, p.z }; };
+    const std::array<Vec3, 2> sources { toVec (positions.sources[0]), toVec (positions.sources[1]) };
+    const std::array<Vec3, 2> receivers { toVec (positions.receivers[0]), toVec (positions.receivers[1]) };
 
     // Time zero of the response sits just before the earliest direct sound.
     double earliest = 1.0e9;

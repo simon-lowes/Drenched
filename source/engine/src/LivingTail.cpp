@@ -195,7 +195,7 @@ void LivingTail::prepare (double sampleRate)
     if (current.valid && current.sampleRate != sampleRate)
         current = LivingTailDesign {};
 
-    applyLoopFilters (false);
+    applyLoopFilters (0);
     reset();
 }
 
@@ -257,7 +257,7 @@ void LivingTail::setDesign (const LivingTailDesign& design) noexcept
     if (same)
         glideRemaining = 0;
 
-    applyLoopFilters (wasValid);
+    applyLoopFilters (wasValid ? static_cast<std::size_t> (glideSeconds * rate) : 0);
 }
 
 void LivingTail::setMovement (float depth, float rateHz) noexcept
@@ -282,10 +282,19 @@ void LivingTail::setFrozen (bool shouldFreeze, float crossoverHz) noexcept
 {
     frozen = shouldFreeze;
     crossover = crossoverHz;
-    applyLoopFilters (filterGlideLength > 0); // a new room still gliding in keeps gliding
+
+    // The loop's filter states belong to the coefficients they ran with, so a
+    // switch in one step leaves a transient in the loop, which a frozen
+    // (lossless) loop would keep for ever. 20 ms of glide take it most of the
+    // way back to what the note had there, and cost the held room under 1 dB
+    // (it decays a little on the way); a new room still gliding in keeps
+    // gliding for the rest of its time.
+    const auto quick = std::max<std::size_t> (16, static_cast<std::size_t> (0.02 * rate));
+    const auto left = filterGlideLength - filterGlideDone;
+    applyLoopFilters (filterGlideLength > 0 ? std::max (quick, left) : quick);
 }
 
-void LivingTail::applyLoopFilters (bool glide) noexcept
+void LivingTail::applyLoopFilters (std::size_t glideSamples) noexcept
 {
     if (! current.valid)
     {
@@ -318,12 +327,12 @@ void LivingTail::applyLoopFilters (bool glide) noexcept
         }
     }
 
-    if (glide)
+    if (glideSamples > 0)
     {
         // Stable second-order denominators form a convex set, so every step
         // between two of them is stable too.
         from = now;
-        filterGlideLength = static_cast<std::size_t> (glideSeconds * rate);
+        filterGlideLength = glideSamples;
         filterGlideDone = 0;
     }
     else
@@ -679,7 +688,23 @@ LivingTailDesign designLivingTail (const ImpulseResponseRequest& request, const 
                 target[b] = std::max (target[b], target[b + 1] - maxStepDb);
         }
 
-        const auto x = solve (interaction, target);
+        // A band centred above Nyquist has no frequencies to fit, and its row
+        // would alias onto a lower band's and leave the system singular. It
+        // pins the shelf just below it to 0 dB instead, which the bands still
+        // in range never hear.
+        auto system = interaction;
+
+        for (std::size_t b = 1; b < 8; ++b)
+        {
+            if (static_cast<double> (decayBandCentres[b]) > 0.5 * sr)
+            {
+                system[b].fill (0.0);
+                system[b][b - 1] = 1.0;
+                target[b] = 0.0;
+            }
+        }
+
+        const auto x = solve (system, target);
 
         for (std::size_t k = 0; k < S; ++k)
             d.shelves[i][k] = Biquad::lowShelf (sr, shelfEdge (k), x[k]);
@@ -751,6 +776,21 @@ LivingTailDesign designLivingTail (const ImpulseResponseRequest& request, const 
 
     d.outputGain = tailEnergy > 0.0 && roomEnergy > 0.0 ? static_cast<float> (std::sqrt (roomEnergy / tailEnergy)) : 0.0f;
     return d;
+}
+
+double LivingTailDesign::ringSeconds() const noexcept
+{
+    if (! valid || sampleRate <= 0.0)
+        return 0.0;
+
+    auto longest = 0.0;
+
+    for (std::size_t i = 0; i < numLines; ++i)
+        for (const auto loss : bandLossDb[i])
+            if (loss < 0.0f)
+                longest = std::max (longest, -60.0 / static_cast<double> (loss) * static_cast<double> (delays[i]) / sampleRate);
+
+    return std::min (longest, 600.0);
 }
 
 float applyLivingBlend (ImpulseResponseSet& responses, float livingPercent, double mixingTimeSeconds)

@@ -124,6 +124,22 @@ RoomMetres roomMetresOf (const ImpulseResponseRequest& request) noexcept;
 /** The listener's distance for a request, from its own room (see above). */
 float listenerDistanceMetres (const ImpulseResponseRequest& request) noexcept;
 
+/** Where a synthesised room's two sources and two receivers stand, in metres
+    from the room's front left corner at floor level (x across, y down the
+    room, z up). They keep clear of the walls where the room has space, and
+    stay inside it however small it is. */
+struct ListeningPositions
+{
+    struct Point
+    {
+        double x, y, z;
+    };
+
+    std::array<Point, 2> sources, receivers;
+};
+
+ListeningPositions listeningPositionsOf (const ImpulseResponseRequest& request) noexcept;
+
 /** The RT60 per octave band an output decays at, 0.05 .. 20 s. `right` says
     where the output is: 0 on the left, 1 on the right, 0.5 in the centre,
     which decays at the mean of the two sides' rates. Without a right-hand
