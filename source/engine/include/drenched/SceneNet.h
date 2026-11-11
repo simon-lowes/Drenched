@@ -78,4 +78,33 @@ std::string sceneWords (const SceneReading& reading);
     bytes each (the first three red, green, blue). Allocates. */
 std::vector<std::uint8_t> scaleForSceneNet (const std::uint8_t* pixels, int width, int height, int channels, int rowBytes);
 
+/** What a picture file's first bytes say, read before it is decoded: its format, its
+    size in pixels (the first frame's, for a GIF) and, for a JPEG, the EXIF orientation
+    the camera wrote. Never reads outside the bytes given. */
+struct PictureHeader
+{
+    enum class Format { unknown, png, jpeg, gif };
+
+    Format format = Format::unknown;
+    std::uint32_t width = 0, height = 0; // 0 when the header doesn't say
+    int orientation = 1;                 // EXIF 1 .. 8; 1 is as stored
+};
+
+PictureHeader readPictureHeader (const std::uint8_t* bytes, std::size_t size) noexcept;
+
+/** The largest picture Describe a room decodes: a picture's pixels are all held at once
+    while it is read, and a decoder that cannot get the memory may not say so. */
+constexpr std::uint32_t largestPictureSide = 12000;
+constexpr std::uint64_t largestPicturePixels = 60000000;
+
+/** Whether a picture with this header is one to decode: a PNG, JPEG or GIF that says
+    its size, within the limits above. */
+bool pictureCanBeRead (const PictureHeader& header) noexcept;
+
+/** A picture's rows as they should be seen, from its rows as stored and the EXIF
+    orientation (1 .. 8; anything else is taken as 1): a phone stores a portrait shot
+    on its side and says so. Three bytes a pixel; width and height become the seen
+    picture's. Allocates. */
+std::vector<std::uint8_t> orientPicture (const std::uint8_t* rgb, int& width, int& height, int orientation);
+
 } // namespace drenched

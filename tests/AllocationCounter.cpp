@@ -2,11 +2,16 @@
 // threads that ask for it, so tests can prove the audio path never does either.
 // With glibc (and no sanitizer, which has its own), malloc and free are replaced
 // too, so what JUCE allocates with them directly counts as well.
+//
+// They can also refuse large allocations on every thread (RefusedAllocations), so
+// tests can prove that running out of memory is reported and not fatal.
 
 #include "TestHelpers.h"
 
+#include <atomic>
 #include <cerrno>
 #include <cstdlib>
+#include <limits>
 #include <new>
 
 #if defined (__GLIBC__) && ! defined (__SANITIZE_ADDRESS__) && ! defined (__SANITIZE_THREAD__)
@@ -21,10 +26,22 @@ namespace
     thread_local std::size_t allocations = 0;
     thread_local std::size_t frees = 0;
 
+    // Allocations of at least this many bytes fail. Constant-initialised: malloc runs
+    // before any constructor here does.
+    std::atomic<std::size_t> refusedFrom { std::numeric_limits<std::size_t>::max() };
+
+    bool refused (std::size_t size) noexcept
+    {
+        return size >= refusedFrom.load (std::memory_order_relaxed);
+    }
+
     void* allocate (std::size_t size)
     {
         if (counting && ! DRENCHED_COUNTS_MALLOC)
             ++allocations;
+
+        if (refused (size))
+            throw std::bad_alloc();
 
         if (auto* p = std::malloc (size == 0 ? 1 : size))
             return p;
@@ -36,6 +53,9 @@ namespace
     {
         if (counting && ! DRENCHED_COUNTS_MALLOC)
             ++allocations;
+
+        if (refused (size))
+            throw std::bad_alloc();
 
         const auto align = static_cast<std::size_t> (alignment);
         const auto rounded = (size + align - 1) / align * align;
@@ -78,6 +98,9 @@ std::size_t testing::AllocationCounter::count() const { return allocations; }
 std::size_t testing::AllocationCounter::freed() const { return frees; }
 bool testing::AllocationCounter::seesMalloc() noexcept { return DRENCHED_COUNTS_MALLOC != 0; }
 
+testing::RefusedAllocations::RefusedAllocations (std::size_t atLeastBytes) { refusedFrom.store (atLeastBytes); }
+testing::RefusedAllocations::~RefusedAllocations() { refusedFrom.store (std::numeric_limits<std::size_t>::max()); }
+
 void* operator new (std::size_t size) { return allocate (size); }
 void* operator new[] (std::size_t size) { return allocate (size); }
 void* operator new (std::size_t size, const std::nothrow_t&) noexcept { try { return allocate (size); } catch (...) { return nullptr; } }
@@ -108,6 +131,12 @@ extern "C"
         if (counting)
             ++allocations;
 
+        if (refused (size))
+        {
+            errno = ENOMEM;
+            return nullptr;
+        }
+
         return __libc_malloc (size);
     }
 
@@ -115,6 +144,12 @@ extern "C"
     {
         if (counting)
             ++allocations;
+
+        if (size != 0 && (count > std::numeric_limits<std::size_t>::max() / size || refused (count * size)))
+        {
+            errno = ENOMEM;
+            return nullptr;
+        }
 
         return __libc_calloc (count, size);
     }
@@ -129,6 +164,12 @@ extern "C"
                 ++frees;
         }
 
+        if (refused (size))
+        {
+            errno = ENOMEM;
+            return nullptr;
+        }
+
         return __libc_realloc (p, size);
     }
 
@@ -136,6 +177,12 @@ extern "C"
     {
         if (counting)
             ++allocations;
+
+        if (refused (size))
+        {
+            errno = ENOMEM;
+            return nullptr;
+        }
 
         return __libc_memalign (alignment, size);
     }

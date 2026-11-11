@@ -46,6 +46,9 @@ public:
     std::size_t latency() const noexcept { return fromLeft.latency(); }
     const LivingTailDesign& livingTail() const noexcept { return tailDesign; }
 
+    /** How long the living tail rings once its input stops (see LivingTailDesign::ringSeconds()). */
+    double livingRingSeconds() const noexcept { return livingRing; }
+
     /** How loud the living tail plays alongside this kernel, 0..1: the builder
         took the same share of the late part out of the response, so the
         late reverberation keeps its level (see applyLivingBlend()). */
@@ -64,6 +67,7 @@ private:
     std::size_t irLength;
     PartitionedConvolver fromLeft, fromRight;
     LivingTailDesign tailDesign;
+    double livingRing = 0.0;
     float living = 0.0f;
 };
 

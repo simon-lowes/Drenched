@@ -5,8 +5,11 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
+#include <functional>
 #include <numbers>
+#include <utility>
 #include <vector>
 
 using namespace drenched;
@@ -274,4 +277,123 @@ TEST_CASE ("A band-pass state-variable filter passes its own frequency at full l
 
         REQUIRE (10.0 * std::log10 (a / b) == Catch::Approx (0.0).margin (0.05));
     }
+}
+
+namespace
+{
+    /** How rough a run of samples is (the largest third difference), the measure ClickTests uses. */
+    float roughness (const std::vector<float>& x, std::size_t from, std::size_t to)
+    {
+        float most = 0.0f;
+
+        for (auto i = std::max<std::size_t> (from, 3); i < to; ++i)
+            most = std::max (most, std::abs (x[i] - 3.0f * x[i - 1] + 3.0f * x[i - 2] - x[i - 3]));
+
+        return most;
+    }
+
+    /** A low tone through the equaliser, with `change` made half way. The click it makes, in dB
+        against the tone's level, and how rough the settled tone is anyway. */
+    std::pair<double, double> clickOf (const std::function<void (WetEqualiser&)>& setUp,
+                                       const std::function<void (WetEqualiser&)>& change)
+    {
+        WetEqualiser eq;
+        eq.prepare (rate);
+        setUp (eq);
+
+        const std::size_t length = 96000, at = 48000;
+        std::vector<float> y (length);
+
+        for (std::size_t n = 0; n < length; ++n)
+            y[n] = 0.25f * static_cast<float> (std::sin (2.0 * std::numbers::pi * 110.0 * static_cast<double> (n) / rate));
+
+        for (std::size_t pos = 0; pos < length; pos += 32)
+        {
+            if (pos == at)
+                change (eq);
+
+            eq.advance();
+            eq.process (0, y.data() + pos, 32);
+        }
+
+        float level = 0.0f;
+
+        for (auto i = at - 12000; i < length; ++i)
+            level = std::max (level, std::abs (y[i]));
+
+        const auto dB = [level] (float v) { return 20.0 * std::log10 (std::max (static_cast<double> (v / level), 1.0e-12)); };
+        return { dB (roughness (y, at, at + 24000)), dB (roughness (y, length - 12000, length)) };
+    }
+
+    void setBand (WetEqualiser& eq, std::size_t band, EqBand settings)
+    {
+        auto bands = WetEqualiser::flat;
+        bands[band] = settings;
+        eq.setBands (bands);
+    }
+}
+
+TEST_CASE ("A boosted or cut band changing shape, or the solo moving, doesn't click", "[eq]")
+{
+    using S = EqBand::Shape;
+    const auto quiet = [] (std::pair<double, double> click) { return click.first < std::max (-40.0, click.second + 6.0); };
+
+    SECTION ("a boosted low shelf becomes a high shelf")
+    {
+        REQUIRE (quiet (clickOf ([] (auto& eq) { setBand (eq, 0, { 300.0f, 18.0f, 0.71f, S::lowShelf }); },
+                                 [] (auto& eq) { setBand (eq, 0, { 300.0f, 18.0f, 0.71f, S::highShelf }); })));
+    }
+
+    SECTION ("a boosted bell becomes a high shelf")
+    {
+        REQUIRE (quiet (clickOf ([] (auto& eq) { setBand (eq, 1, { 110.0f, 18.0f, 0.9f, S::bell }); },
+                                 [] (auto& eq) { setBand (eq, 1, { 110.0f, 18.0f, 0.9f, S::highShelf }); })));
+    }
+
+    SECTION ("a cut band is removed: back to its first shape, flat")
+    {
+        REQUIRE (quiet (clickOf ([] (auto& eq) { setBand (eq, 2, { 200.0f, -18.0f, 0.71f, S::lowShelf }); },
+                                 [] (auto& eq) { eq.setBands (WetEqualiser::flat); })));
+    }
+
+    SECTION ("the solo moves from a low shelf to a high shelf")
+    {
+        REQUIRE (quiet (clickOf ([] (auto& eq)
+                                 {
+                                     auto bands = WetEqualiser::flat;
+                                     bands[0] = { 100.0f, 6.0f, 0.71f, S::lowShelf };
+                                     bands[6] = { 10000.0f, 6.0f, 0.71f, S::highShelf };
+                                     eq.setBands (bands);
+                                     eq.setSolo (0);
+                                 },
+                                 [] (auto& eq) { eq.setSolo (6); })));
+    }
+
+    SECTION ("the soloed band changes shape")
+    {
+        REQUIRE (quiet (clickOf ([] (auto& eq) { setBand (eq, 0, { 150.0f, 6.0f, 0.71f, S::lowShelf }); eq.setSolo (0); },
+                                 [] (auto& eq) { setBand (eq, 0, { 150.0f, 6.0f, 0.71f, S::highShelf }); })));
+    }
+}
+
+TEST_CASE ("A band given a zero or broken frequency or Q while playing stays finite", "[eq]")
+{
+    WetEqualiser eq;
+    eq.prepare (rate);
+    setBand (eq, 1, { 700.0f, 6.0f, 0.9f, EqBand::Shape::bell });
+
+    auto x = testing::noise (4800, 5);
+    eq.advance();
+    eq.process (0, x.data(), 32);
+
+    setBand (eq, 1, { 0.0f, 6.0f, -1.0f, EqBand::Shape::bell });
+    for (std::size_t pos = 32; pos + 32 <= x.size(); pos += 32)
+    {
+        eq.advance();
+        eq.process (0, x.data() + pos, 32);
+    }
+
+    for (auto v : x)
+        REQUIRE (std::isfinite (v));
+    REQUIRE (std::isfinite (eq.magnitudeDb (1000.0)));
 }

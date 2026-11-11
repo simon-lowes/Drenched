@@ -110,18 +110,56 @@ void LicenceManager::refresh()
 
     juce::PropertiesFile file (environment.file, fileOptions());
 
+    // A file that is there but can't be read (held open by another program, damaged, or
+    // unreadable after a restore) says nothing about the licence. What was read last
+    // stands, and nothing is written over it: that would lose the activation code in it.
+    if (! file.isValidFile())
+        return;
+
+    const auto today = environment.today();
     activation = readCode (file.getValue ("code"));
     trialFirstDay = file.getValue ("trialStart").getLargeIntValue();
+    auto changed = false;
 
-    // A start further ahead than a whole trial is no clock slip but an edited file (a
-    // far-future start never counts down), so the trial starts over from today: no more
-    // than deleting the value gives. A clock set back by less keeps its days.
-    if (trialFirstDay <= 0 || trialFirstDay > environment.today() + licence::trialDays)
+    // A start put back (below) because the clock was behind, which the clock has now caught
+    // up with: the clock was wrong, not the file, so the trial carries on from that start.
+    // A start can't be later than today on a right clock, so this gives back no more days
+    // than the trial had.
+    if (file.containsKey ("trialStartBefore"))
     {
-        trialFirstDay = environment.today();
-        file.setValue ("trialStart", juce::String (trialFirstDay));
-        file.saveIfNeeded();
+        const auto before = file.getValue ("trialStartBefore").getLargeIntValue();
+
+        if (before <= today)
+        {
+            if (before > trialFirstDay)
+            {
+                trialFirstDay = before;
+                file.setValue ("trialStart", juce::String (trialFirstDay));
+            }
+
+            file.removeValue ("trialStartBefore");
+            changed = true;
+        }
     }
+
+    // A start further ahead than a whole trial is an edited file (a far-future start never
+    // counts down) or a clock far behind, so the trial starts over from today: no more
+    // than deleting the value gives. The start it had is kept, so a clock that was behind
+    // gets its trial back as it was once it is right again. A clock set back by less keeps
+    // its days.
+    if (trialFirstDay <= 0 || trialFirstDay > today + licence::trialDays)
+    {
+        if (trialFirstDay > 0)
+            file.setValue ("trialStartBefore",
+                           juce::String (std::max<std::int64_t> (trialFirstDay, file.getValue ("trialStartBefore").getLargeIntValue())));
+
+        trialFirstDay = today;
+        file.setValue ("trialStart", juce::String (trialFirstDay));
+        changed = true;
+    }
+
+    if (changed)
+        file.saveIfNeeded();
 
     update();
 }

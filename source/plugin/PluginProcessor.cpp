@@ -790,7 +790,21 @@ void DrenchedProcessor::matchRoomAsync (const juce::File& file, std::function<vo
 
     loader.addJob ([file, alive, done = std::move (done)]() mutable
     {
-        auto result = matchRecording (file);
+        juce::var result;
+
+        // Listening allocates. Out of memory (a 32-bit host above all), the pool would
+        // swallow the exception and the page wait for an answer that never comes, so it
+        // says so instead, as the other loader jobs do.
+        try
+        {
+            result = matchRecording (file);
+        }
+        catch (const std::exception&)
+        {
+            auto object = std::make_unique<juce::DynamicObject>();
+            object->setProperty ("error", "There isn't enough memory to listen to " + file.getFileName() + ".");
+            result = juce::var (object.release());
+        }
 
         juce::MessageManager::callAsync ([alive, done = std::move (done), result = std::move (result)]
         {
@@ -1024,10 +1038,25 @@ void DrenchedProcessor::describePhotoAsync (const juce::File& file, std::functio
         if (! file.existsAsFile())
             throw std::runtime_error ("the file isn't there");
 
-        auto image = juce::ImageFileFormat::loadFrom (file);
+        constexpr auto cantRead = "Drenched reads JPEG, PNG and GIF pictures, and this isn't one it can read";
+        constexpr juce::int64 largestFile = 256 * 1024 * 1024;
+        juce::MemoryBlock bytes;
+
+        if (file.getSize() > largestFile || ! file.loadFileAsData (bytes))
+            throw std::runtime_error (cantRead);
+
+        // The header first: a decoder holds every pixel at once and may not say when it
+        // can't get the memory (JUCE's PNG reader then writes through a null pointer), so
+        // a picture that says it is enormous, even in a file of a few bytes, is not decoded.
+        const auto header = readPictureHeader (static_cast<const std::uint8_t*> (bytes.getData()), bytes.getSize());
+
+        if (! pictureCanBeRead (header))
+            throw std::runtime_error (cantRead);
+
+        auto image = juce::ImageFileFormat::loadFrom (bytes.getData(), bytes.getSize());
 
         if (! image.isValid())
-            throw std::runtime_error ("Drenched reads JPEG, PNG and GIF pictures, and this isn't one it can read");
+            throw std::runtime_error (cantRead);
 
         // Halved (each new pixel the mean of four) until it is a sensible size, then every
         // pixel counted into the model's 224 x 224.
@@ -1050,7 +1079,14 @@ void DrenchedProcessor::describePhotoAsync (const juce::File& file, std::functio
             }
         }
 
-        return scaleForSceneNet (rgb.data(), bitmap.width, bitmap.height, 3, bitmap.width * 3);
+        // Upright, as the camera saw it: decoders give the rows as stored, and a phone stores
+        // a portrait photograph on its side with an EXIF orientation saying so.
+        auto width = bitmap.width, height = bitmap.height;
+
+        if (header.orientation != 1)
+            rgb = orientPicture (rgb.data(), width, height, header.orientation);
+
+        return scaleForSceneNet (rgb.data(), width, height, 3, width * 3);
     }, std::move (done));
 }
 
@@ -1733,6 +1769,18 @@ void DrenchedProcessor::recallScene (int number, bool loadNow)
             {
                 juce::String error;
                 auto response = readImpulseResponse (file, error);
+
+                // As when it is read in the background (sceneImpulseResponseRead): a file that
+                // can't be read is missing, so a bounce plays what playback did, rather than
+                // the last file under the scene's name.
+                if (response == nullptr)
+                {
+                    const std::lock_guard lock (recordedLock);
+                    recorded.reset();
+                    recordedPath = now;
+                    recordedMissing = true;
+                }
+
                 applyLoadedImpulseResponse (file, std::move (response), error, false);
             }
             else
@@ -2049,6 +2097,11 @@ void DrenchedProcessor::render (juce::AudioBuffer<float>& buffer, bool bypassed)
         controls.outputGain = 1.0f;
     }
 
+    // A solo mutes the dry and plays the band's reverberation, so it would undo both of
+    // those: bypassed or unlicensed, nothing is soloed.
+    if (bypassed || ! licence->isAudioAllowed())
+        controls.soloBand = WetEqualiser::noSolo;
+
     if (isNonRealtime())
     {
         const ScopedRealtimeCheckOff offline;
@@ -2301,16 +2354,30 @@ void DrenchedProcessor::setStateInformation (const void* data, int sizeInBytes)
 
 void DrenchedProcessor::applyPendingSession()
 {
-    juce::ValueTree session;
+    juce::ValueTree waiting, session;
 
     {
         const std::lock_guard lock (savedLock);
-        session = std::exchange (pendingSession, {});
+        waiting = pendingSession;
         sessionWaiting.store (false);
+
+        // A copy becomes the state, so the session waiting stays as it was loaded: until it
+        // has been applied, a host saving from another thread saves it (getStateInformation),
+        // not the session before it with the new parameters.
+        if (waiting.isValid())
+            session = waiting.createCopy();
     }
 
-    if (session.isValid())
-        applySession (session);
+    if (! session.isValid())
+        return;
+
+    applySession (session);
+
+    // Now savedSession holds it. A session loaded meanwhile waits on.
+    const std::lock_guard lock (savedLock);
+
+    if (pendingSession == waiting)
+        pendingSession = {};
 }
 
 void DrenchedProcessor::applySessionOffline()

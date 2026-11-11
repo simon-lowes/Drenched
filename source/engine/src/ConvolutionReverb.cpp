@@ -80,7 +80,8 @@ ReverbKernel::ReverbKernel (const ImpulseResponseSet& responses, const LivingTai
       irLength (responses.length()),
       fromLeft (pathsFrom (responses, ImpulseResponseSet::leftToLeft, ImpulseResponseSet::leftToRight), latency, leftWork),
       fromRight (pathsFrom (responses, ImpulseResponseSet::rightToLeft, ImpulseResponseSet::rightToRight), latency, rightWork),
-      tailDesign (tail)
+      tailDesign (tail),
+      livingRing (tail.ringSeconds())
 {
 }
 
@@ -89,7 +90,8 @@ ReverbKernel::ReverbKernel (const SpatialResponseSet& responses, const LivingTai
       irLength (responses.length()),
       fromLeft (pathsFrom (responses.paths[0]), latency, leftWork),
       fromRight (pathsFrom (responses.paths[1]), latency, rightWork),
-      tailDesign (tail)
+      tailDesign (tail),
+      livingRing (tail.ringSeconds())
 {
 }
 
@@ -486,7 +488,8 @@ void ConvolutionReverb::installIncoming() noexcept
         // The new kernel takes the input over gradually (see runKernels()).
         ringing = current;
         handRemaining = ringing != nullptr ? fadeLength : 0;
-        ringRemaining = ringing != nullptr ? ringing->length() + handRemaining : 0;
+        // Its output runs a latency behind its input, so it rings that much longer.
+        ringRemaining = ringing != nullptr ? ringing->length() + ringing->latency() + handRemaining : 0;
     }
 
     current = fresh;
@@ -537,14 +540,31 @@ void ConvolutionReverb::glideTone (const ReverbControls& c) noexcept
         return on && heard <= 0.0f;
     };
 
+    // A filter waking is silent, so it takes its new setting at once, designed
+    // here: the glide below sees it already where it is going and leaves it be.
+    const auto design = [] (auto& bank, const Svf::Coefficients& to)
+    {
+        for (auto& f : bank)
+            f.glideTo (to, 0);
+    };
+
     if (wake (lowCutHeard, lowCutOn, lowCut))
+    {
         lowCutNow = c.lowCutHz;
+        design (lowCut, Svf::highPass (sampleRate, lowCutNow));
+    }
 
     if (wake (highCutHeard, highCutOn, highCut))
+    {
         highCutNow = c.highCutHz;
+        design (highCut, Svf::lowPass (sampleRate, highCutNow));
+    }
 
     if (wake (monoHeard, monoOn, spreadHighPass))
+    {
         monoBelowNow = c.monoBelowHz;
+        design (spreadHighPass, Svf::highPass (sampleRate, monoBelowNow));
+    }
 
     // The shelves are silent at 0 dB, so they need no fade: they glide from there.
     if (brightOn && ! brightnessOn)
@@ -808,7 +828,9 @@ const ReverbControls& ConvolutionReverb::finiteControls (const ReverbControls& a
         kept.eq[band].shape = asked.eq[band].shape;
     }
 
-    kept.soloBand = asked.soloBand;
+    // Only a real band is a solo: anything else would mute the dry and solo nothing.
+    kept.soloBand = asked.soloBand >= 0 && asked.soloBand < static_cast<int> (WetEqualiser::numBands)
+                        ? asked.soloBand : WetEqualiser::noSolo;
 
     for (std::size_t k = 0; k < maxChannels; ++k)
     {
@@ -1192,12 +1214,26 @@ void ConvolutionReverb::process (float* const* channels, std::size_t numChannels
         duckEnvelope = 0.0f;
 
     // After the input stops the output goes on for the pre-delay heard (the old one, while
-    // fading from it), the response, the kernel's latency and the longest speaker delay.
+    // fading from it), then the longer of the response with the kernel's latency and the
+    // living tail (its wait for the input, then its ring), then the longest speaker delay.
     const auto heardDelay = std::max ({ delaySamples, targetDelay, delayFade > 0 ? delayFrom : 0.0f });
     const auto speakerDelay = std::clamp (*std::max_element (c.speakerDelayMs.begin(), c.speakerDelayMs.end()), 0.0f, SpeakerTrim::maxDelayMs);
+    auto wetSeconds = 0.0;
+
+    if (current != nullptr)
+    {
+        wetSeconds = static_cast<double> (current->length() + current->latency()) / sampleRate;
+
+        if (current->livingLevel() > 0.0f || tailAudible())
+        {
+            const auto wait = std::max (tailDelaySamples, tailFade > 0 ? tailFrom - delaySamples : 0.0f);
+            wetSeconds = std::max ({ wetSeconds, static_cast<double> (wait) / sampleRate + current->livingRingSeconds(),
+                                     tailPosition > 0.0f ? static_cast<double> (livingTail.releaseSeconds()) : 0.0 });
+        }
+    }
+
     tail.store (frozen ? std::numeric_limits<double>::infinity()
-                       : (current != nullptr ? static_cast<double> (current->length() + current->latency()) / sampleRate : 0.0)
-                             + static_cast<double> (heardDelay) / sampleRate + static_cast<double> (speakerDelay) / 1000.0,
+                       : wetSeconds + static_cast<double> (heardDelay) / sampleRate + static_cast<double> (speakerDelay) / 1000.0,
                 std::memory_order_relaxed);
 }
 

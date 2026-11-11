@@ -2,6 +2,7 @@
 
 #include <drenched/SceneNet.h>
 
+#include <cmath>
 #include <cstring>
 
 #include "CrashReports.h"
@@ -17,6 +18,22 @@ namespace
         if (auto* obj = object.getDynamicObject())
             for (const auto& prop : obj->getProperties())
                 fn (prop.name.toString(), prop.value);
+    }
+
+    /** The EQ band an eqSolo message names: a whole number from -1 (none) to the last band.
+        Anything else (out of range, a fraction, not a number) is no solo, never a guess. */
+    int soloBandOf (const juce::var& band)
+    {
+        if (! (band.isInt() || band.isInt64() || band.isDouble()))
+            return WetEqualiser::noSolo;
+
+        const auto value = static_cast<double> (band);
+
+        if (! std::isfinite (value) || value != std::floor (value)
+            || value < 0.0 || value >= static_cast<double> (WetEqualiser::numBands))
+            return WetEqualiser::noSolo;
+
+        return static_cast<int> (value);
     }
 }
 
@@ -50,7 +67,7 @@ const std::vector<std::pair<const char*, PageMessages::Handler>>& PageMessages::
         { "describePhoto", [] (M& m, V v) { m.onDescribePhoto (v); } },
         { "displays", [] (M& m, V v) { m.window.displaysOpened (static_cast<bool> (v.getProperty ("open", false))); } },
         // Hear one EQ band alone while its node is held or its Solo is on (band -1: all of them).
-        { "eqSolo",   [] (M& m, V v) { m.processor.setEqSolo (static_cast<int> (v.getProperty ("band", -1))); } },
+        { "eqSolo",   [] (M& m, V v) { m.processor.setEqSolo (soloBandOf (v.getProperty ("band", WetEqualiser::noSolo))); } },
         { "sceneStore",  [] (M& m, V v) { m.onScene ("store", v); } },
         { "sceneRename", [] (M& m, V v) { m.onScene ("rename", v); } },
         { "sceneDelete", [] (M& m, V v) { m.onScene ("delete", v); } },
@@ -175,7 +192,7 @@ void PageMessages::onUi (const juce::var& payload)
         else if (key == "locks") ui.setProperty (UiIDs::locks, value.toString(), nullptr);
         else if (key == "mode")  ui.setProperty (UiIDs::mode, value.toString(), nullptr);
         else if (key == "view")  ui.setProperty (UiIDs::view, value.toString(), nullptr);
-        else if (key == "graph") ui.setProperty (UiIDs::graph, value.toString(), nullptr);
+        else if (key == "graph") ui.setProperty (UiIDs::graph, value.toString() == "eq" ? "eq" : "decay", nullptr); // only the two graphs there are
         else if (key == "speakers") ui.setProperty (UiIDs::speakers, value.toString().substring (0, 1024), nullptr);
         else if (key == "skin")
         {

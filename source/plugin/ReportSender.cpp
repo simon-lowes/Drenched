@@ -1,5 +1,7 @@
 #include "ReportSender.h"
 
+#include <mutex>
+
 #ifndef DRENCHED_REPORT_SERVER
  #define DRENCHED_REPORT_SERVER "http://127.0.0.1:8790"
 #endif
@@ -12,24 +14,46 @@ juce::String ReportSender::server()
     return DRENCHED_REPORT_SERVER;
 }
 
+namespace
+{
+    // The system send in flight, so closing the last window can cut it short instead of
+    // waiting out a slow network on the host's message thread.
+    std::mutex activeLock;
+    juce::WebInputStream* active = nullptr;
+    bool closing = false;
+}
+
 ReportSender::Post ReportSender::system()
 {
     return [] (const juce::String& json)
     {
-        int status = 0;
-        const auto url = juce::URL (server() + "/v1/report").withPOSTData (json);
-        const auto options = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inPostData)
-                                 .withExtraHeaders ("Content-Type: application/json")
-                                 .withConnectionTimeoutMs (15000)
-                                 .withStatusCode (&status);
+        juce::WebInputStream stream (juce::URL (server() + "/v1/report").withPOSTData (json), true);
+        stream.withExtraHeaders ("Content-Type: application/json").withConnectionTimeout (15000);
 
-        if (auto stream = url.createInputStream (options))
-            stream->readEntireStreamAsString();
-        else
-            status = 0;
+        {
+            const std::lock_guard lock (activeLock);
 
+            if (closing)
+                return 0;
+
+            active = &stream;
+        }
+
+        const auto status = stream.connect (nullptr) ? stream.getStatusCode() : 0;
+
+        const std::lock_guard lock (activeLock);
+        active = nullptr;
         return status;
     };
+}
+
+void ReportSender::cancelSystemSends()
+{
+    const std::lock_guard lock (activeLock);
+    closing = true;
+
+    if (active != nullptr)
+        active->cancel();
 }
 
 ReportSender::ReportSender (Post p)
@@ -39,7 +63,13 @@ ReportSender::ReportSender (Post p)
 
 ReportSender::~ReportSender()
 {
+    // The last window has closed: a send still going is given up (the report stays in the
+    // window's text for next time) rather than holding up the host.
+    cancelSystemSends();
     network.removeAllJobs (true, 20000);
+
+    const std::lock_guard lock (activeLock);
+    closing = false;
 }
 
 juce::String ReportSender::messageFor (int httpStatus)

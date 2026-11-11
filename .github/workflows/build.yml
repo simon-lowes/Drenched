@@ -429,6 +429,20 @@ jobs:
           path: build/_deps
           key: deps-Linux-host-ubuntu-24.04-${{ hashFiles('cmake/Dependencies.cmake') }}
 
+      # The guard that stops a release shipping the test key: configured as a real release
+      # (no allowance), it must refuse, however the line using the test key is spelt.
+      - name: Release guard refuses the test key
+        run: |
+          for spelling in 'return testKey();' 'return testKey ();' 'return drenched::testKey();'; do
+            sed -i "/BEGIN SERVER KEY/{n;s/.*/    $spelling/}" source/licence/src/Licence.cpp
+            if cmake -S . -B build-guard -G Ninja -DFETCHCONTENT_BASE_DIR="$PWD/build/_deps" -DDRENCHED_BETA=OFF -DDRENCHED_LICENCE_SERVER=https://example.com > guard.log 2>&1; then
+              echo "::error::A release configure with '$spelling' was not refused"; exit 1
+            fi
+            grep -q "still uses the test licence key" guard.log || { cat guard.log; exit 1; }
+            rm -rf build-guard
+          done
+          git checkout -- source/licence/src/Licence.cpp
+
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DDRENCHED_BETA=OFF -DDRENCHED_ALLOW_TEST_LICENCE=ON
 
@@ -447,6 +461,7 @@ jobs:
     # jassert or leak JUCE reports that a test didn't ask for (tests/plugin/Main.cpp).
     # Linux only: the code they check is the same on every platform.
     name: ${{ matrix.name }}
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -474,7 +489,7 @@ jobs:
       RTSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
       TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
       ASAN_OPTIONS: detect_leaks=1
-      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1:suppressions=${{ github.workspace }}/tests/ubsan-suppressions.txt
 
     steps:
       - uses: actions/checkout@v7
@@ -526,7 +541,7 @@ jobs:
 
       - name: Build, test and validate
         run: |
-          docker run --rm --platform linux/386 -v "$PWD:/src" -w /src debian:bookworm \
+          docker run --rm --platform linux/386 -e GITHUB_RUN_NUMBER -v "$PWD:/src" -w /src debian:bookworm \
             bash .github/scripts/linux-i686.sh build-i686
           sudo chown -R "$(id -u):$(id -g)" build-i686 pluginval-i686
 

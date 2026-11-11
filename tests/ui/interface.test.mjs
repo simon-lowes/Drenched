@@ -1991,3 +1991,137 @@ test ('The tips light a control in every look, Studio and Stage, and are offered
     assert.equal (await page.evaluate (() => window.__sent.filter (s => s[0] === 'tipsSeen').length), 1, 'opened on purpose, nothing more is told');
     assert.deepEqual (errors, []);
 });
+
+test ('Tips opened from the Spaces window light only controls on the screen, as ? does, in every look', async () =>
+{
+    // The tips are listed while the Spaces window is still drawn; a control only that window
+    // has (Wet EQ, when All parameters takes its place on the screen) must not become a tip.
+    await page.goto ('about:blank');
+    await open ('anodised');
+    const looks = await page.evaluate (() => SKINS.map (s => s.id));
+    const titles = () => page.evaluate (() => st.tourList.map (e => TIPS[e.i].t));
+
+    for (const look of looks)
+        for (const adv of [false, true])
+        {
+            await page.goto ('about:blank');
+            await open (look);
+
+            if (adv)
+            {
+                await page.click ('[data-act="adv"]');
+                await drawn();
+            }
+
+            await page.keyboard.press ('?');
+            await drawn();
+            const byKey = await titles();
+            await page.keyboard.press ('Escape');
+            await drawn();
+
+            // (Rotunda's All parameters covers its Spaces button; there Tips is reached by ? alone.)
+            const browse = await page.evaluate (() => { const b = [...document.querySelectorAll ('#live [data-act="browse"]')].find (e => e.getBoundingClientRect().width > 0); if (b) b.click(); return !! b; });
+            if (! browse)
+                continue;
+            await drawn();
+            await page.click ('.brw [data-act="tips"]');
+            await drawn();
+            assert.deepEqual (await titles(), byKey, look + (adv ? ', All parameters' : '') + ': the same tips as ?');
+
+            for (let i = 0; i < byKey.length; ++i)
+            {
+                const lit = await page.evaluate (() => document.querySelector ('.tour').classList.contains ('lit'));
+                assert.ok (lit, look + ': ' + byKey[i] + ' lights its control');
+                await page.keyboard.press ('ArrowRight');
+                await drawn();
+            }
+
+            assert.equal (await page.evaluate (() => st.tour), null, look + ': the tips ended');
+        }
+
+    assert.deepEqual (errors, []);
+});
+
+test ('The EQ is described as up to twelve bands, wherever its size is said', async () =>
+{
+    await page.goto ('about:blank');
+    await open ('aperture');
+    await page.click ('[data-act="browse"]');
+    await drawn();
+    const said = await page.evaluate (() => ({ tool: document.querySelector ('.brw [data-act="eq"]').textContent,
+                                               tips: TIPS.map (t => t.b + (t.alt ? ' ' + t.alt.b : '')).join (' ') }));
+    assert.match (said.tool, /twelve bands/i);
+    assert.doesNotMatch (said.tool + ' ' + said.tips, /\bsix bands\b/i);
+    assert.deepEqual (errors, []);
+});
+
+test ('The report window\'s email field survives a redraw that replaces it', async () =>
+{
+    // A host recalling a session can change the look while the email is being typed; the
+    // field is drawn anew and given the keyboard back, which an email-type field refuses.
+    await page.goto ('about:blank');
+    await open ('aperture');
+    await page.click ('[data-act="browse"]');
+    await drawn();
+    await page.click ('.brw [data-act="report"]');
+    await drawn();
+    await page.click ('#rep-mail');
+    await page.keyboard.type ('me@example.com');
+
+    for (const ui of [{ skin: 'field' }, { skin: 'signal' }, { mode: 'stage' }, { view: 'section' }])
+    {
+        await page.focus ('#rep-mail');
+        await fromPlugin ('state', { ui });
+        await drawn();
+        const field = await page.evaluate (() => { const f = document.getElementById ('rep-mail'); return { value: f.value, focused: document.activeElement === f, mode: f.inputMode }; });
+        assert.deepEqual (field, { value: 'me@example.com', focused: true, mode: 'email' }, JSON.stringify (ui));
+    }
+
+    await page.keyboard.type ('!');
+    assert.equal (await page.evaluate (() => st.repMail), 'me@example.com!');
+    assert.deepEqual (errors, []);
+});
+
+test ('The tips\' spot keeps its veil and ring in a web view without color-mix()', async () =>
+{
+    // A declaration with var() is accepted when read and dropped whole when used if a function
+    // in it is unknown, so a color-mix() outside @supports would take the veil with it.
+    const css = fs.readFileSync (path.resolve (here, '../../source/ui/css/skins.css'), 'utf8').replace (/\/\*[\s\S]*?\*\//g, '');
+    let bare = '';
+
+    for (let at = 0; at < css.length;)
+    {
+        const found = css.indexOf ('@supports', at);
+        const open = found < 0 ? -1 : css.indexOf ('{', found);
+
+        if (found < 0 || ! /color-mix/.test (css.slice (found, open)))
+        {
+            bare += css.slice (at, found < 0 ? css.length : open + 1);
+            at = found < 0 ? css.length : open + 1;
+            continue;
+        }
+
+        bare += css.slice (at, found);
+        let depth = 0, end = open;
+        do depth += css[end] === '{' ? 1 : css[end] === '}' ? -1 : 0; while (depth > 0 && ++end < css.length);
+        at = end + 1;
+    }
+
+    assert.doesNotMatch (bare, /color-mix\(/, 'color-mix() outside @supports');
+
+    // The sheet as such a web view reads it: the spot still has its veil and ring.
+    await page.goto ('about:blank');
+    await open ('aperture');
+    await page.evaluate ((text) =>
+    {
+        document.querySelector ('link[rel="stylesheet"]').remove();
+        const style = document.createElement ('style');
+        style.textContent = text.replace (/url\((['"]?)(?!data:|https?:|\/)/g, 'url($1css/'); // the sheet's own paths, from the page
+        document.head.appendChild (style);
+    }, bare);
+    await page.keyboard.press ('?');
+    await drawn();
+    const shadow = await page.evaluate (() => getComputedStyle (document.querySelector ('.tour-spot')).boxShadow);
+    assert.match (shadow, /2000px.*1\.5px/, shadow);
+    assert.deepEqual (errors, []);
+});

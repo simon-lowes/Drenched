@@ -149,7 +149,7 @@ constexpr std::array<Kind, 76> kinds {{
     { "radio studio|broadcast studio|tv studio|television studio|sound stage|soundstage|film set|film studio|newsroom|podcast studio|voiceover booth|voice over booth|dubbing stage", "a sound stage", "room", 20.0f, 30.0f, 10.0f, foam, concrete, foam, 0.3f, clutter, 40.0f },
     { "schoolyard|playground|school gym|assembly room|church hall|parish hall|community centre|community hall|scout hut|village institute|legion hall|chapter house|chapterhouse", "a church hall", "hall", 12.0f, 20.0f, 6.0f, plaster, woodFloor, wood, 0.2f, seats, 50.0f },
     // Outdoors
-    { "courtyard|courtyards|quad|quadrangle|cloister garth|patio|yard|back yard|backyard|walled garden|atrium open|inner court|court|piazza|plaza|square|town square|market square|marketplace", "a courtyard", "outdoor", 14.0f, 18.0f, 9.0f, brick, paving, open, 0.05f, foliage, 45.0f },
+    { "courtyard|courtyards|quad|quadrangle|cloister garth|patio|yard|back yard|backyard|walled garden|atrium open|inner court|court|piazza|plaza|town square|market square|village square|public square|marketplace", "a courtyard", "outdoor", 14.0f, 18.0f, 9.0f, brick, paving, open, 0.05f, foliage, 45.0f },
     { "street|streets|alley|alleyway|alleys|lane|lanes|high street|main street|avenue|boulevard|backstreet|back street|narrow street|side street|mews|arcade street|passage outdoors|cul de sac", "a street", "outdoor", 10.0f, 80.0f, 12.0f, brick, paving, open, 0.1f, clutter, 50.0f },
     { "canyon|canyons|gorge|gorges|ravine|ravines|chasm|cliff|cliffs|cliff face|rock face|escarpment|gully|slot canyon|crag|crags|rock wall", "a canyon", "outdoor", 25.0f, 200.0f, 40.0f, stone, earth, open, 0.0f, foliage, 60.0f },
     { "forest|forests|woods|woodland|wood|woodlands|jungle|rainforest|grove|orchard|copse|thicket|pine forest|pinewood|glade|clearing", "a forest", "outdoor", 40.0f, 60.0f, 20.0f, foliage, earth, open, 0.0f, foliage, 50.0f },
@@ -169,7 +169,9 @@ constexpr std::array<Kind, 76> kinds {{
     { "hospital corridor|school corridor|hotel corridor|office corridor|service corridor|tunnel corridor|long corridor|hallway long|endless corridor", "a long corridor", "room", 2.4f, 40.0f, 3.0f, plaster, vinyl, acousticCeiling, 0.0f, clutter, 50.0f },
     { "phone booth|phone box room|cupboard under the stairs|under the stairs|crawl space|crawlspace|duct|air duct|ventilation duct|drainpipe|drain pipe|chimney flue|flue", "a duct", "room", 0.8f, 1.2f, 1.2f, metal, metal, metal, 0.0f, clutter, 10.0f },
     { "small room|little room|box room|spare room|back room|side room|anteroom|ante room|utility|cloakroom|cloak room|vestry|sacristy|robing room", "a small room", "room", 2.8f, 3.4f, 2.5f, plaster, carpet, plaster, 0.4f, clutter, 35.0f },
-    { "big room|large room|great room|long room|double room|open space|open room|empty space|unit|space|room|rooms|chamber room|interior|inside|indoor|indoors", "a room", "room", 5.0f, 7.0f, 2.8f, plaster, woodFloor, plaster, 0.3f, soft, 40.0f },
+    // The plain room. "big room", "long room" and the like are this with a size word, so they
+    // are not names of it: a name of a kind is never also read as a size.
+    { "room|rooms|double room|open space|empty space|unit|space|chamber room|interior|inside|indoor|indoors", "a room", "room", 5.0f, 7.0f, 2.8f, plaster, woodFloor, plaster, 0.3f, soft, 40.0f },
     { "hangar outdoors|runway|airfield|aerodrome|tarmac apron|apron|helipad|airstrip", "an airfield", "outdoor", 200.0f, 400.0f, 60.0f, foliage, paving, open, 0.0f, clutter, 60.0f },
     { "stadium tunnel|players tunnel|players' tunnel|tunnel entrance|vomitorium|gateway|gatehouse|gate house|archway|porte cochere|carriage arch|covered passage|covered market|market hall|indoor market|arcade covered", "a covered passage", "garage", 8.0f, 24.0f, 7.0f, brick, paving, brick, 0.1f, people, 50.0f },
     { "reverb chamber|echo chamber|echo room|live chamber|chamber reverb|plate room|reverb room|acoustic chamber", "an echo chamber", "room", 3.5f, 6.0f, 3.5f, plaster, tile, plaster, 0.0f, clutter, 50.0f },
@@ -284,21 +286,35 @@ std::string lowered (std::string_view in)
     out.reserve (in.size() + 2);
     out.push_back (' ');
 
+    const auto lower = [&] (std::size_t k) { return k < in.size() ? std::tolower (static_cast<unsigned char> (in[k])) : 0; };
+    const auto digit = [&] (std::size_t k) { return k < in.size() && std::isdigit (static_cast<unsigned char> (in[k])); };
+
     for (std::size_t i = 0; i < in.size(); ++i)
     {
         const auto c = in[i];
         const auto u = static_cast<unsigned char> (c);
+        const auto afterDigit = i > 0 && digit (i - 1);
+
+        // A full stop belongs to a number ("3.5", ".5") or to "sq.m"; anywhere else it ends
+        // a sentence, and the word before it must still be read ("a tiled bathroom.").
+        const auto numberPoint = digit (i + 1) && (i == 0 || afterDigit || ! std::isalnum (static_cast<unsigned char> (in[i - 1])));
+        const auto squareMetres = i >= 2 && lower (i - 2) == 's' && lower (i - 1) == 'q' && lower (i + 1) == 'm';
 
         // "6x4m": an x between digits is a 'by'
-        if ((c == 'x' || c == 'X') && i > 0 && i + 1 < in.size()
-            && std::isdigit (static_cast<unsigned char> (in[i - 1])) && std::isdigit (static_cast<unsigned char> (in[i + 1])))
+        if ((c == 'x' || c == 'X') && afterDigit && digit (i + 1))
             out.append (" * ");
-        else if (std::isalnum (u) || c == '.' || c == '\'' || c == '-' || c == '/' || c == '&')
+        else if (c == '.' && (numberPoint || squareMetres))
+            out.push_back ('.');
+        else if (c == '\'' && afterDigit)
+            out.append (" ft "); // 12' is twelve feet
+        else if (c == '"' && afterDigit)
+            out.append (" inches "); // 6" is six inches
+        else if (std::isalnum (u) || c == '\'' || c == '-' || c == '/' || c == '&')
             out.push_back (static_cast<char> (std::tolower (u)));
         else if (c == ',' && i > 0 && i + 1 < in.size()
                  && std::isdigit (static_cast<unsigned char> (in[i - 1])) && std::isdigit (static_cast<unsigned char> (in[i + 1])))
             out.push_back (','); // 1,500 or 3,5: numberAt reads it
-        else if (c == ',' || c == ';' || c == ':' || c == '!' || c == '?' || c == '(' || c == ')' || c == '"' || c == '\n' || c == '\t')
+        else if (c == ',' || c == '.' || c == ';' || c == ':' || c == '!' || c == '?' || c == '(' || c == ')' || c == '"' || c == '\n' || c == '\t')
             out.append (" , ");
         else if (static_cast<unsigned char> (c) >= 0x80)
             out.push_back ('_'); // a letter outside ASCII: keeps the word together without matching anything
@@ -407,25 +423,119 @@ std::optional<double> numberAt (const std::string& text, std::size_t at, std::si
         return std::nullopt;
 
     end = i;
-    return std::strtod (digits.c_str(), nullptr);
+    const auto value = std::strtod (digits.c_str(), nullptr);
+
+    // Hundreds of digits overflow to infinity: no room is measured like that.
+    if (! std::isfinite (value))
+        return std::nullopt;
+
+    return value;
 }
 
 struct Measurements
 {
     std::vector<double> lengths;  // metres, in the order written: "5 by 4 by 3"
     std::optional<double> width, depth, height, area, volume, seats;
+
+    // The stretches of the text a measurement took, its number and units ("40 square
+    // metres"), which the words for kinds, sizes and materials leave alone.
+    std::vector<std::pair<std::size_t, std::size_t>> spans;
 };
 
 bool startsWith (const std::string& text, std::size_t at, std::string_view word)
 {
-    return text.compare (at, word.size(), word) == 0;
+    return at <= text.size() && text.compare (at, word.size(), word) == 0;
+}
+
+/** What a unit word after a number makes it. */
+enum class UnitKind { length, area, volume, seats, notLength };
+
+struct Unit
+{
+    const char* word;
+    UnitKind kind;
+    double scale; // metres per unit, for a length
+};
+
+constexpr Unit units[] {
+    { "metres", UnitKind::length, 1.0 }, { "meters", UnitKind::length, 1.0 }, { "metre", UnitKind::length, 1.0 },
+    { "meter", UnitKind::length, 1.0 }, { "m", UnitKind::length, 1.0 }, { "mtrs", UnitKind::length, 1.0 }, { "mtr", UnitKind::length, 1.0 },
+    { "kilometres", UnitKind::length, 1000.0 }, { "kilometers", UnitKind::length, 1000.0 }, { "km", UnitKind::length, 1000.0 },
+    { "feet", UnitKind::length, 0.3048 }, { "foot", UnitKind::length, 0.3048 }, { "ft", UnitKind::length, 0.3048 },
+    { "yards", UnitKind::length, 0.9144 }, { "yard", UnitKind::length, 0.9144 }, { "yds", UnitKind::length, 0.9144 }, { "yd", UnitKind::length, 0.9144 },
+    { "centimetres", UnitKind::length, 0.01 }, { "centimeters", UnitKind::length, 0.01 }, { "cm", UnitKind::length, 0.01 },
+    { "millimetres", UnitKind::length, 0.001 }, { "millimeters", UnitKind::length, 0.001 }, { "mm", UnitKind::length, 0.001 },
+    { "inches", UnitKind::length, 0.0254 }, { "inch", UnitKind::length, 0.0254 },
+    { "sq", UnitKind::area, 1.0 }, { "square", UnitKind::area, 1.0 }, { "m2", UnitKind::area, 1.0 }, { "sqm", UnitKind::area, 1.0 }, { "sq.m", UnitKind::area, 1.0 },
+    { "cubic", UnitKind::volume, 1.0 }, { "cu", UnitKind::volume, 1.0 }, { "m3", UnitKind::volume, 1.0 },
+    { "seats", UnitKind::seats, 1.0 }, { "seat", UnitKind::seats, 1.0 }, { "people", UnitKind::seats, 1.0 }, { "seater", UnitKind::seats, 1.0 },
+    { "person", UnitKind::seats, 1.0 }, { "places", UnitKind::seats, 1.0 }, { "capacity", UnitKind::seats, 1.0 },
+    // Numbers that are not sizes: a reverb time, a pre-delay, a frequency, a level, a year.
+    { "seconds", UnitKind::notLength, 0.0 }, { "second", UnitKind::notLength, 0.0 }, { "secs", UnitKind::notLength, 0.0 },
+    { "sec", UnitKind::notLength, 0.0 }, { "s", UnitKind::notLength, 0.0 }, { "milliseconds", UnitKind::notLength, 0.0 },
+    { "millisecond", UnitKind::notLength, 0.0 }, { "msec", UnitKind::notLength, 0.0 }, { "ms", UnitKind::notLength, 0.0 },
+    { "minutes", UnitKind::notLength, 0.0 }, { "minute", UnitKind::notLength, 0.0 }, { "mins", UnitKind::notLength, 0.0 },
+    { "min", UnitKind::notLength, 0.0 }, { "hz", UnitKind::notLength, 0.0 }, { "khz", UnitKind::notLength, 0.0 },
+    { "db", UnitKind::notLength, 0.0 }, { "percent", UnitKind::notLength, 0.0 }, { "years", UnitKind::notLength, 0.0 },
+    { "year", UnitKind::notLength, 0.0 }, { "yrs", UnitKind::notLength, 0.0 }, { "century", UnitKind::notLength, 0.0 },
+};
+
+/** The unit word at `at`, if there is one, ending at a word's end. */
+const Unit* unitAt (const std::string& text, std::size_t at)
+{
+    for (const auto& u : units)
+    {
+        const std::string_view word (u.word);
+
+        if (startsWith (text, at, word) && (at + word.size() == text.size() || text[at + word.size()] == ' '))
+            return &u;
+    }
+
+    return nullptr;
+}
+
+std::size_t skipSpaces (const std::string& text, std::size_t at)
+{
+    while (at < text.size() && text[at] == ' ')
+        ++at;
+
+    return at;
+}
+
+/** The word that ends just before `at` (the space before a number), or empty. */
+std::string_view wordBefore (const std::string& text, std::size_t at)
+{
+    if (at < 2)
+        return {};
+
+    const auto end = at - 1;                      // the space before
+    const auto start = text.rfind (' ', end - 1); // the space before that word
+
+    if (start == std::string::npos)
+        return {};
+
+    return std::string_view (text).substr (start + 1, end - start - 1);
+}
+
+std::string metresWords (double metres)
+{
+    return std::to_string (static_cast<int> (std::lround (metres))) + " m";
 }
 
 /** Reads the measurements: "5 by 4 metres", "12 m long", "3 m high",
-    "40 square metres", "2000 m3", "seats 800", "20 feet". */
+    "40 square metres", "2000 m3", "seats 800", "20 by 30 feet", "12' 6"".
+    A number with no unit is a size only when it says which ("12 long"), is one
+    of the sides written in a row ("5 by 4") or counts seats: "Studio 2", "built
+    in 1890" and "a 2 second reverb" measure nothing. */
 Measurements readMeasurements (const std::string& text, std::vector<std::string>& understood)
 {
     Measurements m;
+
+    // Sides written in a row ("20 by 30 feet") share the unit written once: the sides
+    // read before it without one wait here for it.
+    struct Waiting { std::size_t length, word; };
+    std::vector<Waiting> waiting;
+    double rowScale = 0.0; // the unit of the row so far, once one has been written
 
     for (std::size_t i = 0; i < text.size(); ++i)
     {
@@ -438,35 +548,61 @@ Measurements readMeasurements (const std::string& text, std::vector<std::string>
         if (! value.has_value())
             continue;
 
-        auto after = end;
-        while (after < text.size() && text[after] == ' ') ++after;
+        const auto after = skipSpaces (text, end);
+        const auto* unit = unitAt (text, after);
+        auto unitEnd = unit != nullptr ? after + std::string_view (unit->word).size() : end;
+        auto number = *value;
+        auto scale = unit != nullptr && unit->kind == UnitKind::length ? unit->scale : 1.0;
 
-        // The unit, if any: metres by default; feet turned into metres.
-        double scale = 1.0;
-        auto unitEnd = after;
-        std::string unit;
-
-        for (const auto* u : { "metres", "meters", "metre", "meter", "m", "mtrs", "mtr", "feet", "foot", "ft", "yards", "yard", "yds", "yd", "cm", "centimetres", "mm", "inches", "inch", "in", "sq", "square", "cubic", "cu", "m2", "m3", "sqm", "sq.m", "seats", "seat", "people", "seater", "person", "places", "capacity" })
+        // 12 ft 6 inches, 12' 6": the inches belong to the feet.
+        if (unit != nullptr && unit->scale == 0.3048)
         {
-            const std::string_view word (u);
+            const auto next = skipSpaces (text, unitEnd);
+            std::size_t inchesEnd = next;
 
-            if (startsWith (text, after, word) && after + word.size() <= text.size()
-                && (after + word.size() == text.size() || text[after + word.size()] == ' ' || text[after + word.size()] == '.' || text[after + word.size()] == '^'))
+            if (next < text.size() && std::isdigit (static_cast<unsigned char> (text[next])))
             {
-                unit = std::string (word);
-                unitEnd = after + word.size();
-                break;
+                if (const auto inches = numberAt (text, next, inchesEnd))
+                {
+                    const auto* inchUnit = unitAt (text, skipSpaces (text, inchesEnd));
+
+                    if (inchUnit != nullptr && inchUnit->scale == 0.0254)
+                    {
+                        number += *inches / 12.0;
+                        unitEnd = skipSpaces (text, inchesEnd) + std::string_view (inchUnit->word).size();
+                    }
+                }
             }
         }
 
-        if (unit == "feet" || unit == "foot" || unit == "ft") scale = 0.3048;
-        else if (unit.rfind ("yard", 0) == 0 || unit == "yds" || unit == "yd") scale = 0.9144;
-        else if (unit == "cm" || unit == "centimetres") scale = 0.01;
-        else if (unit == "mm") scale = 0.001;
-        else if (unit == "inches" || unit == "inch" || unit == "in") scale = 0.0254;
+        // "square metres", "cubic feet", "m square": a unit word straight after the first
+        // belongs to the measurement too.
+        auto spanEnd = unitEnd;
 
-        auto rest = unitEnd;
-        while (rest < text.size() && text[rest] == ' ') ++rest;
+        for (int extra = 0; extra < 2; ++extra)
+        {
+            const auto next = skipSpaces (text, spanEnd);
+            const auto* more = unitAt (text, next);
+
+            if (more == nullptr || (more->kind != UnitKind::length && more->kind != UnitKind::area && more->kind != UnitKind::volume))
+                break;
+
+            if (unit != nullptr && (unit->kind == UnitKind::area || unit->kind == UnitKind::volume) && more->kind == UnitKind::length)
+                scale = more->scale; // "20 square feet"
+
+            spanEnd = next + std::string_view (more->word).size();
+        }
+
+        const auto rest = skipSpaces (text, unitEnd);
+        const auto resume = [&] { i = rest > i ? rest - 1 : i; };
+
+        if (unit != nullptr && unit->kind == UnitKind::notLength)
+        {
+            waiting.clear();
+            rowScale = 0.0;
+            resume();
+            continue;
+        }
 
         // What the measurement is of.
         const auto saysNext = [&] (std::string_view word)
@@ -501,8 +637,7 @@ Measurements readMeasurements (const std::string& text, std::vector<std::string>
             if (i < 2)
                 return false;
 
-            auto k = i - 1; // the space before the number
-            auto wordEnd = k;
+            auto wordEnd = i - 1; // the space before the number
 
             for (int skip = 0; skip < 3 && wordEnd > 0; ++skip)
             {
@@ -525,53 +660,108 @@ Measurements readMeasurements (const std::string& text, std::vector<std::string>
             return false;
         };
 
-        const auto metres = *value * scale;
-        const auto isSeats = unit.rfind ("seat", 0) == 0 || unit == "people" || unit == "person" || unit == "places" || unit == "capacity"
+        const auto isSeats = (unit != nullptr && unit->kind == UnitKind::seats)
                              || saysBefore ("seats") || saysBefore ("seating") || saysBefore ("holds") || saysBefore ("capacity") || saysNext ("seats") || saysNext ("people") || saysNext ("seater");
 
         if (isSeats)
         {
-            m.seats = *value;
-            understood.push_back (std::to_string (static_cast<int> (std::lround (*value))) + " seats");
-            i = rest > i ? rest - 1 : i;
+            if (number > 0.0)
+            {
+                m.seats = number;
+                understood.push_back (std::to_string (static_cast<int> (std::lround (number))) + " seats");
+            }
+
+            resume();
             continue;
         }
 
-        const auto area = unit == "sq" || unit == "square" || unit == "m2" || unit == "sqm" || unit == "sq.m" || saysNext ("square") || saysNext ("sq") || saysBefore ("area");
-        const auto volume = unit == "cubic" || unit == "cu" || unit == "m3" || saysNext ("cubic") || saysNext ("cu") || saysBefore ("volume");
+        const auto before = wordBefore (text, i);
+        const auto inRow = before == "by" || before == "*";
+        const auto rowGoesOn = startsWith (text, rest, "by ") || startsWith (text, rest, "* ");
 
-        if (area)
+        if (unit == nullptr && inRow && rowScale > 0.0)
+            scale = rowScale; // "20 ft by 30": feet too
+
+        const auto metres = number * scale;
+        const auto measured = metres > 0.0 && std::isfinite (metres);
+        const auto unitIsLength = unit != nullptr && unit->kind == UnitKind::length;
+        bool tookLength = false;
+
+        const auto area = (unit != nullptr && unit->kind == UnitKind::area) || saysNext ("square") || saysNext ("sq") || saysBefore ("area");
+        const auto volume = (unit != nullptr && unit->kind == UnitKind::volume) || saysNext ("cubic") || saysNext ("cu") || saysBefore ("volume");
+
+        if (! measured)
         {
-            m.area = metres * (scale == 1.0 ? 1.0 : scale); // feet squared
-            understood.push_back (std::to_string (static_cast<int> (std::lround (m.area.value()))) + " square metres");
+            // nothing measures nothing: "0 m long" leaves the room's own length
+        }
+        else if (area)
+        {
+            m.area = metres * scale; // "20 square feet": the feet squared
+            understood.push_back (std::to_string (static_cast<int> (std::lround (*m.area))) + " square metres");
+            m.spans.push_back ({ i, spanEnd });
         }
         else if (volume)
         {
-            m.volume = metres * (scale == 1.0 ? 1.0 : scale * scale);
-            understood.push_back (std::to_string (static_cast<int> (std::lround (m.volume.value()))) + " cubic metres");
+            m.volume = metres * scale * scale;
+            understood.push_back (std::to_string (static_cast<int> (std::lround (*m.volume))) + " cubic metres");
+            m.spans.push_back ({ i, spanEnd });
         }
         else if (saysNext ("high") || saysNext ("tall") || saysNext ("ceiling") || saysNext ("ceilings") || saysNext ("headroom") || saysBefore ("ceiling") || saysBefore ("height") || saysBefore ("high") || saysBefore ("tall"))
         {
             m.height = metres;
             understood.push_back ("height " + std::to_string (static_cast<int> (std::lround (metres * 10.0))) + "0 cm");
+            m.spans.push_back ({ i, spanEnd });
+            tookLength = true;
         }
         else if (saysNext ("long") || saysNext ("deep") || saysNext ("length") || saysBefore ("length") || saysBefore ("long") || saysBefore ("deep") || saysNext ("away"))
         {
             m.depth = metres;
-            understood.push_back ("length " + std::to_string (static_cast<int> (std::lround (metres))) + " m");
+            understood.push_back ("length " + metresWords (metres));
+            m.spans.push_back ({ i, spanEnd });
+            tookLength = true;
         }
         else if (saysNext ("wide") || saysNext ("across") || saysNext ("width") || saysBefore ("width") || saysBefore ("wide") || saysBefore ("across"))
         {
             m.width = metres;
-            understood.push_back ("width " + std::to_string (static_cast<int> (std::lround (metres))) + " m");
+            understood.push_back ("width " + metresWords (metres));
+            m.spans.push_back ({ i, spanEnd });
+            tookLength = true;
         }
-        else if (metres > 0.0)
+        else if (unitIsLength || inRow || rowGoesOn)
         {
             m.lengths.push_back (metres);
-            understood.push_back (std::to_string (static_cast<int> (std::lround (metres))) + " m");
+            understood.push_back (metresWords (metres));
+            m.spans.push_back ({ i, spanEnd });
+            tookLength = true;
+
+            if (! unitIsLength && rowScale == 0.0)
+                waiting.push_back ({ m.lengths.size() - 1, understood.size() - 1 });
         }
 
-        i = rest > i ? rest - 1 : i;
+        // The unit, once written in a row, is every side's in it.
+        if (tookLength && unitIsLength)
+        {
+            for (const auto& w : waiting)
+            {
+                m.lengths[w.length] *= unit->scale;
+                understood[w.word] = metresWords (m.lengths[w.length]);
+            }
+
+            waiting.clear();
+        }
+
+        if (tookLength && rowGoesOn)
+        {
+            if (unitIsLength)
+                rowScale = unit->scale;
+        }
+        else
+        {
+            waiting.clear();
+            rowScale = 0.0;
+        }
+
+        resume();
     }
 
     // Lengths written in a row ("5 by 4 by 3", "5 x 4") are the sides: the two
@@ -614,6 +804,53 @@ Measurements readMeasurements (const std::string& text, std::vector<std::string>
     return m;
 }
 
+/** Blanks [from, to) of the words, keeping their places, so nothing more is read there. */
+void blank (std::string& words, std::size_t from, std::size_t to)
+{
+    for (auto k = from; k < std::min (to, words.size()); ++k)
+        words[k] = ' ';
+}
+
+/** Which entries of a table of phrases the words use, each once: the longest phrase
+    first, then the next longest in what is left, so "very long" is not also "long" and
+    "quite small" not also "small". Each found phrase is blanked from the words. Gives,
+    per entry, where it was found (npos if not) and how long the match was. */
+template <typename Entry, std::size_t N>
+std::array<std::pair<std::size_t, std::size_t>, N> takePhrases (std::string& words, const std::array<Entry, N>& table)
+{
+    std::array<std::pair<std::size_t, std::size_t>, N> found;
+    found.fill ({ std::string::npos, 0 });
+
+    for (;;)
+    {
+        auto best = N;
+        auto bestAt = std::string::npos;
+        std::size_t bestLength = 0;
+
+        for (std::size_t e = 0; e < N; ++e)
+        {
+            if (found[e].first != std::string::npos)
+                continue;
+
+            std::size_t length = 0;
+            const auto at = findWord (words, table[e].names, &length);
+
+            if (at != std::string::npos && (length > bestLength || (length == bestLength && at < bestAt)))
+            {
+                best = e;
+                bestAt = at;
+                bestLength = length;
+            }
+        }
+
+        if (best == N)
+            return found;
+
+        found[best] = { bestAt, bestLength };
+        blank (words, bestAt + 1, bestAt + bestLength - 1); // keeps the spaces either side
+    }
+}
+
 std::string tidyName (std::string_view words)
 {
     std::string out;
@@ -653,6 +890,11 @@ std::string tidyName (std::string_view words)
         if (cut == std::string::npos || cut < 16)
             cut = longest - 3;
 
+        // Never inside a character of more than one byte (UTF-8 continuation bytes are
+        // 10xxxxxx): back up to where the character starts.
+        while (cut > 0 && (static_cast<unsigned char> (out[cut]) & 0xC0) == 0x80)
+            --cut;
+
         out.resize (cut);
         out.append ("...");
     }
@@ -684,6 +926,15 @@ DescribedRoom describeRoom (std::string_view words)
     const auto text = lowered (words);
     room.name = tidyName (words);
 
+    // The measurements first: the words they took ("40 square metres", "300 cubic
+    // metres") are not read again as a kind ("square"), a size or a material.
+    std::vector<std::string> measuredWords;
+    const auto m = readMeasurements (text, measuredWords);
+    auto plain = text;
+
+    for (const auto& [from, to] : m.spans)
+        blank (plain, from, to);
+
     // The kind of room: the first one named. The longest name wins a tie at the same
     // place ("concert hall" over "hall"), so the tables can list both.
     const Kind* kind = nullptr;
@@ -693,7 +944,7 @@ DescribedRoom describeRoom (std::string_view words)
     for (const auto& k : kinds)
     {
         std::size_t length = 0;
-        const auto at = findWord (text, k.names, &length);
+        const auto at = findWord (plain, k.names, &length);
 
         if (at != std::string::npos && (at < kindAt || (at == kindAt && length > kindLength)))
         {
@@ -707,7 +958,7 @@ DescribedRoom describeRoom (std::string_view words)
     if (kind == nullptr)
     {
         for (const auto& k : kinds)
-            if (std::string_view (k.names).rfind ("big room|", 0) == 0)
+            if (std::string_view (k.names).rfind ("room|", 0) == 0)
                 kind = &k;
 
         room.knownRoom = false;
@@ -726,13 +977,22 @@ DescribedRoom describeRoom (std::string_view words)
     auto furnishingMaterial = kind->furnishingMaterial;
     room.distancePercent = kind->distance;
 
-    // Size words, all of them: "long narrow" is both.
-    bool square = false;
+    // Sizes, sounds and where the listener is are not read inside the kind's own name: a
+    // "long corridor" is already long, an "echo chamber" already echoes.
+    auto beyondKind = plain;
 
-    for (const auto& s : sizeWords)
+    if (kindAt != std::string::npos)
+        blank (beyondKind, kindAt + 1, kindAt + kindLength - 1);
+
+    // Size words, all of them: "long narrow" is both; "very long" is not also "long".
+    bool square = false;
+    auto sizeText = beyondKind;
+    const auto sizesFound = takePhrases (sizeText, sizeWords);
+
+    for (std::size_t e = 0; e < sizeWords.size(); ++e)
     {
-        std::size_t length = 0;
-        const auto at = findWord (text, s.names, &length);
+        const auto& s = sizeWords[e];
+        const auto [at, length] = sizesFound[e];
 
         if (at == std::string::npos)
             continue;
@@ -752,12 +1012,23 @@ DescribedRoom describeRoom (std::string_view words)
     if (square)
         W = D = std::sqrt (W * D);
 
-    // Measurements override the words.
-    const auto m = readMeasurements (text, room.understood);
+    // Measurements override the words. Each is finite and above zero (readMeasurements
+    // drops the rest), and the sides are kept sensible before an area, a number of seats
+    // or a volume scales them, so nothing here can divide by zero or make a NaN.
+    room.understood.insert (room.understood.end(), measuredWords.begin(), measuredWords.end());
 
     if (m.width)  W = *m.width;
     if (m.depth)  D = *m.depth;
     if (m.height) H = *m.height;
+
+    const auto keepSensible = [&]
+    {
+        W = std::clamp (W, 0.6, 400.0);
+        D = std::clamp (D, 0.6, 400.0);
+        H = std::clamp (H, 0.6, 120.0);
+    };
+
+    keepSensible();
 
     if (m.area && *m.area > 0.0)
     {
@@ -787,9 +1058,14 @@ DescribedRoom describeRoom (std::string_view words)
         H *= k;
     }
 
-    W = std::clamp (W, 0.6, 400.0);
-    D = std::clamp (D, 0.6, 400.0);
-    H = std::clamp (H, 0.6, 120.0);
+    if (! std::isfinite (W) || ! std::isfinite (D) || ! std::isfinite (H))
+    {
+        W = kind->width;
+        D = kind->depth;
+        H = kind->height;
+    }
+
+    keepSensible();
 
     // Materials: each one named replaces what the kind had on the surfaces it is said
     // to be on, or on the surfaces it usually covers.
@@ -801,7 +1077,7 @@ DescribedRoom describeRoom (std::string_view words)
     {
         const auto& mat = materials[mi];
         std::size_t length = 0;
-        const auto at = findWord (text, mat.names, &length);
+        const auto at = findWord (plain, mat.names, &length);
 
         if (at == std::string::npos)
             continue;
@@ -816,7 +1092,7 @@ DescribedRoom describeRoom (std::string_view words)
         // A surface word within a few words either side: "carpeted floor", "walls of stone".
         int surfaces = 0;
         const auto before = at >= 24 ? at - 24 : 0;
-        const auto window = text.substr (before, std::min (text.size(), at + length + 18) - before);
+        const auto window = plain.substr (before, std::min (plain.size(), at + length + 18) - before);
 
         for (const auto& sw : surfaceWords)
             if (findWord (window, sw.names) != std::string::npos)
@@ -835,7 +1111,7 @@ DescribedRoom describeRoom (std::string_view words)
     for (const auto& c : contentWords)
     {
         std::size_t length = 0;
-        const auto at = findWord (text, c.names, &length);
+        const auto at = findWord (plain, c.names, &length);
 
         if (at == std::string::npos)
             continue;
@@ -935,25 +1211,30 @@ DescribedRoom describeRoom (std::string_view words)
     // How it sounds: a factor on the decay, a tilt and a bottom.
     double length = 1.0, tilt = 0.0, bottom = 1.0;
 
-    for (const auto& s : soundWords)
+    auto soundText = beyondKind;
+    const auto soundsFound = takePhrases (soundText, soundWords);
+
+    for (std::size_t e = 0; e < soundWords.size(); ++e)
     {
-        std::size_t len = 0;
-        const auto at = findWord (text, s.names, &len);
+        const auto& s = soundWords[e];
+        const auto [at, len] = soundsFound[e];
 
         if (at == std::string::npos)
             continue;
 
-        // A material's own name is not a sound ("hard" in "hardwood").
         room.understood.push_back (text.substr (at + 1, len - 2));
         length *= s.length;
         tilt += s.tilt;
         bottom *= s.bottom;
     }
 
-    for (const auto& p : placeWords)
+    auto placeText = beyondKind;
+    const auto placesFound = takePhrases (placeText, placeWords);
+
+    for (std::size_t e = 0; e < placeWords.size(); ++e)
     {
-        std::size_t len = 0;
-        const auto at = findWord (text, p.names, &len);
+        const auto& p = placeWords[e];
+        const auto [at, len] = placesFound[e];
 
         if (at == std::string::npos)
             continue;

@@ -38,6 +38,10 @@ struct LivingTailDesign
     // its first echoes arrive at the mixing time, where the response's late
     // part begins, rather than on top of the early reflections.
     float inputDelaySeconds = 0.0f;
+
+    /** How long the tail takes to fall 60 dB once its input stops: the
+        slowest band's decay, 0 for an invalid design. */
+    double ringSeconds() const noexcept;
 };
 
 /** The living tail: a 16-line feedback delay network (Jot's structure, with a
@@ -94,7 +98,7 @@ public:
 private:
     static constexpr std::size_t N = LivingTailDesign::numLines;
 
-    void applyLoopFilters (bool glide) noexcept;
+    void applyLoopFilters (std::size_t glideSamples) noexcept; // 0 = at once
     void glideLoopFilters (std::size_t numSamples) noexcept;
     void readFixed (std::array<float, LivingTailDesign::numLines>& taps) noexcept;
     void readMoving (std::array<float, LivingTailDesign::numLines>& taps) noexcept;

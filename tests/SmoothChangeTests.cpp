@@ -216,6 +216,68 @@ TEST_CASE ("The pre-delay, wet tone, EQ and width move without a click", "[rever
     }
 }
 
+TEST_CASE ("A cut or mono bass switched on in one block filters at once, as if set all along", "[reverb][eq]")
+{
+    // Automation, a typed value, undo or a scene can take a filter from off to a setting
+    // in a single block, mid-note. Gliding in without a click is not enough: it must then
+    // filter. Each case compares its steady state after the switch with the same setting
+    // played from the start, and with the filter never on.
+    struct Case
+    {
+        const char* name;
+        double frequency;
+        bool side; // the input in antiphase, the output's side measured
+        std::function<void (ReverbControls&)> set;
+    };
+
+    const std::vector<Case> cases {
+        { "low cut at 5 kHz, a 500 Hz tone", 500.0, false, [] (ReverbControls& c) { c.lowCutHz = 5000.0f; } },
+        { "high cut at 400 Hz, a 2 kHz tone", 2000.0, false, [] (ReverbControls& c) { c.highCutHz = 400.0f; } },
+        { "mono below 2 kHz, a 500 Hz side", 500.0, true, [] (ReverbControls& c) { c.monoBelowHz = 2000.0f; } },
+    };
+
+    constexpr std::size_t switchAt = 24000, length = 72000, block = 480;
+
+    const auto play = [&] (const Case& cs, std::size_t setFrom)
+    {
+        ConvolutionReverb reverb;
+        reverb.prepare (rate);
+        reverb.submit (std::make_unique<ReverbKernel> (synthesiseImpulseResponse (room())));
+
+        ReverbControls plain, set;
+        plain.mix = set.mix = 1.0f;
+        cs.set (set);
+
+        auto l = tone (length, cs.frequency), r = l;
+
+        if (cs.side)
+            for (auto& x : r)
+                x = -x;
+
+        for (std::size_t pos = 0; pos < length; pos += block)
+            reverb.process (l.data() + pos, r.data() + pos, block, pos < setFrom ? plain : set);
+
+        // The last half second, 1 s after the switch: the side (L - R) / 2, or the left.
+        double e = 0.0;
+
+        for (auto n = length - 24000; n < length; ++n)
+        {
+            const auto x = cs.side ? 0.5 * (static_cast<double> (l[n]) - r[n]) : static_cast<double> (l[n]);
+            e += x * x;
+        }
+
+        return 10.0 * std::log10 (e + 1.0e-30);
+    };
+
+    for (const auto& cs : cases)
+    {
+        const auto never = play (cs, length), allAlong = play (cs, 0), switched = play (cs, switchAt);
+        INFO (cs.name << ": never on " << never << " dB, on all along " << allAlong << " dB, switched on " << switched << " dB");
+        REQUIRE (allAlong < never - 20.0);
+        CHECK (std::abs (switched - allAlong) < 1.0);
+    }
+}
+
 TEST_CASE ("Low CPU moving the living tail's wait keeps its pitch", "[reverb][living]")
 {
     // Turning Low CPU on delays the convolution by 1024 samples (21 ms at 48 kHz), and the

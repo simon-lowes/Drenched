@@ -46,6 +46,10 @@ public:
     static juce::String messageFor (int httpStatus);
 
 private:
+    /** Cuts short a system() send in flight, and refuses new ones until the destructor
+        has finished waiting for the sender's thread. */
+    static void cancelSystemSends();
+
     void finish (int httpStatus, std::function<void()> onSent);
 
     Post post;

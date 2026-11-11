@@ -630,3 +630,74 @@ TEST_CASE ("The page's licence messages reach the licence manager", "[licence][b
 
     testing::onMessageThread ([&] { messages.reset(); watch.reset(); });
 }
+
+TEST_CASE ("A clock far behind for a while doesn't end the trial early", "[licence]")
+{
+    // A computer whose clock lost the time (a flat clock battery: the year 2010, say) until
+    // it is set again. While it is behind, the start looks edited and the trial starts over;
+    // once the clock is right, the trial carries on from where it was, not from 2010.
+    Computer computer;
+    computer.write ("trialStart", juce::String (firstDay));
+    *computer.day = firstDay + 3;
+    Manager m (computer);
+    CHECK (static_cast<int> (m.status()["daysLeft"]) == licence::trialDays - 3);
+
+    *computer.day = firstDay - 6000;
+    m.check();
+    CHECK (m.allowed());
+
+    *computer.day = firstDay + 4;
+    m.check();
+    CHECK (m.state() == "trial");
+    CHECK (m.allowed());
+    CHECK (static_cast<int> (m.status()["daysLeft"]) == licence::trialDays - 4);
+    CHECK (computer.saved ("trialStart") == juce::String (firstDay));
+    CHECK_FALSE (computer.hasSaved ("trialStartBefore"));
+
+    // An edit that pretends to be such a start gives no more than a trial from today.
+    *computer.day = firstDay + 40;
+    m.check();
+    CHECK (m.state() == "ended");
+    computer.write ("trialStartBefore", juce::String (*computer.day + 10));
+    m.check();
+    CHECK (m.state() == "ended");
+    computer.write ("trialStartBefore", juce::String (*computer.day));
+    m.check();
+    CHECK (static_cast<int> (m.status()["daysLeft"]) <= licence::trialDays);
+}
+
+TEST_CASE ("A licence file that can't be read keeps the licence and isn't written over", "[licence]")
+{
+    Computer computer;
+    *computer.day = firstDay + 30;
+    computer.write ("trialStart", juce::String (firstDay)); // the trial has ended
+
+    std::string mine;
+
+    {
+        Manager probe (computer);
+        mine = probe.machine();
+    }
+
+    computer.write ("code", testing::codeFor (mine));
+    Manager m (computer);
+    REQUIRE (m.state() == "licensed");
+
+    // Another program has the file in a state it can't be read in (damaged, or half
+    // written by something that doesn't write it the safe way).
+    juce::MemoryBlock good;
+    REQUIRE (computer.file.loadFileAsData (good));
+    const juce::String damaged ("<?xml version=\"1.0\"?><PROPERTIES><VALUE name=\"co");
+    REQUIRE (computer.file.replaceWithText (damaged));
+    REQUIRE (computer.file.loadFileAsString() == damaged);
+
+    m.check();
+    CHECK (m.state() == "licensed");
+    CHECK (m.allowed());
+    CHECK (computer.file.loadFileAsString() == damaged); // left for whoever damaged it
+
+    REQUIRE (computer.file.replaceWithData (good.getData(), good.getSize()));
+    m.check();
+    CHECK (m.state() == "licensed");
+    CHECK (computer.saved ("code") == testing::codeFor (mine));
+}

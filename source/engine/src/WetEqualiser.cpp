@@ -63,6 +63,14 @@ void WetEqualiser::setBands (const Bands& newBands) noexcept
 {
     targets = newBands;
 
+    // Frequencies and Qs glide by ratio, so they must stay above zero (and finite).
+    for (auto& t : targets)
+    {
+        t.frequencyHz = std::isfinite (t.frequencyHz) ? std::max (t.frequencyHz, 1.0f) : 1000.0f;
+        t.q = std::isfinite (t.q) ? std::clamp (t.q, minQ, maxQ) : 0.7071f;
+        t.gainDb = std::isfinite (t.gainDb) ? t.gainDb : 0.0f;
+    }
+
     if (! heardSinceReset)
     {
         for (std::size_t b = 0; b < numBands; ++b)
@@ -108,13 +116,9 @@ void WetEqualiser::advance() noexcept
             for (auto& channel : filters)
                 channel[b].reset();
         }
-        else if (now.shape != goal.shape)
-        {
-            // A new shape at the same gain: the filter morphs over the block.
-            now.shape = goal.shape;
-        }
-
-        now.gainDb = glide::towards (now.gainDb, goal.gainDb, glideCoef);
+        // A new shape: the band glides to 0 dB first, then comes back in its new shape.
+        const auto gainGoal = now.shape != goal.shape ? 0.0f : goal.gainDb;
+        now.gainDb = glide::towards (now.gainDb, gainGoal, glideCoef);
         now.frequencyHz = glide::towardsRatio (now.frequencyHz, goal.frequencyHz, glideCoef);
         now.q = glide::towardsRatio (now.q, goal.q, glideCoef);
         design (b, glide::block);
@@ -122,7 +126,10 @@ void WetEqualiser::advance() noexcept
 
     // The solo fades in and out; its filter follows the band as heard.
     soloFrom = soloHeard;
-    const auto soloGoal = solo == noSolo ? 0.0f : 1.0f;
+    // Another band soloed, or the soloed band's filter changing kind: out, then in afresh.
+    const auto kind = [this] (int b) { return b == noSolo ? -1 : static_cast<int> (bands[static_cast<std::size_t> (b)].shape); };
+    const auto changing = soloDesigned != noSolo && (solo != soloDesigned || kind (solo) != soloKind);
+    const auto soloGoal = solo == noSolo || changing ? 0.0f : 1.0f;
 
     if (soloHeard != soloGoal)
     {
@@ -132,7 +139,10 @@ void WetEqualiser::advance() noexcept
             soloHeard = soloGoal;
     }
 
-    if (solo != noSolo)
+    if (changing && soloHeard <= 0.0f)
+        soloDesigned = noSolo;
+
+    if (solo != noSolo && ! (changing && soloDesigned != noSolo))
     {
         // A solo starting from silence takes its filter at once, with clean state.
         const auto fresh = soloFrom <= 0.0f && soloDesigned == noSolo;
@@ -182,6 +192,7 @@ void WetEqualiser::designSolo (std::size_t ramp) noexcept
         filter.glideTo (svf, ramp);
 
     soloDesigned = solo;
+    soloKind = static_cast<int> (b.shape);
 }
 
 void WetEqualiser::process (std::size_t channel, float* data, std::size_t n) noexcept

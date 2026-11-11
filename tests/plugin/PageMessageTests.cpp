@@ -312,6 +312,23 @@ TEST_CASE ("ui sets the interface state the page owns, and nothing else", "[brid
         CHECK (b.ui (UiIDs::speakers).toString().length() == 1024);
     }
 
+    SECTION ("the graph is one of the two there are; anything else is the decay graph")
+    {
+        b.send ("ui", R"({"graph": "decay"})");
+        CHECK (b.ui (UiIDs::graph) == "decay");
+
+        for (const auto* json : { R"({"graph": "EQ"})", R"({"graph": 1})", R"({"graph": ["eq"]})", R"({"graph": null})" })
+        {
+            INFO (json);
+            b.send ("ui", R"({"graph": "eq"})");
+            b.send ("ui", json);
+            CHECK (b.ui (UiIDs::graph) == "decay");
+        }
+
+        b.send ("ui", "{\"graph\": \"" + juce::String::repeatedString ("eq", 100000) + "\"}");
+        CHECK (b.ui (UiIDs::graph) == "decay");
+    }
+
     tree.removeListener (&watcher);
 }
 
@@ -393,6 +410,19 @@ TEST_CASE ("eqSolo listens to one EQ band alone until the page lets go, reloads,
     CHECK (b.plugin->eqSoloBand() == WetEqualiser::noSolo);
     b.send ("eqSolo");
     CHECK (b.plugin->eqSoloBand() == WetEqualiser::noSolo);
+
+    // Only a whole band number the engine has: anything else is no solo, never a guess
+    // (an out-of-range band once left the dry sound muted with no band heard alone).
+    for (const auto* json : { R"({"band": 12})", R"({"band": -2})", R"({"band": 2.5})", R"({"band": 1e10})",
+                              R"({"band": -1e10})", R"({"band": "3"})", R"({"band": true})", R"({"band": [3]})",
+                              R"({"band": null})" })
+    {
+        INFO (json);
+        b.send ("eqSolo", R"({"band": 3})");
+        REQUIRE (b.plugin->eqSoloBand() == 3);
+        b.send ("eqSolo", json);
+        CHECK (b.plugin->eqSoloBand() == WetEqualiser::noSolo);
+    }
 
     // The page reloading (its solo button gone) ends a solo too.
     b.send ("eqSolo", R"({"band": 0})");
@@ -791,6 +821,125 @@ TEST_CASE ("A whole photograph the page sends is looked at in the background, th
     CHECK (b.ui (UiIDs::roomFrom).toString() == "photo");
     CHECK (b.ui (UiIDs::roomName).toString() == "chapel.jpg");
     CHECK (b.window.interface == 1);
+}
+
+namespace
+{
+    /** A JPEG of a picture given as rows of RGB, with an Exif segment saying the
+        orientation, as a camera writes it. */
+    juce::MemoryBlock jpegWithOrientation (const std::vector<std::uint8_t>& rgb, int width, int height, int orientation)
+    {
+        juce::Image image (juce::Image::RGB, width, height, false);
+
+        for (int y = 0; y < height; ++y)
+            for (int x = 0; x < width; ++x)
+            {
+                const auto* p = rgb.data() + static_cast<size_t> ((y * width + x) * 3);
+                image.setPixelAt (x, y, juce::Colour (p[0], p[1], p[2]));
+            }
+
+        juce::MemoryOutputStream encoded;
+        juce::JPEGImageFormat jpeg;
+        jpeg.setQuality (0.97f);
+        REQUIRE (jpeg.writeImageToStream (image, encoded));
+
+        // Exif, big-endian: IFD0 with the one tag.
+        const std::uint8_t exif[] { 0xFF, 0xE1, 0x00, 0x22, 'E', 'x', 'i', 'f', 0, 0,
+                                    'M', 'M', 0, 42, 0, 0, 0, 8,
+                                    0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, static_cast<std::uint8_t> (orientation), 0, 0,
+                                    0, 0, 0, 0 };
+        juce::MemoryBlock out;
+        out.append (encoded.getData(), 2); // the start of image
+        out.append (exif, sizeof (exif));
+        out.append (static_cast<const char*> (encoded.getData()) + 2, encoded.getDataSize() - 2);
+        return out;
+    }
+
+    juce::var lookAtFile (Bridge& b, const juce::File& file)
+    {
+        juce::var result;
+        auto done = false;
+        b.plugin->describePhotoAsync (file, [&] (const juce::var& r) { result = r; done = true; });
+        REQUIRE (testing::pumpUntil ([&] { return done; }, 60000));
+        return result;
+    }
+}
+
+TEST_CASE ("A picture file that says it is enormous is refused before it is decoded", "[bridge][describe][messageloop]")
+{
+    DRENCHED_NEEDS_MESSAGE_LOOP();
+    Bridge b;
+
+    // A PNG of 1,000,000 x 1,000,000 pixels in a few kilobytes: decoding it would want
+    // 4 TB, which JUCE's PNG reader does not check before writing.
+    juce::MemoryOutputStream png;
+    const std::uint8_t signature[] { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n' };
+    png.write (signature, sizeof (signature));
+    juce::MemoryOutputStream ihdr;
+    ihdr.write ("IHDR", 4);
+    ihdr.writeIntBigEndian (1000000);
+    ihdr.writeIntBigEndian (1000000);
+    const std::uint8_t format[] { 8, 2, 0, 0, 0 };
+    ihdr.write (format, sizeof (format));
+    png.writeIntBigEndian (13);
+    png.write (ihdr.getData(), ihdr.getDataSize());
+    png.writeIntBigEndian (0); // the check, unread
+    juce::MemoryBlock zeros (4096, true);
+    png.writeIntBigEndian (static_cast<int> (zeros.getSize()));
+    png.write ("IDAT", 4);
+    png.write (zeros.getData(), zeros.getSize());
+    png.writeIntBigEndian (0);
+
+    const juce::TemporaryFile temp (".png");
+    REQUIRE (temp.getFile().replaceWithData (png.getData(), png.getDataSize()));
+
+    const auto result = lookAtFile (b, temp.getFile());
+    CHECK (result["error"].toString().contains ("isn't one it can read"));
+    CHECK (b.ui (UiIDs::spaceId).toString() != "described");
+
+    // And a file that is no picture at all says the same.
+    const juce::TemporaryFile text (".jpg");
+    REQUIRE (text.getFile().replaceWithText ("not a picture"));
+    CHECK (lookAtFile (b, text.getFile())["error"].toString().contains ("isn't one it can read"));
+}
+
+TEST_CASE ("A chosen photograph a phone stored on its side is looked at upright", "[bridge][describe][messageloop]")
+{
+    DRENCHED_NEEDS_MESSAGE_LOOP();
+    Bridge b;
+
+    // The picture is kept in the repository, so that an ordinary run reads a JPEG as the
+    // plugin does and never writes one: the JPEG writer JUCE carries shifts negative
+    // numbers, which the undefined behaviour sanitizer stops at.
+    // DRENCHED_UPDATE_SESSIONS=1 makes the picture again.
+    const auto scenes = juce::File (DRENCHED_TEST_DATA_DIR).getChildFile ("scene");
+    const auto kept = scenes.getChildFile ("chapel-sideways.jpg");
+
+    if (updating())
+    {
+        juce::MemoryBlock upright;
+        REQUIRE (scenes.getChildFile ("chapel.rgb").loadFileAsData (upright));
+        constexpr int side = SceneNet::side;
+        const auto* u = static_cast<const std::uint8_t*> (upright.getData());
+
+        // As a phone stores a portrait shot: a quarter turn anticlockwise, orientation 6.
+        std::vector<std::uint8_t> stored (upright.getSize());
+
+        for (int y = 0; y < side; ++y)
+            for (int x = 0; x < side; ++x)
+                for (int c = 0; c < 3; ++c)
+                    stored[static_cast<size_t> (((side - 1 - x) * side + y) * 3 + c)] = u[(y * side + x) * 3 + c];
+
+        const auto jpeg = jpegWithOrientation (stored, side, side, 6);
+        REQUIRE (kept.replaceWithData (jpeg.getData(), jpeg.getSize()));
+    }
+
+    REQUIRE (kept.existsAsFile());
+    const auto room = lookAtFile (b, kept);
+    REQUIRE (room["error"].isVoid());
+    REQUIRE (room["seen"].size() == 5);
+    CHECK (room["seen"][0]["name"].toString() == "church/indoor");
+    CHECK (room["kind"].toString() == "chapel");
 }
 
 TEST_CASE ("Every event name the page may send is handled, and no other", "[bridge]")
