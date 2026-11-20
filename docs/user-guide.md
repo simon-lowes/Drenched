@@ -67,21 +67,23 @@ If Drenched doesn't appear, rescan plug-ins in your host. Logic Pro lists it und
 
 A new instance opens on the first recorded space, St Paul's Hall, with the decay graph showing that room's measured decay. The default look is **Aperture**; there are eleven others (see [Looks](#looks)), and every one has the same controls.
 
-The first time Drenched opens on a computer it offers the **Tips**: eleven short cards, one at a time, each lighting the control it is about (the space, the decay graph, typing a value, Freeze, A and B, locks, All parameters, the windows, the strip and the look), in the look you have open. **Show me** starts them, **Not now** skips them, and they are not offered again. Next, Back, the arrow keys and Escape move through them. To see them again at any time, press **?** or click **Tips** in the Spaces window's tools; in Stage view the tips are about Stage.
+The first time Drenched opens on a computer it offers the **Tips**: twelve short cards, one at a time, each lighting the control it is about (the space, the decay graph, typing a value, Freeze, Bypass, A and B, locks, All parameters, the windows, the strip and the look), in the look you have open. **Show me** starts them, **Not now** skips them, and they are not offered again. Next, Back, the arrow keys and Escape move through them. To see them again at any time, press **?** or click **Tips** in the Spaces window's tools; in Stage view the tips are about Stage.
 
 The screen has four parts:
 
 - **The space**: its name and a picture or drawing. Click its description to open the Spaces browser; the arrows beside it step through spaces.
 - **The decay graph**: decay time in eight octave bands, 63 Hz to 8 kHz. **EQ** beside it puts the wet EQ on the display instead (see [Wet EQ](#wet-eq)); **Decay** brings the graph back.
 - **The main controls**: Mix, Decay, Pre-delay, Size, Brightness, Early/Late and Distance, plus **Freeze**, **Match a room**, **All parameters**, **Wet EQ** and **Waterfall** (some looks say More, Match or EQ).
+- **The top bar**: **Studio** and **Stage**, **A** and **B**, and **Bypass** (see [Bypass](#bypass)).
 - **The strip along the bottom**: a line about the control under the pointer, the **In** and **Out** meters and a **Beta** label.
 
 The line describes whatever the pointer or the keyboard is on, with its value and the captured space's, and is empty otherwise. A message about what just happened (a space loaded, a value locked) shows there for a few seconds. A small dot beside a control means it differs from the captured space. When a message is too long for the line, **More** beside it opens the whole message; **Less** or Escape closes it. Each meter shows both sides, with a mark that holds the recent peak and a lamp that lights when a side reaches full scale.
 
 ### Working the controls
 
-- Drag any control up or down. Hold Shift for fine steps.
-- Click a value to type one. You can type "off" where a control has an Off, "centre" or "20% left" for the positions, and "12k" for frequencies. A decimal comma ("1,5") works as well as a point, and you can type in another unit: "0.1 s" for Pre-delay, "800 ms" for Decay.
+- Drag a knob up or down, or a slider sideways. Hold Shift for fine steps.
+- Scroll over a control with the mouse wheel or trackpad to change it: up or right raises it, and Shift gives fine steps. This works on the knobs and sliders, the decay graph's points, and every value, including those in All parameters and Stage view. Your host is told the control is being moved until the wheel stops, so automation being written records the move as one change.
+- Click a value, or double-click its knob or slider, to type one. You can type "off" where a control has an Off, "centre" or "20% left" for the positions, and "12k" for frequencies. A decimal comma ("1,5") works as well as a point, and you can type in another unit: "0.1 s" for Pre-delay, "800 ms" for Decay.
 - With a control focused, the arrow keys nudge it, Page Up and Page Down take bigger steps, and Home and End go to the ends. Press Tab to reach the controls from the keyboard. A control you click or drag doesn't keep the keyboard, so your host's own keys, such as Space for play and Home for return to zero, still reach the host. Keys with Ctrl, Alt or Cmd held are always left to the host.
 - Escape closes any window. While a window is open, Tab and Shift+Tab move round its controls only; when it closes, the keyboard goes back to the control that opened it.
 - Drag the corner to resize the window. It keeps its shape, and the size is saved with the session.
@@ -248,7 +250,7 @@ A scene stores every setting and the space under a name, up to 32 per session: o
 - **Store as scene N** saves the current settings. Type in a name field to rename.
 - **Recall** loads it, **Update** overwrites it with the current settings, and **Delete** removes it (the others keep their numbers, so their automation still works).
 - Automate the **Scene** parameter to change rooms on the cut. **Off** leaves the settings alone.
-- Freeze and Low CPU are not stored; they stay as they are.
+- Freeze, Bypass and Low CPU are not stored; they stay as they are.
 - Playing, scenes follow automation within about a twentieth of a second, plus the moment a recorded space or your own file takes to load, the first time; the room plays on as it was until then. A scene whose file can't be found shows it as missing, as a session does, so you can find it in Spaces. An offline bounce changes the scene, room and all, at the point the automation moves, the same in every bounce.
 
 ### Tips
@@ -315,11 +317,15 @@ Click the **Drenched** name in any look to open **Choose a look**. Every value s
 | Material | The surface (colours follow the room's surface) |
 | Folio | The spread |
 
-## A/B, locks and Freeze
+## A/B, locks, Freeze and Bypass
 
-- **A** and **B** are two snapshots of every setting and the space. B starts as a copy of A; changes go to whichever is selected, so switch back and forth to compare. Freeze is left out. The snapshots are not saved with the session.
+- **A** and **B** are two snapshots of every setting and the space. B starts as a copy of A; changes go to whichever is selected, so switch back and forth to compare. Freeze and Bypass are left out. The snapshots are not saved with the session.
 - **Locks** hold a value when you change space (see [What changes when you change space](#what-changes-when-you-change-space)). They are saved with the session.
 - **Freeze** holds the tail indefinitely while it's on; a ring breathes around the button while it holds. Crossover sets the frequency below which a frozen room keeps fading. Freeze is not stored in scenes.
+
+### Bypass
+
+**Bypass**, beside A and B in every look and in Stage view, plays only the dry sound, still in time, so you can hear what the reverb adds. While it is on, the button lights and the space's picture and decay graph lose their colour. It is the same switch as your host's bypass: turning either on turns the other on, and the reverb fades out and back in rather than clicking. It is saved with the session and can be automated, but scenes and A/B leave it alone.
 
 ## Low CPU and latency
 
@@ -367,7 +373,7 @@ IR file you loaded, and a screenshot or recording if you can.
 
 ## Parameter reference
 
-Names as your host shows them. 63 parameters.
+Names as your host shows them. 108 parameters.
 
 | Parameter | Range | Default |
 | --- | --- | --- |
@@ -413,5 +419,6 @@ Names as your host shows them. 63 parameters.
 | EQ low on, EQ 2 on ... EQ 12 on | Off, On | On for EQ low to EQ high; Off for EQ 7 to EQ 12 |
 | Decay linked | Off, On | On |
 | Right decay 63 Hz, Right decay 125 Hz, Right decay 250 Hz, Right decay 500 Hz, Right decay 1 kHz, Right decay 2 kHz, Right decay 4 kHz, Right decay 8 kHz | 0.1 to 20 s | The space's measured decay (heard only while Decay linked is off) |
+| Bypass | Off, On (your host's bypass switch) | Off |
 
 On the graph and in the Wet EQ window the bands are Band 1 to Band 12: EQ low is Band 1 and EQ high is Band 6. A band that is off is flat whatever its gain; a shelf's Q is heard once it is made a bell. Solo is not a parameter.

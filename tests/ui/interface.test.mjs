@@ -2125,3 +2125,236 @@ test ('The tips\' spot keeps its veil and ring in a web view without color-mix()
     assert.match (shadow, /2000px.*1\.5px/, shadow);
     assert.deepEqual (errors, []);
 });
+
+/** Turns the wheel where the mouse is. Playwright returns before the page has the event, so this waits a moment. */
+async function turn (dx, dy)
+{
+    await page.mouse.wheel (dx, dy);
+    await page.waitForTimeout (30);
+}
+
+/** Points on screen over each visible control of kind sel (one per key), clear of any field inside it. */
+const controlPoints = (sel, keyAttr) => page.evaluate (([sel, keyAttr]) =>
+{
+    const out = {};
+
+    for (const el of document.querySelectorAll (sel))
+    {
+        const key = el.getAttribute (keyAttr), r = el.getBoundingClientRect();
+
+        if (key in out || r.width === 0 || el.closest ('[role="dialog"],[inert]'))
+            continue;
+
+        // the first point, scanning from the middle out, where the control itself is hit
+        for (let i = 0; i < 64 && ! (key in out); ++i)
+        {
+            const x = r.left + r.width * (0.5 + ((i % 8) - 3.5) / 9), y = r.top + r.height * (0.5 + (Math.floor (i / 8) - 3.5) / 9);
+            const hit = document.elementFromPoint (x, y);
+
+            if (hit && hit.closest (sel) === el && ! hit.closest ('input,button'))
+                out[key] = { x, y };
+        }
+    }
+
+    return out;
+}, [sel, keyAttr]);
+
+/** Taken minus let go, for each control the page has told the plugin about. */
+const heldCount = () => page.evaluate (() =>
+{
+    const count = {};
+
+    for (const [name, payload] of window.__sent)
+        if (name === 'gesture')
+            for (const id of payload.ids)
+                count[id] = (count[id] || 0) + (payload.begin ? 1 : -1);
+
+    return count;
+});
+
+test ('The mouse wheel or a trackpad changes every knob and slider, finely with Shift, in every look', async () =>
+{
+    await page.goto ('about:blank');
+    await open ('anodised');
+    const looks = await page.evaluate (() => SKINS.map (s => s.id));
+
+    for (const look of looks)
+    {
+        await page.goto ('about:blank');
+        await open (look);
+        const points = await controlPoints ('[data-knob]', 'data-knob');
+        assert.equal (Object.keys (points).length, 7, look + ': the seven main controls, found ' + Object.keys (points));
+
+        for (const [k, at] of Object.entries (points))
+        {
+            const value = () => page.evaluate (k => getV (st, k), k);
+            await page.mouse.move (at.x, at.y);
+            await page.evaluate (() => { window.__sent = []; });
+
+            const v0 = await value();
+            await turn (0, -100);
+            await drawn();
+            const v1 = await value();
+            assert.ok (v1 > v0, look + ' ' + k + ': a wheel turned up raises it, ' + v0 + ' to ' + v1);
+
+            await turn (0, 100);
+            await drawn();
+            const v2 = await value();
+            assert.ok (v2 < v1, look + ' ' + k + ': a wheel turned down lowers it, ' + v1 + ' to ' + v2);
+
+            // Shift: a finer step, but each notch still moves it
+            await page.keyboard.down ('Shift');
+            await turn (0, -100);
+            await page.keyboard.up ('Shift');
+            await drawn();
+            const v3 = await value();
+            assert.ok (v3 > v2 && v3 - v2 <= (v1 - v0) + 1e-9, look + ' ' + k + ': Shift turns it finely, ' + (v3 - v2) + ' against ' + (v1 - v0));
+
+            // a trackpad's many small turns add up to a move
+            const v4 = await value();
+            for (let i = 0; i < 10; ++i)
+                await turn (0, -12);
+            await drawn();
+            assert.ok (await value() > v4, look + ' ' + k + ': small trackpad turns add up');
+
+            // the plugin heard the change, inside one gesture that ends once the wheel is still
+            const sent = await page.evaluate (() => window.__sent.filter (([n]) => n === 'params').length);
+            assert.ok (sent > 0, look + ' ' + k + ': the change reached the plugin');
+            await page.waitForTimeout (450);
+            const held = await heldCount();
+            assert.ok (Object.keys (held).length > 0 && Object.values (held).every (n => n === 0), look + ' ' + k + ': held until the wheel stopped, then let go ' + JSON.stringify (held));
+        }
+    }
+
+    assert.deepEqual (errors, []);
+});
+
+test ('The wheel changes a decay point and a value field, and leaves a list that scrolls to scroll', async () =>
+{
+    await page.goto ('about:blank');
+    await open ('aperture');
+
+    // the middle of the point: hovering a point redraws it
+    const node = await page.evaluate (() => { const r = document.querySelector ('[data-node="2"]').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+    const band = () => page.evaluate (() => curBands (st)[2]);
+    const b0 = await band();
+    await page.mouse.move (node.x, node.y);
+    await turn (0, -100);
+    await drawn();
+    assert.ok (Math.abs ((await band()) - b0 - 0.1) < 1e-6, 'a notch raises the band by 0.1 s: ' + b0 + ' to ' + (await band()));
+
+    // Stage shows values as fields only: the wheel changes them too
+    await page.click ('[data-act="mode"][data-v="stage"]');
+    await drawn();
+    const field = await page.evaluate (() =>
+    {
+        const f = [...document.querySelectorAll ('input[data-type="pre"]')].find (e => e.getBoundingClientRect().width > 0);
+        const r = f.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    });
+    const pre0 = await page.evaluate (() => st.pre);
+    await page.mouse.move (field.x, field.y);
+    await turn (0, -100);
+    await drawn();
+    assert.ok ((await page.evaluate (() => st.pre)) > pre0, 'the pre-delay field in Stage takes the wheel');
+
+    // a field in a list that scrolls takes the wheel only once it has the keyboard
+    const listed = await page.evaluate (() =>
+    {
+        const f = [...document.querySelectorAll ('input[data-type="size"]')].find (e => e.getBoundingClientRect().width > 0);
+        const box = f.parentElement;
+        box.style.overflowY = 'auto';
+        box.style.maxHeight = '10px';
+        box.style.height = '10px';
+        box.insertAdjacentHTML ('beforeend', '<div style="height:200px"></div>');
+        const r = f.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + Math.min (r.height, 8) / 2 };
+    });
+    const size0 = await page.evaluate (() => st.size);
+    await page.mouse.move (listed.x, listed.y);
+    await turn (0, -100);
+    assert.equal (await page.evaluate (() => st.size), size0, 'a field in a scrolling list leaves the wheel to the list');
+    await page.waitForTimeout (450);
+    assert.deepEqual (errors, []);
+});
+
+test ('Double-clicking a knob or slider opens its value to type, in every look', async () =>
+{
+    await page.goto ('about:blank');
+    await open ('anodised');
+    const looks = await page.evaluate (() => SKINS.map (s => s.id));
+
+    for (const look of looks)
+    {
+        await page.goto ('about:blank');
+        await open (look);
+        const points = await controlPoints ('[data-knob]', 'data-knob');
+
+        for (const [k, at] of Object.entries (points))
+        {
+            await page.mouse.dblclick (at.x, at.y);
+            await drawn();
+            const typing = await page.evaluate (() =>
+            {
+                const a = document.activeElement;
+                return a && a.matches ('input[data-type]') ? { type: a.getAttribute ('data-type'), all: a.selectionStart === 0 && a.selectionEnd === a.value.length } : null;
+            });
+            assert.deepEqual (typing, { type: k, all: true }, look + ' ' + k + ': its value takes the keyboard, selected');
+            await page.keyboard.press ('Escape');
+            await page.evaluate (() => document.activeElement && document.activeElement.blur());
+        }
+    }
+
+    assert.deepEqual (errors, []);
+});
+
+test ('Bypass is beside A and B in every look, Studio and Stage, and is the plugin\'s bypass', async () =>
+{
+    await page.goto ('about:blank');
+    await open ('anodised');
+    const looks = await page.evaluate (() => SKINS.map (s => s.id));
+
+    for (const look of looks)
+        for (const mode of ['studio', 'stage'])
+        {
+            await page.goto ('about:blank');
+            await open (look);
+
+            if (mode === 'stage')
+            {
+                await page.click ('[data-act="mode"][data-v="stage"]');
+                await drawn();
+            }
+
+            const where = look + ' ' + mode;
+            const button = page.locator ('[data-act="bypass"]');
+            assert.equal (await button.count(), 1, where + ': one Bypass button');
+            const box = await page.evaluate (() =>
+            {
+                const b = document.querySelector ('[data-act="bypass"]'), r = b.getBoundingClientRect(), sc = document.querySelector ('.screen').getBoundingClientRect();
+                return { inside: r.width > 0 && r.left >= sc.left && r.right <= sc.right + 0.5 && r.top >= sc.top && r.bottom <= sc.bottom + 0.5, text: b.textContent.trim() };
+            });
+            assert.ok (box.inside, where + ': the button is on the screen');
+            assert.match (box.text, /^bypass$/i, where + ': it says Bypass');
+
+            await page.evaluate (() => { window.__sent = []; });
+            await button.click();
+            await drawn();
+            assert.equal (await button.getAttribute ('aria-pressed'), 'true', where + ': pressed');
+            assert.ok (await page.evaluate (() => document.querySelector ('.screen').classList.contains ('bypassed')), where + ': the screen shows it');
+            const sent = await sentWith ('params', 'bypass');
+            assert.equal (sent.at (-1).bypass, 1, where + ': the plugin is told');
+
+            // A and B leave it as it is, as they do Freeze
+            await page.click ('[data-act="slot"][data-v="B"]');
+            await drawn();
+            assert.equal (await page.evaluate (() => st.bypass), true, where + ': B keeps Bypass on');
+
+            // the host's own bypass switch is the same parameter
+            await fromPlugin ('state', { params: { bypass: 0 }, ui: {} });
+            await drawn();
+            assert.equal (await page.locator ('[data-act="bypass"]').getAttribute ('aria-pressed'), 'false', where + ': the host turned it off');
+        }
+
+    assert.deepEqual (errors, []);
+});

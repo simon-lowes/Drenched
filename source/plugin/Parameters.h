@@ -59,6 +59,8 @@ namespace ParamIDs
 
     // The right-hand side's own decay curve, played while the two sides are unlinked.
     inline constexpr auto decayLink = "decayLink";
+    // The plugin's own bypass, which hosts show as their bypass switch (getBypassParameter).
+    inline constexpr auto bypass = "bypass";
     inline constexpr std::array<const char*, 8> decayRight { "decayR63", "decayR125", "decayR250", "decayR500",
                                                              "decayR1k", "decayR2k",  "decayR4k",  "decayR8k" };
     inline constexpr std::array<const char*, 8> decayRightNames { "Right decay 63 Hz", "Right decay 125 Hz", "Right decay 250 Hz",
@@ -91,7 +93,7 @@ namespace ParamIDs
     inline constexpr bool eqOnByDefault (std::size_t band) noexcept { return band < 6; }
 
     /** Every id, in a fixed order, for code that keeps per-parameter state. */
-    inline constexpr std::array<const char*, 107> ordered { mix, output, predelay, size, brightness, earlyLate, distance, freeze,
+    inline constexpr std::array<const char*, 108> ordered { mix, output, predelay, size, brightness, earlyLate, distance, freeze,
                                                            predelaySync, crossover, wetLowCut, wetHighCut, width, ducking, monoBelow,
                                                            decay[0], decay[1], decay[2], decay[3], decay[4], decay[5], decay[6], decay[7],
                                                            living, movement, movementRate, reverse, gate, attack, directLevel, directDelay,
@@ -109,7 +111,8 @@ namespace ParamIDs
                                                            eqShape[0], eqShape[1], eqShape[2], eqShape[3], eqShape[4], eqShape[5],
                                                            eqShape[6], eqShape[7], eqShape[8], eqShape[9], eqShape[10], eqShape[11],
                                                            eqOn[0], eqOn[1], eqOn[2], eqOn[3], eqOn[4], eqOn[5],
-                                                           eqOn[6], eqOn[7], eqOn[8], eqOn[9], eqOn[10], eqOn[11] };
+                                                           eqOn[6], eqOn[7], eqOn[8], eqOn[9], eqOn[10], eqOn[11],
+                                                           bypass };
 
     /** The same, as strings. */
     inline const juce::StringArray& all()
@@ -185,11 +188,12 @@ namespace SceneIDs
     inline const juce::Identifier irName { "irName" };
     inline const juce::Identifier speakers { "speakers" };
 
-    /** Parameters a scene leaves alone: the scene itself, Freeze (a performance control,
-        like the A/B compare leaves it) and Low CPU (a setting for the computer, not the room). */
+    /** Parameters a scene leaves alone: the scene itself, Freeze and Bypass (performance
+        controls, like the A/B compare leaves them) and Low CPU (a setting for the computer,
+        not the room). */
     inline bool isStored (const juce::String& id)
     {
-        return id != ParamIDs::scene && id != ParamIDs::freeze && id != ParamIDs::lowCpu;
+        return id != ParamIDs::scene && id != ParamIDs::freeze && id != ParamIDs::bypass && id != ParamIDs::lowCpu;
     }
 }
 
@@ -468,6 +472,10 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
         layout.add (std::make_unique<Bool> (shortName + " On", ParameterID { ParamIDs::eqOn[band], 1 }, name + " on",
                                             ParamIDs::eqOnByDefault (band)));
     }
+
+    // Bypass: only the dry sound, in time. It is the host's bypass switch too, so the
+    // interface's button and the host's are one. Off is how every earlier version played.
+    layout.add (std::make_unique<Bool> ("Bypass", ParameterID { ParamIDs::bypass, 1 }, "Bypass", false));
 
     return layout;
 }

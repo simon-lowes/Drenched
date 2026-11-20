@@ -8,7 +8,7 @@ var W=1200,H=760;
 var JUCE=(window.__JUCE__&&window.__JUCE__.backend)?window.__JUCE__.backend:null;
 
 /* ---- parameters: UI keys on the left, plugin parameter ids on the right ---- */
-var PID={mix:'mix',pre:'predelay',size:'size',bright:'brightness',el:'earlyLate',dist:'distance',output:'output',freeze:'freeze',
+var PID={mix:'mix',pre:'predelay',size:'size',bright:'brightness',el:'earlyLate',dist:'distance',output:'output',freeze:'freeze',bypass:'bypass',
          preSync:'predelaySync',xover:'crossover',locut:'wetLowCut',hicut:'wetHighCut',width:'width',duck:'ducking',mono:'monoBelow',
          living:'living',move:'movement',moveRate:'movementRate',rev:'reverse',gate:'gate',attack:'attack',dLvl:'directLevel',dDel:'directDelay',dCol:'directColour',xfeed:'crossFeed',cpu:'lowCpu',cloud:'cloudSize',lx:'listenerX',sx:'sourceX'};
 for(var eb=1;eb<=EQ_N;eb++){PID['eq'+eb+'f']='eq'+eb+'Freq';PID['eq'+eb+'g']='eq'+eb+'Gain';PID['eq'+eb+'q']='eq'+eb+'Q';PID['eq'+eb+'s']='eq'+eb+'Shape';PID['eq'+eb+'o']='eq'+eb+'On';}
@@ -18,7 +18,7 @@ var RBAND_ID=['decayR63','decayR125','decayR250','decayR500','decayR1k','decayR2
 function keyOf(id){for(var k in PID)if(PID[k]===id)return k;return null;}
 /* the parameter id of band i on the side being edited */
 function bandId(s,i){return !s.link&&s.side==='R'?RBAND_ID[i]:BAND_ID[i];}
-function paramValues(s){var o={};for(var k in PID)o[PID[k]]=k==='freeze'?(s.freeze?1:0):s[k];s.bands.forEach(function(b,i){o[BAND_ID[i]]=b;});s.rbands.forEach(function(b,i){o[RBAND_ID[i]]=b;});o[LINK_ID]=s.link?1:0;return o;}
+function paramValues(s){var o={};for(var k in PID)o[PID[k]]=k==='freeze'||k==='bypass'?(s[k]?1:0):s[k];s.bands.forEach(function(b,i){o[BAND_ID[i]]=b;});s.rbands.forEach(function(b,i){o[RBAND_ID[i]]=b;});o[LINK_ID]=s.link?1:0;return o;}
 function uiState(s){return {spaceId:SPACES[s.sp]?SPACES[s.sp].id:'',locks:Object.keys(s.locks).filter(function(k){return s.locks[k];}).join(','),mode:s.mode,view:s.view,graph:s.graph,skin:s.skin,speakers:speakersText(s)};}
 
 var lastSent={},lastUi={};
@@ -49,7 +49,7 @@ function applyFromHost(msg){if(!msg)return;var p=msg.params||{},u=msg.ui||{},fro
  // a value that isn't a number arrives as null, which + would read as 0
  for(var id in p){if(p[id]==null)continue;var v=+p[id];if(!isFinite(v))continue;lastSent[id]=v;var bi=BAND_ID.indexOf(id);if(bi>=0){st.bands[bi]=v;continue;}
   var ri=RBAND_ID.indexOf(id);if(ri>=0){st.rbands[ri]=v;continue;}if(id===LINK_ID){st.link=v>=0.5;if(st.link)st.side='L';continue;}
-  var k=keyOf(id);if(!k)continue;if(k==='freeze')st.freeze=v>=0.5;else st[k]=v;}
+  var k=keyOf(id);if(!k)continue;if(k==='freeze'||k==='bypass')st[k]=v>=0.5;else st[k]=v;}
  if(u.spaceId!=null){var si=spaceIndex(String(u.spaceId));if(si>=0){if(si!==st.sp){fadeFrom(st.sp);settle=true;}st.sp=si;lastUi.spaceId=String(u.spaceId);}}
  if(u.locks!=null){st.locks={};String(u.locks).split(',').forEach(function(k){if(k&&P[k])st.locks[k]=true;});lastUi.locks=uiState(st).locks;}
  if(u.mode==='studio'||u.mode==='stage'){st.mode=u.mode;lastUi.mode=u.mode;}
@@ -550,14 +550,17 @@ window.addEventListener('resize',fit);
 if(window.ResizeObserver)new ResizeObserver(fit).observe(live);
 
 /* ---- interaction ---- */
-function snap(s){var o={sp:s.sp,bands:s.bands.slice(),rbands:s.rbands.slice(),link:s.link};for(var k in PID)if(k!=='freeze')o[k]=s[k];return o;}
+function snap(s){var o={sp:s.sp,bands:s.bands.slice(),rbands:s.rbands.slice(),link:s.link};for(var k in PID)if(k!=='freeze'&&k!=='bypass')o[k]=s[k];return o;}
 /* a new space brings its curve to both sides; the link state stays as it was */
 function changeSpace(i){var old=snap(st),sp=SPACES[i],held=[];if(i!==st.sp)fadeFrom(st.sp);st.sp=i;st.bands=sp.bands.slice();st.rbands=sp.bands.slice();st.pre=sp.pre;st.size=100;
  if(st.locks.decay){var f=decayOf(old.bands)/decayOf(sp.bands),sc=function(b){return clamp(b*f,0.1,20);};st.bands=st.bands.map(sc);st.rbands=st.rbands.map(sc);held.push('Decay');}
  if(st.locks.pre){st.pre=old.pre;held.push('Pre-delay');}if(st.locks.size){st.size=old.size;held.push('Size');}
  ['mix','bright','el','dist'].forEach(function(k){if(st.locks[k])held.push(P[k].l);});
  st.hint=null;st.note='<b>'+esc(sp.name)+'</b> loaded.'+(held.length?' Locked and held: '+held.join(', ')+'.':' Lock a value to hold it when you change space.')+(sp.credit?' Recording: '+esc(sp.credit)+', '+esc(sp.licence)+'.':'');return held;}
-var drag=null,eqTap=null;
+var drag=null,eqTap=null,knTap=null;
+/* the field that types control k's value, nearest the control first; it takes the keyboard with its text selected */
+function typeValue(k,near){var sel='input[data-type="'+k+'"]',fs=Array.prototype.slice.call(near.querySelectorAll(sel)).concat(Array.prototype.slice.call(live.querySelectorAll(sel)));
+ for(var i=0;i<fs.length;i++)if(fs[i].getClientRects().length&&!fs[i].closest('[inert]')){fs[i].focus({preventScroll:true});fs[i].select();return true;}return false;}
 var MAC=/Mac/.test(navigator.platform||'');
 // Only the main button drags: a right press, or a Control click on a Mac, opens the host's menu for a control.
 live.addEventListener('pointerdown',function(e){var t=e.target;endDrag();tw=null;if(t.closest('input,button'))return;if(e.button!==0||(MAC&&e.ctrlKey))return;
@@ -572,7 +575,10 @@ live.addEventListener('pointerdown',function(e){var t=e.target;endDrag();tw=null
   if(gd.polar&&(at.r<gd.r0-20||at.r>gd.r1+20))return;
   if(eqTap&&eqTap.i===-1&&gnow-eqTap.t<400){eqTap=null;var ni=eqAdd(at.f,clamp(at.g,-EQ_DB,EQ_DB));if(ni>=0){st.hint=null;renderLive();sync();var nn=live.querySelector('[data-fid="eqn-'+ni+'"]');if(nn)nn.focus({preventScroll:true});}e.preventDefault();return;}
   eqTap={i:-1,t:gnow};if(st.eqCur!=null){st.eqCur=null;schedule();}return;}
- else if(kn){var k=kn.getAttribute('data-knob'),h=kn.getAttribute('data-h')==='1';drag={type:'knob',k:k,h:h,x0:e.clientX,y0:e.clientY,n0:to01(k,getV(st,k)),w:kn.getBoundingClientRect().width*(W/live.firstElementChild.getBoundingClientRect().width),ids:k==='decay'?(st.link?BAND_ID.slice():BAND_ID.concat(RBAND_ID)):[PID[k]]};}
+ else if(kn){var k=kn.getAttribute('data-knob'),h=kn.getAttribute('data-h')==='1',know=Date.now();
+  // a double click (the page is redrawn between the clicks, so it is counted here) opens the value to type
+  if(knTap&&knTap.k===k&&know-knTap.t<400&&Math.abs(e.clientX-knTap.x)<6&&Math.abs(e.clientY-knTap.y)<6){knTap=null;e.preventDefault();typeValue(k,kn);return;}
+  knTap={k:k,t:know,x:e.clientX,y:e.clientY};drag={type:'knob',k:k,h:h,x0:e.clientX,y0:e.clientY,n0:to01(k,getV(st,k)),w:kn.getBoundingClientRect().width*(W/live.firstElementChild.getBoundingClientRect().width),ids:k==='decay'?(st.link?BAND_ID.slice():BAND_ID.concat(RBAND_ID)):[PID[k]]};}
  else if(lis){var sv=lis.closest('svg');drag={type:'lis',rect:sv.getBoundingClientRect(),w:+sv.getAttribute('data-w'),mode:sv.getAttribute('data-mode'),ox:+sv.getAttribute('data-ox'),oy:+sv.getAttribute('data-oy'),sc:+sv.getAttribute('data-sc'),rw:+sv.getAttribute('data-rw'),ids:lis.getAttribute('data-drag')==='src'?[PID.sx]:[PID.dist,PID.lx],src:lis.getAttribute('data-drag')==='src'};}
  else if(dg){var r=dg.getBoundingClientRect(),d={rect:r,l:+dg.getAttribute('data-l'),t:+dg.getAttribute('data-t'),pw:+dg.getAttribute('data-pw'),ph:+dg.getAttribute('data-ph'),ymax:+dg.getAttribute('data-ymax'),w:+dg.getAttribute('data-w'),bars:dg.getAttribute('data-bars')==='1'};
   var sx=(e.clientX-r.left)*d.w/r.width,sy=(e.clientY-r.top)*d.w/r.width;d.polar=dg.getAttribute('data-polar')==='1';d.horiz=dg.getAttribute('data-horiz')==='1';
@@ -585,14 +591,14 @@ live.addEventListener('pointerdown',function(e){var t=e.target;endDrag();tw=null
  try{live.setPointerCapture(e.pointerId);}catch(_){}e.preventDefault();});
 function applyDecay(e){var d=drag,sc=d.w/d.rect.width,sx=(e.clientX-d.rect.left)*sc,sy=(e.clientY-d.rect.top)*sc,v;if(d.polar)v=(Math.hypot(sx-d.cx,sy-d.cy)-d.r0)/(d.r1-d.r0)*d.ymax;else if(d.horiz)v=(sx-d.l)/d.pw*d.ymax;else v=(1-(sy-d.t)/d.ph)*d.ymax;v=clamp(v,0.1,d.ymax);curBands(st)[d.i]=Math.round(v*100)/100;st.hint='decay';st.note=null;schedule();}
 live.addEventListener('pointermove',function(e){if(!drag)return;
- if(drag.type==='knob'){var k=live.firstElementChild.getBoundingClientRect().width/W,dn=drag.h?(e.clientX-drag.x0)/k/Math.max(drag.w,60):(drag.y0-e.clientY)/k/220;if(e.shiftKey)dn/=10;setParam(st,drag.k,from01(drag.k,drag.n0+dn));schedule();}
+ if(drag.type==='knob'){if(knTap&&Math.abs(e.clientX-knTap.x)+Math.abs(e.clientY-knTap.y)>3)knTap=null;/* a drag is not the first click of a double click */var k=live.firstElementChild.getBoundingClientRect().width/W,dn=drag.h?(e.clientX-drag.x0)/k/Math.max(drag.w,60):(drag.y0-e.clientY)/k/220;if(e.shiftKey)dn/=10;setParam(st,drag.k,from01(drag.k,drag.n0+dn));schedule();}
  else if(drag.type==='decay')applyDecay(e);
  else if(drag.type==='eq')applyEq(e);
  else if(drag.type==='lis'){var r=drag.rect,kk=drag.w/r.width,px=(e.clientX-r.left)*kk,py=(e.clientY-r.top)*kk;
   if(drag.src){if(drag.mode==='plan')st.sx=clamp(Math.round((px-drag.ox)/(drag.rw*drag.sc)*1000)/10,6,94);st.hint='sx';st.note=null;schedule();return;}
   if(drag.mode==='plan'){st.lx=clamp(Math.round((px-drag.ox)/(drag.rw*drag.sc)*1000)/10,6,94);st.dist=Math.round(distFromM(st,(py-drag.oy)/drag.sc));}else st.dist=Math.round(distFromM(st,(px-drag.ox)/drag.sc));
   st.hint='dist';st.note=null;schedule();}});
-function endDrag(){if(drag){var ids=drag.ids;drag=null;schedule();gesture(ids,false);}}
+function endDrag(){endWheel();if(drag){var ids=drag.ids;drag=null;schedule();gesture(ids,false);}}
 /* A drag tells the host its controls are held until it ends, however it ends: let go,
    cancelled, the pointer taken (a host dialog, a second touch) or the window left. */
 live.addEventListener('pointerup',endDrag);live.addEventListener('pointercancel',endDrag);live.addEventListener('lostpointercapture',endDrag);
@@ -608,9 +614,47 @@ function pointed(){if(!pointing)return;pointing=false;var a=document.activeEleme
 document.addEventListener('pointerdown',function(){pointing=true;},true);
 document.addEventListener('pointerup',function(){setTimeout(pointed,0);},true);
 document.addEventListener('pointercancel',function(){setTimeout(pointed,0);},true);
-/* on a bell, the wheel sets Q */
-live.addEventListener('wheel',function(e){var en=e.target.closest&&e.target.closest('[data-eqn]');if(!en||drag)return;var i=+en.getAttribute('data-eqn');e.preventDefault();if(!eqBell(st,i)||!e.deltaY)return;
- eqSet(i,'q',st[eqKey(i,'q')]*Math.pow(e.shiftKey?1.015:1.06,e.deltaY<0?1:-1));st.note=null;schedule();},{passive:false});
+/* ---- The mouse wheel and trackpad. Over a knob, a slider, a decay point or a value field,
+   scrolling changes it: up or right raises it, Shift gives fine steps, and each notch of a
+   wheel moves it at least one step. Over a wet EQ bell it sets the Q. The host is told the
+   control is held from the first turn until the wheel has been still for 400 ms, so automation
+   being written takes the move as one gesture. A field in a list that scrolls takes the wheel
+   only while it has the keyboard, so the list still scrolls. Ctrl and Cmd are left to the web view. ---- */
+var wheel=null;
+function endWheel(){if(!wheel)return;var w=wheel;wheel=null;clearTimeout(w.timer);gesture(w.ids,false);}
+function inScroller(el){for(var n=el.parentElement;n&&n!==live;n=n.parentElement){if(n.scrollHeight>n.clientHeight+1&&/(auto|scroll)/.test(getComputedStyle(n).overflowY))return true;}return false;}
+/* what the wheel would change under element t: a parameter key, a band, or a wet EQ band's Q */
+function wheelTarget(t){if(!t||!t.closest)return null;var n=t.closest('[data-eqn],[data-node],[data-knob],input[data-type]');if(!n||!live.contains(n))return null;
+ if(n.closest('[inert]'))return null;
+ if(n.hasAttribute('data-eqn')){var qi=+n.getAttribute('data-eqn');return {id:'q'+qi,eq:qi,ids:[PID[eqKey(qi,'q')]],none:!eqBell(st,qi)};}
+ if(n.hasAttribute('data-node')){var bi=+n.getAttribute('data-node');return {id:'b'+bi,band:bi,ids:[bandId(st,bi)]};}
+ if(n.matches('input')){if(n.disabled||n.readOnly||(document.activeElement===n&&n.value!==n.defaultValue))return null;if(inScroller(n)&&document.activeElement!==n)return null;
+  var ty=n.getAttribute('data-type');if(ty==='band'){var fi=+n.getAttribute('data-i');return {id:'b'+fi,band:fi,ids:[bandId(st,fi)]};}return knobTarget(ty);}
+ return knobTarget(n.getAttribute('data-knob'));}
+function knobTarget(k){var p=P[k];if(!p||p.max-p.min<=p.st||/^eq\d+[so]$/.test(k)||(k!=='decay'&&!PID[k]))return null;
+ return {id:'k'+k,k:k,ids:k==='decay'?(st.link?BAND_ID.slice():BAND_ID.concat(RBAND_ID)):[PID[k]]};}
+/* how far a wheel event turns, in hundredths of a notch: a wheel notch is about 100, a
+   trackpad sends many small turns. Up or right is positive, whichever way the system scrolls. */
+function wheelTurn(e){var sc=e.deltaMode===1?40:e.deltaMode===2?800:1,dx=e.deltaX*sc,dy=e.deltaY*sc;
+ // Shift turns a wheel sideways in most browsers; it is still the same wheel turning
+ if(e.shiftKey&&!dy){dy=dx;dx=0;}
+ var d=Math.abs(dx)>Math.abs(dy)?dx:-dy;
+ // natural scrolling (macOS) reverses the deltas; WebKit says so, and a wheel or fingers moving up or right still raise it
+ if(e.webkitDirectionInvertedFromDevice)d=-d;
+ return d;}
+live.addEventListener('wheel',function(e){if(e.ctrlKey||e.metaKey)return;var tg=wheelTarget(e.target);if(!tg)return;e.preventDefault();if(drag||tg.none)return;
+ var d=wheelTurn(e);if(!d)return;var fine=e.shiftKey,notch=e.deltaMode!==0||Math.abs(d)>=40;
+ if(wheel&&wheel.id!==tg.id)endWheel();
+ if(!wheel){wheel={id:tg.id,ids:tg.ids,n:null};gesture(tg.ids,true);}
+ clearTimeout(wheel.timer);wheel.timer=setTimeout(endWheel,400);
+ if(tg.eq!=null){var qi=tg.eq;eqSet(qi,'q',st[eqKey(qi,'q')]*Math.pow(fine?1.015:1.06,d/100));st.note=null;schedule();return;}
+ if(tg.band!=null){var cb=curBands(st),i=tg.band,b0=cb[i];if(wheel.n==null)wheel.n=b0;wheel.n=clamp(wheel.n+d/100*(fine?0.01:0.1),0.1,20);var nb=Math.round(wheel.n*100)/100;
+  if(notch&&nb===b0)nb=clamp(b0+(d>0?0.01:-0.01),0.1,20);cb[i]=nb;st.lastBand=i;st.hint='decay';st.note=null;schedule();return;}
+ var k=tg.k,p=P[k],v0=getV(st,k);if(wheel.n==null)wheel.n=to01(k,v0);wheel.n=clamp(wheel.n+d/100*(fine?0.002:0.02),0,1);
+ var nv=from01(k,wheel.n);
+ // a notch always moves a step, even where fine steps are smaller than the control's own
+ if(notch&&(d>0?nv<=v0:nv>=v0)){nv=clamp(v0+(d>0?p.st:-p.st),p.min,p.max);wheel.n=to01(k,nv);}
+ setParam(st,k,nv);schedule();},{passive:false});
 
 /* Keys are heard on the whole document, so an open window still hears Tab and Escape when the
    keyboard is on the window itself. A key the page has no use for (and any with Ctrl, Alt or
@@ -713,6 +757,7 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'mode':st.mode=v;st.note=v==='stage'?'<b>Stage view</b> for post: large numerals, channel meters and locks, on the same tokens.':'<b>Studio view</b>: the space and its decay lead.';st.hint=null;break;
   case 'slot':if(v!==st.slot){st.slots[st.slot]=snap(st);var nx=st.slots[v]||snap(st);Object.keys(nx).forEach(function(k){st[k]=Array.isArray(nx[k])?nx[k].slice():nx[k];});st.slot=v;st.hint=null;st.note='<b>Snapshot '+v+'.</b> Changes now go to '+v+'. Switch back to compare.';}break;
   case 'freeze':st.freeze=!st.freeze;st.hint=null;st.note=null;break;
+  case 'bypass':st.bypass=!st.bypass;st.hint=null;st.note=st.bypass?'<b>Bypassed.</b> Only the dry sound plays, in time.':'<b>Reverb back on.</b>';break;
   case 'toggle':var tk=b.getAttribute('data-k');st[tk]=st[tk]>=0.5?0:1;st.hint=tk;st.note=null;break;
   case 'note':st.noteOpen=st.noteOpen===v?null:v;break;
   case 'adv':st.adv=!st.adv;st.hint=null;st.note=st.adv?'<b>All parameters</b> opens in place, so the space and graph stay in view.':null;break;
