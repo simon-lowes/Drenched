@@ -51,6 +51,10 @@ public:
     void processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer&) DRENCHED_NONBLOCKING override;
     using AudioProcessor::processBlockBypassed;
 
+    /** The Bypass parameter: the interface's Bypass button and the host's bypass switch.
+        While it is on, processBlock plays as processBlockBypassed does. */
+    juce::AudioProcessorParameter* getBypassParameter() const override;
+
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
@@ -401,6 +405,7 @@ private:
         Setting sourceX;
         Setting lowCpu;
         Setting scene;
+        Setting bypass;
         Setting decayLink;
         std::array<Setting, 8> decay {}, decayRight {};
         std::array<Setting, 12> eqFrequency {}, eqGain {}, eqQ {}, eqShape {}, eqOn {};

@@ -110,11 +110,11 @@ namespace
         return valuesOf (p);
     }
 
-    /** What a scene leaves alone: the scene itself, Freeze (played, not stored) and Low CPU
+    /** What a scene leaves alone: the scene itself, Freeze and Bypass (played, not stored) and Low CPU
         (a setting for the computer, not the room). Everything else it brings back. */
     bool leftAlone (const juce::String& id)
     {
-        return id == ParamIDs::scene || id == ParamIDs::freeze || id == ParamIDs::lowCpu;
+        return id == ParamIDs::scene || id == ParamIDs::freeze || id == ParamIDs::bypass || id == ParamIDs::lowCpu;
     }
 
     /** After scene 1, stored with first, is recalled over second: everything a scene stores

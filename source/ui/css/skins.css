@@ -1181,3 +1181,15 @@ button .ovr,.stg-ct .row span .ovr{margin-left:7px;width:6px;height:6px}
 .si-space{height:94px}
 .fo-page{grid-template-rows:minmax(0,1fr)}
 .fo-page>.fo-col:last-child{height:318px}
+/* Bypass sits beside A and B as one more segment, so every look dresses it as its own. On, its
+   symbol takes the look's accent and the room goes quiet: the photograph and the decay drain of colour. */
+.seg.byp button{display:inline-flex;align-items:center;gap:6px}
+.seg.byp button svg{flex:none}
+.seg.byp button[aria-pressed="true"] svg{color:var(--ac)}
+.phi,svg[data-decay]{transition:filter .35s ease-out}
+.screen.bypassed .phi{filter:grayscale(.92) brightness(.6)}
+.screen.bypassed svg[data-decay]{filter:grayscale(1) brightness(.8)}
+@media (prefers-reduced-motion:reduce){.phi,svg[data-decay]{transition:none}}
+.se-byp button{display:inline-flex;align-items:center;gap:6px}
+.se-byp button[aria-pressed="true"] svg{color:var(--g)}
+.fi-rail .segs{flex-wrap:wrap}.fi-rail .seg.byp{flex:1 1 100%}.fi-rail .seg.byp button{flex:1;justify-content:center}

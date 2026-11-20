@@ -90,6 +90,7 @@ DrenchedProcessor::DrenchedProcessor()
     params.sourceX = raw (ParamIDs::sourceX);
     params.lowCpu = raw (ParamIDs::lowCpu);
     params.scene = raw (ParamIDs::scene);
+    params.bypass = raw (ParamIDs::bypass);
 
     for (size_t band = 0; band < params.eqFrequency.size(); ++band)
     {
@@ -1994,12 +1995,17 @@ void DrenchedProcessor::prepareToPlay (double hostRate, int)
 
 void DrenchedProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) DRENCHED_NONBLOCKING
 {
-    render (buffer, false);
+    render (buffer, params.bypass.load() >= 0.5f);
 }
 
 void DrenchedProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) DRENCHED_NONBLOCKING
 {
     render (buffer, true);
+}
+
+juce::AudioProcessorParameter* DrenchedProcessor::getBypassParameter() const
+{
+    return state.getParameter (ParamIDs::bypass);
 }
 
 void DrenchedProcessor::render (juce::AudioBuffer<float>& buffer, bool bypassed)

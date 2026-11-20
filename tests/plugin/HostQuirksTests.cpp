@@ -206,10 +206,22 @@ TEST_CASE ("Bypassed, the dry sound plays untouched and in time", "[plugin][host
     constexpr double rate = 48000.0;
     constexpr int block = 256;
     const auto lowCpu = GENERATE (false, true);
-    INFO ("Low CPU " << lowCpu);
+    // A host bypasses either by calling processBlockBypassed or, since the interface has its
+    // own Bypass button, by setting the plugin's bypass parameter and calling processBlock.
+    const auto byParameter = GENERATE (false, true);
+    INFO ("Low CPU " << lowCpu << ", bypass parameter " << byParameter);
 
     testing::Plugin p;
     prepare (*p, rate, block, lowCpu);
+
+    // The interface's Bypass is the host's bypass switch: one parameter, which hosts are told is it.
+    auto* bypass = dynamic_cast<juce::RangedAudioParameter*> (p->getBypassParameter());
+    REQUIRE (bypass != nullptr);
+    CHECK (bypass->paramID == ParamIDs::bypass);
+    CHECK (bypass->getValue() == 0.0f);
+
+    if (byParameter)
+        setParameter (*p, ParamIDs::bypass, 1.0f);
     const auto latency = p->getLatencySamples();
     CHECK ((latency > 0) == lowCpu);
 
@@ -232,7 +244,10 @@ TEST_CASE ("Bypassed, the dry sound plays untouched and in time", "[plugin][host
         for (int c = 0; c < 2; ++c)
             buffer.copyFrom (c, 0, input.data() + pos, block);
 
-        p->processBlockBypassed (buffer, midi);
+        if (byParameter)
+            p->processBlock (buffer, midi);
+        else
+            p->processBlockBypassed (buffer, midi);
 
         for (int i = 0; i < block; ++i)
             out[static_cast<size_t> (pos + i)] = buffer.getSample (0, i);
