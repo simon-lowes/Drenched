@@ -168,7 +168,7 @@ function creditsHTML(){var seen={},rows=[];LIBRARY.forEach(function(x){var k=x.c
    :'<p>This build has no recorded spaces.</p>';
  var model='<ul class="crl"><li><b>Places365 scene recognition model (ResNet-18 with scene attributes): Bolei Zhou, Agata Lapedriza, Aditya Khosla, Aude Oliva and Antonio Torralba, MIT CSAIL (2017)</b><span>CC BY, places2.csail.mit.edu</span><small>Looks at a photograph in Describe a room. Zhou et al., Places: A 10 million Image Database for Scene Recognition, IEEE TPAMI 2017.</small><small>Changes: weights quantised to 8 bits and batch normalisation folded in, for the plugin\u2019s own reader.</small></li></ul>';
  return '<div class="cap crd" role="dialog" aria-modal="true" aria-labelledby="crd-h" tabindex="-1" data-fid="dlg-crd"><div class="cbox"><div class="chd"><h2 id="crd-h">Recording credits</h2><button class="cx" data-act="credits" aria-label="Close">Close</button></div>'+
-  '<p>The recorded spaces are used under the licences below. Thank you to everyone who made and shared them.</p>'+body+'<p>The scene model that reads photographs:</p>'+model+'</div></div>';}
+  '<p>The recorded spaces are used under the licences below. Thank you to everyone who made and shared them.</p>'+body+'<p>The scene model that reads photographs:</p>'+model+'<p>The pictures of churches, industrial spaces, rooms, underground spaces and your own IR, and the one in the welcome, are photorealistic illustrations made with AI (Google Gemini) for Drenched. They show the kind of space, not the room that was recorded.</p></div></div>';}
 
 /* ---- each speaker's reverb level and delay, with a meter per output ---- */
 st.spk=false;st.speakers=[];st.outputs=[{name:'L',wet:true},{name:'R',wet:true}];st.spkM=[];
@@ -380,7 +380,7 @@ function tourNext(){var n=tourList().length;if(st.tour<0&&n)st.tour=0;else if(st
 function tourBack(){if(st.tour>0)st.tour--;}
 function tourHTML(){var i=st.tour,list=i<0?null:tourList(),n=list?list.length:0,tip=null,body;
  if(i>=0){if(!n)return '';i=Math.min(i,n-1);tip=tourTip(list,i);}
- if(i<0)body='<h2 id="tour-h">Welcome to Drenched</h2><p>Quick tips point out what each part of the screen does, in the look you\u2019re in. They take about a minute. See them again any time from Tips in the Spaces window, or with the ? key.</p>'+
+ if(i<0)body='<div class="tour-pic" aria-hidden="true"></div><h2 id="tour-h">Welcome to Drenched</h2><p>Quick tips point out what each part of the screen does, in the look you\u2019re in. They take about a minute. See them again any time from Tips in the Spaces window, or with the ? key.</p>'+
   '<div class="tour-ft"><button class="tour-b" data-act="tourskip">Not now</button><span class="tour-sp"></span><button class="cgo" data-act="tournext">Show me</button></div>';
  else body='<div class="tour-hd"><h2 id="tour-h">'+tip.t+'</h2><em>'+(i+1)+' of '+n+'</em></div><p>'+tip.b+'</p>'+
   '<div class="tour-ft"><button class="tour-b" data-act="tourskip">Skip</button><span class="tour-sp"></span>'+(i>0?'<button class="tour-b" data-act="tourback">Back</button>':'')+'<button class="cgo" data-act="tournext">'+(i===n-1?'Done':'Next')+'</button></div>';
