@@ -24,8 +24,12 @@ var LIBRARY=[],SPACES=MODELLED.slice(),USER=SPACES.length,DESCRIBED=-1,userRec=n
    outdoor is open to the sky, underground is a tunnel, mine, cave, kiln or buried hall.
    Only halls and churches have a stage (stageDepth). An unknown kind draws as a hall. */
 var KINDS={hall:1,chapel:1,garage:1,room:1,outdoor:1,underground:1};
+/* A space's picture classes: its kind's picture (ph-), and over it the picture of that
+   very room when the library gives one (pp-, from library.json's pic). The pixel-room
+   look keeps drawing the kind, since its rules are more specific. */
+function phc(x){return 'ph-'+x.img+(x.pic?' pp-'+x.pic:'');}
 function setLibrary(list){LIBRARY=(list||[]).filter(function(x){return x&&x.id&&x.name;}).map(function(x){var k=KINDS[x.kind]?x.kind:'hall';
-  return {id:String(x.id),name:String(x.name),no:String(x.no||'Recorded'),kind:k,img:KINDS[x.img]?x.img:k,place:String(x.place||''),W:+x.W||14,D:+x.D||20,H:+x.H||8,
+  return {id:String(x.id),name:String(x.name),no:String(x.no||'Recorded'),kind:k,img:KINDS[x.img]?x.img:k,pic:/^[a-z0-9-]+$/.test(x.pic||'')?x.pic:'',place:String(x.place||''),W:+x.W||14,D:+x.D||20,H:+x.H||8,
    mat:String(x.mat||''),bands:(x.bands||[2,2,2,2,2,2,2,2]).map(function(b){return clamp(+b||1,0.1,20);}),pre:+x.pre||0,rec:String(x.rec||''),date:String(x.date||''),
    credit:String(x.credit||''),licence:String(x.licence||''),source:String(x.source||''),changes:String(x.changes||''),recorded:true,
    room:x.room?String(x.room):'',position:x.position?String(x.position):'',mics:x.mics?String(x.mics):'',atM:isFinite(+x.atM)&&x.atM!=null?+x.atM:null};});
@@ -374,8 +378,8 @@ function timeStep(secs){return secs>12?4:secs>6?2:secs>3?1:secs>1.5?0.5:secs>0.6
 function photoEl(s,w,h,extra){var z=1+(1-s.dist/100)*0.22,st2=w?'width:'+w+'px;height:'+h+'px;':'',tr=' style="transform:scale('+z.toFixed(3)+')"';
  /* after a change of space the old photograph lies over the new one and fades (s.fade, kept
     by the page for a moment); as the page redraws in place, the fade runs on */
- var old=s.fade&&s.fade.img!==spOf(s).img?'<div class="phi ph-old ph-'+s.fade.img+'"'+tr+'></div>':'';
- return '<div class="phw" style="'+st2+(extra||'')+'" role="img" aria-label="'+esc(spOf(s).name)+'"><div class="phi ph-'+spOf(s).img+'"'+tr+'></div>'+old+'</div>';}
+ var old=s.fade&&s.fade.cls!==phc(spOf(s))?'<div class="phi ph-old '+s.fade.cls+'"'+tr+'></div>':'';
+ return '<div class="phw" style="'+st2+(extra||'')+'" role="img" aria-label="'+esc(spOf(s).name)+'"><div class="phi '+phc(spOf(s))+'"'+tr+'></div>'+old+'</div>';}
 
 /* the captured positions on the drawing: a station mark where each recording was made, the
    current one ringed, labelled unless the drawing is small. at(metres) gives the point. */
@@ -635,7 +639,7 @@ function sparkSVG(b){var out='<svg class="brw-spk" width="47" height="22" viewBo
 function browserHTML(s){var R=browseResults(s),n=R.rows.length,cur=clamp(s.brwCur||0,0,Math.max(0,n-1)),q=s.brwQ||'',user=SPACES.length>USER;
  var chips=BRW_KINDS.map(function(k){var c=R.counts[k[0]]||0;if(k[0]==='user'&&!user)return '';return '<button data-act="brwkind" data-v="'+k[0]+'" aria-pressed="'+((s.brwKind||'all')===k[0])+'">'+k[1]+'<em>'+c+'</em></button>';}).join('');
  var rows=R.rows.map(function(r,j){var x=r.sp,on=r.i===s.sp,key=j===cur;
-  return '<div class="brw-row'+(on?' on':'')+(key?' key':'')+'"><button class="brw-pick" role="option" tabindex="-1" id="brw-r'+j+'" aria-selected="'+key+'" aria-current="'+on+'" data-act="pick" data-v="'+r.i+'"><span class="brw-ph"><i class="ph-'+x.img+'"></i></span>'+
+  return '<div class="brw-row'+(on?' on':'')+(key?' key':'')+'"><button class="brw-pick" role="option" tabindex="-1" id="brw-r'+j+'" aria-selected="'+key+'" aria-current="'+on+'" data-act="pick" data-v="'+r.i+'"><span class="brw-ph"><i class="'+phc(x)+'"></i></span>'+
    '<span class="brw-nm"><b>'+esc(x.name)+'</b><small>'+esc(x.place)+(x.room&&roomSpaces(x).length>1?' \u00b7 one of '+roomSpaces(x).length+' recordings of this room':'')+'</small></span>'+(R.ref?'<span class="brw-why">'+similarWhy(R.ref,x)+'</span>':'')+
    '<span class="brw-rt">'+f1(decayOf(x.bands))+' s</span><span class="brw-vol">'+vol(x)+'</span>'+sparkSVG(x.bands)+'</button>'+
    '<button class="brw-sim" data-act="brwsim" data-v="'+r.i+'" tabindex="-1" aria-label="Spaces that sound like '+esc(x.name)+'" title="Spaces that sound like this one">\u2248</button></div>';}).join('');
