@@ -160,14 +160,17 @@ and in the licences file the installers ship.
 
 ## Images
 
-The pictures of the kinds of space in `source/ui/spaces/` (`chapel.jpg`,
-`garage.jpg`, `hall.jpg`, `outdoor.jpg`, `room.jpg`, `underground.jpg`,
-`user.jpg` and `welcome.jpg`) are photorealistic illustrations generated with
-AI (Google Gemini, November 2026) for this project. They depict a kind of
-space, not a real, identifiable room, and they are not photographs. The
-originals, with their prompts and Content Credentials (C2PA), are kept outside
-the plugin; the copies here are re-encoded, so they no longer carry that
-metadata.
+The pictures in `source/ui/spaces/` are photorealistic illustrations
+generated with AI (Google Gemini, November 2026) for this project; none is a
+photograph. Each recorded space has its own picture in
+`source/ui/spaces/rooms/` (`library.json` names it as `pic`), made from a
+description of that room or place: an impression of it, not a record of how it
+looks. The pictures of the kinds of space (`chapel.jpg`, `garage.jpg`,
+`hall.jpg`, `outdoor.jpg`, `room.jpg`, `underground.jpg`), shown for the
+modelled spaces, and `user.jpg` and `welcome.jpg` depict a kind of space, not a
+real room. The originals, with their prompts and Content Credentials (C2PA),
+are kept outside the plugin; the copies here are re-encoded, so they no longer
+carry that metadata.
 
 The pixel drawings in `source/ui/spaces/px/` were made for this project.
 

@@ -12,7 +12,9 @@ out, and so is anything made for or taken from another reverb product.
   `img` pick the plan drawing and picture: `hall`, `chapel`, `room`, `garage`
   (any bare concrete or industrial space, listed as industrial), `outdoor`
   (open to the sky) or `underground` (a tunnel, mine, cave, kiln or buried
-  hall). `fixedSize` keeps the size given
+  hall). `pic` names the room's own picture, `source/ui/spaces/rooms/sp-<pic>.jpg`
+  (an AI impression of that room; see NOTICE.md), shown over the kind's
+  picture. `fixedSize` keeps the size given
   instead of the measured one (the real dimensions, or a shoebox of the
   volume the source publishes). The `id` is saved in sessions: never change or
   reuse one.

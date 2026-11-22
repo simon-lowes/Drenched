@@ -296,7 +296,7 @@ The described room is a modelled space: its decay is worked out from its size an
 
 ### Recording credits
 
-Lists who made each recorded space, its licence, and any changes made to it (such as resampling or trimming). It also says where the pictures come from: they are photorealistic illustrations made with AI, showing the kind of space rather than the room that was recorded.
+Lists who made each recorded space, its licence, and any changes made to it (such as resampling or trimming). It also says where the pictures come from: they are photorealistic illustrations made with AI, not photographs. Each recorded space's picture is an impression of that room, made from a description of it; the modelled spaces show a kind of space.
 
 ## Looks
 
