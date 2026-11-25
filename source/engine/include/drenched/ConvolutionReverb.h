@@ -138,7 +138,7 @@ class ConvolutionReverb
 {
 public:
     static constexpr std::size_t chunkSize = 256;
-    static constexpr double maxPredelaySeconds = 1.0;
+    static constexpr double maxPredelaySeconds = 2.0;
     static constexpr std::size_t maxLatency = 8192;
 
     /** The latency low-CPU mode uses at a sample rate: about 21 ms, as a

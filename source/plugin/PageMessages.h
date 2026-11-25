@@ -29,13 +29,14 @@ namespace PageEvents
     inline const juce::Identifier dropFailed { "dropFailed" };
     inline const juce::Identifier report { "report" };
     inline const juce::Identifier described { "described" };
+    inline const juce::Identifier tempo { "tempo" };
 
     /** Every one, for the record the interface tests check the page against. */
     inline juce::StringArray all()
     {
         return { state.toString(), meters.toString(), capture.toString(), licence.toString(), matched.toString(),
                  analysis.toString(), spectrum.toString(), pasted.toString(), dropFailed.toString(), report.toString(),
-                 described.toString() };
+                 described.toString(), tempo.toString() };
     }
 }
 

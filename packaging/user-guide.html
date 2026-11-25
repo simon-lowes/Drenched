@@ -286,8 +286,8 @@ th, td, h1 { border-color: #3a3e43; } a { color: #8cb8ec; }
 </tr>
 <tr class="odd">
 <td>Pre-delay</td>
-<td>Gap before the first reflection</td>
-<td>0 to 250 ms</td>
+<td>Gap before the first reflection, or a note value when synced to tempo</td>
+<td>0 to 250 ms, or 1/64 to 1/2 note</td>
 <td>The space’s</td>
 </tr>
 <tr class="even">
@@ -322,6 +322,11 @@ th, td, h1 { border-color: #3a3e43; } a { color: #8cb8ec; }
 </tr>
 </tbody>
 </table>
+<h2 id="pre-delay-in-time-with-the-song">Pre-delay in time with the song</h2>
+<p>The small <strong>note button</strong> beside the Pre-delay value, in every look and in Stage, locks the pre-delay to your host’s tempo. Lit, Pre-delay reads as a note instead of milliseconds, and turning it (dragging, the wheel or the arrow keys) steps through the note values, shortest to longest:</p>
+<p>1/64, 1/32T, 1/32, 1/16T, 1/32D, 1/16, 1/8T, 1/16D, 1/8, 1/4T, 1/8D, 1/4, 1/2T, 1/4D, 1/2</p>
+<p>T is a triplet (two thirds of the note) and D dotted (one and a half times it). Sync starts on the note nearest the milliseconds you had, and you can type a note into the value (“1/8”, “1/8 dotted”, “1/8.”, “1/4T”, “1/16 triplet”), or milliseconds to get the note nearest them. Hover over the value to see how long the note is at the current tempo. It follows tempo changes as the song plays, and in an offline bounce; a synced pre-delay can be up to 2 seconds, longer than the 250 ms you can set by hand. Click the note button again to go back to the milliseconds you had.</p>
+<p>With no tempo from the host (some standalone uses), Pre-delay plays the milliseconds set. Sessions from before note values, saved with sync on, show “≈1/64” and play as they did: the milliseconds rounded to the nearest 64th note. Turn the control to choose a note.</p>
 <h2 id="all-parameters">All parameters</h2>
 <p>Click <strong>All parameters</strong> (or <strong>More</strong>) to open every control in place, with the space and graph still in view. The panel also has a <strong>Look</strong> button for the skin picker. Its last row, Early pattern, only reports that the early reflections are as captured.</p>
 <p><strong>Room and position</strong></p>
@@ -418,7 +423,7 @@ th, td, h1 { border-color: #3a3e43; } a { color: #8cb8ec; }
 </tr>
 <tr class="even">
 <td>Pre-delay sync</td>
-<td>Rounds Pre-delay to the nearest whole number of 64th notes at the host tempo</td>
+<td>Locks Pre-delay to the host tempo as a note value (the note button beside Pre-delay does the same; see Pre-delay in time with the song)</td>
 <td>On, Off</td>
 <td>Off</td>
 </tr>
@@ -723,7 +728,7 @@ marble, metal, foam, books), what is in it (empty, furnished, cluttered, full of
 <p>If Drenched crashes, it saves a short crash report. The next time it opens, it offers to send it: say what you were doing if you remember, and press <strong>Send crash report</strong>, or <strong>Don’t send</strong> to throw it away. Nothing is sent unless you press Send.</p>
 <p>Without an internet connection, <strong>Copy instead</strong> copies the whole report: paste it into an email to whoever sent you Drenched, with the session, any IR file you loaded, and a screenshot or recording if you can.</p>
 <h1 id="parameter-reference">Parameter reference</h1>
-<p>Names as your host shows them. 108 parameters.</p>
+<p>Names as your host shows them. 109 parameters.</p>
 <table>
 <thead>
 <tr class="header">
@@ -947,6 +952,11 @@ marble, metal, foam, books), what is in it (empty, furnished, cluttered, full of
 <td>Bypass</td>
 <td>Off, On (your host’s bypass switch)</td>
 <td>Off</td>
+</tr>
+<tr class="even">
+<td>Pre-delay note</td>
+<td>Nearest 1/64, then 1/64 to 1/2 (as listed under Pre-delay in time with the song)</td>
+<td>Nearest 1/64 (how sync played before note values)</td>
 </tr>
 </tbody>
 </table>

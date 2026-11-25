@@ -64,6 +64,7 @@ DrenchedProcessor::DrenchedProcessor()
     params.output = raw (ParamIDs::output);
     params.predelay = raw (ParamIDs::predelay);
     params.predelaySync = raw (ParamIDs::predelaySync);
+    params.predelayNote = raw (ParamIDs::predelayNote);
     params.size = raw (ParamIDs::size);
     params.brightness = raw (ParamIDs::brightness);
     params.earlyLate = raw (ParamIDs::earlyLate);
@@ -327,26 +328,23 @@ void DrenchedProcessor::timerCallback()
         updateHostDisplay (ChangeDetails{}.withNonParameterStateChanged (true));
 }
 
+static_assert (tempoSync::longestMs <= ConvolutionReverb::maxPredelaySeconds * 1000.0, "the delay line must hold every synced note");
+
 float DrenchedProcessor::predelayMs (float requested)
 {
-    if (params.predelaySync.load() < 0.5f)
-        return requested;
+    // The host's tempo, if it is one a host could play at; kept for the interface, which
+    // shows a synced pre-delay as a note and its length at this tempo.
+    std::optional<double> bpm;
 
-    // Synced: snap to the nearest 64th note at the host tempo, if it is one a host could
-    // play at. A tempo that can't be (infinite, say) leaves the predelay as set.
     if (auto* head = getPlayHead())
-    {
         if (const auto position = head->getPosition())
-        {
-            if (const auto bpm = position->getBpm(); bpm.hasValue() && *bpm > 1.0 && *bpm < 10000.0)
-            {
-                const auto step = static_cast<float> (60000.0 / *bpm / 16.0);
-                return juce::jlimit (0.0f, 1000.0f, std::round (requested / step) * step);
-            }
-        }
-    }
+            if (const auto tempo = position->getBpm(); tempo.hasValue())
+                bpm = tempoSync::usableTempo (*tempo);
 
-    return requested;
+    hostTempo.store (bpm.value_or (0.0), std::memory_order_relaxed);
+
+    return tempoSync::predelayMs (requested, params.predelaySync.load() >= 0.5f,
+                                  static_cast<int> (std::lround (params.predelayNote.load())), bpm);
 }
 
 //==============================================================================

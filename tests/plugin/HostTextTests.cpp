@@ -115,6 +115,11 @@ TEST_CASE ("A value typed into a host means what it would in the plugin", "[plug
         { ParamIDs::eqShape[3], "shelf", 0.0f }, { ParamIDs::eqShape[3], "2", 2.0f }, { ParamIDs::eqShape[3], "9", 2.0f },
         { ParamIDs::eqShape[3], "", 1.0f }, { ParamIDs::eqShape[3], "wedge", 1.0f }, { ParamIDs::eqShape[5], "", 2.0f },
         { ParamIDs::eqOn[7], "on", 1.0f }, { ParamIDs::eqOn[7], "", 0.0f }, { ParamIDs::eqQ[0], "2,5", 2.5f },
+        // A note by its name, the whole name first: "1/8" is the eighth, not "1/8T".
+        { ParamIDs::predelayNote, "1/8", 9.0f }, { ParamIDs::predelayNote, "1/8 dotted", 11.0f }, { ParamIDs::predelayNote, "1/8.", 11.0f },
+        { ParamIDs::predelayNote, "1/8D", 11.0f }, { ParamIDs::predelayNote, "1/4 T", 10.0f }, { ParamIDs::predelayNote, "1/16 triplet", 4.0f },
+        { ParamIDs::predelayNote, "1/64", 1.0f }, { ParamIDs::predelayNote, "Nearest", 0.0f }, { ParamIDs::predelayNote, "~1/64", 0.0f },
+        { ParamIDs::predelayNote, "1/2", 15.0f }, { ParamIDs::predelayNote, "", 0.0f },
     };
 
     for (const auto& c : cases)

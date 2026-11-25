@@ -2358,3 +2358,65 @@ test ('Bypass is beside A and B in every look, Studio and Stage, and is the plug
 
     assert.deepEqual (errors, []);
 });
+
+test ('Pre-delay syncs to the host tempo from the note button beside it, in every look, Studio and Stage', async () =>
+{
+    await open ('anodised');
+    const looks = await page.evaluate (() => SKINS.map (s => s.id));
+
+    for (const look of looks)
+    {
+        for (const mode of ['studio', 'stage'])
+        {
+            await open (look);
+            await fromPlugin ('state', { params: { predelay: 140, predelaySync: 0, predelayNote: 0 }, ui: { bpm: 120 } });
+            await drawn();
+
+            if (mode === 'stage')
+            {
+                await page.click ('[data-act="mode"][data-v="stage"]');
+                await drawn();
+            }
+
+            const where = look + ' ' + mode;
+            const button = page.locator ('.psy').first();
+            assert.ok (await button.isVisible(), where + ': no note button beside Pre-delay');
+            await page.evaluate (() => { window.__sent = []; });
+            await button.click();
+            await drawn();
+
+            // Of the notes at 120 BPM, a 1/16 (125 ms) is nearest 140 ms, by ratio (a 1/8T is 167 ms).
+            const sent = await page.evaluate (() => Object.assign ({}, ...window.__sent.filter (m => m[0] === 'params').map (m => m[1])));
+            assert.equal (sent.predelaySync, 1, where + ': sync not sent');
+            assert.equal (sent.predelayNote, 6, where + ': sync should start on 1/16, the note nearest 140 ms');
+            assert.equal (await page.locator ('input[data-type="pre"]').first().inputValue(), '1/16', where);
+            assert.equal (await button.getAttribute ('aria-pressed'), 'true', where);
+
+            // A note typed into the value, and milliseconds as the note nearest them
+            for (const [typed, wanted] of [['1/8 dotted', 11], ['1/4T', 10], ['1/16.', 8], ['500 ms', 12], ['1/2', 15]])
+            {
+                const got = await page.evaluate (text =>
+                {
+                    const field = document.querySelector ('input[data-type="pre"]');
+                    field.value = text;
+                    field.dispatchEvent (new Event ('change', { bubbles: true }));
+                    return st.preNote;
+                }, typed);
+                assert.equal (got, wanted, where + ': ' + JSON.stringify (typed));
+            }
+
+            // The host's tempo changes what the note lasts, which the control tells a screen reader
+            await fromPlugin ('tempo', { bpm: 90 });
+            await drawn();
+            const text = await page.locator ('[data-knob="pre"][aria-valuetext], [data-knob="pre"] [aria-valuetext]').first().getAttribute ('aria-valuetext').catch (() => null);
+            if (text !== null)
+                assert.match (text, /^1\/2, 1333 ms at 90 BPM$/, where);
+
+            // Off again, it plays the milliseconds it had
+            await button.click();
+            await drawn();
+            assert.match (await page.locator ('input[data-type="pre"]').first().inputValue(), /^140\sms$/, where);
+            assert.deepEqual (errors, [], where);
+        }
+    }
+});

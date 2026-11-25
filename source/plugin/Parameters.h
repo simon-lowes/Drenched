@@ -1,5 +1,6 @@
 #pragma once
 
+#include "TempoSync.h"
 #include "TypedValues.h"
 
 #include <drenched/WetEqualiser.h>
@@ -28,6 +29,8 @@ namespace ParamIDs
     inline constexpr auto distance = "distance";
     inline constexpr auto freeze = "freeze";
     inline constexpr auto predelaySync = "predelaySync";
+    // The note value pre-delay sync plays (tempoSync::notes in TempoSync.h).
+    inline constexpr auto predelayNote = "predelayNote";
     inline constexpr auto crossover = "crossover";
     inline constexpr auto wetLowCut = "wetLowCut";
     inline constexpr auto wetHighCut = "wetHighCut";
@@ -93,7 +96,7 @@ namespace ParamIDs
     inline constexpr bool eqOnByDefault (std::size_t band) noexcept { return band < 6; }
 
     /** Every id, in a fixed order, for code that keeps per-parameter state. */
-    inline constexpr std::array<const char*, 108> ordered { mix, output, predelay, size, brightness, earlyLate, distance, freeze,
+    inline constexpr std::array<const char*, 109> ordered { mix, output, predelay, size, brightness, earlyLate, distance, freeze,
                                                            predelaySync, crossover, wetLowCut, wetHighCut, width, ducking, monoBelow,
                                                            decay[0], decay[1], decay[2], decay[3], decay[4], decay[5], decay[6], decay[7],
                                                            living, movement, movementRate, reverse, gate, attack, directLevel, directDelay,
@@ -112,7 +115,7 @@ namespace ParamIDs
                                                            eqShape[6], eqShape[7], eqShape[8], eqShape[9], eqShape[10], eqShape[11],
                                                            eqOn[0], eqOn[1], eqOn[2], eqOn[3], eqOn[4], eqOn[5],
                                                            eqOn[6], eqOn[7], eqOn[8], eqOn[9], eqOn[10], eqOn[11],
-                                                           bypass };
+                                                           bypass, predelayNote };
 
     /** The same, as strings. */
     inline const juce::StringArray& all()
@@ -225,8 +228,14 @@ public:
         }
         else if constexpr (std::is_same_v<Base, juce::AudioParameterChoice>)
         {
-            // A choice by name ("bell", "high shelf", or a part of one), or by its number.
+            // A choice by name ("bell", "high shelf", "1/8 dotted"), or a part of one, or by its
+            // number. The whole name comes first, so "1/8" is the eighth and not "1/8T".
             const auto typedText = text.trim();
+            const auto key = typed::choiceKey (typedText);
+
+            for (int i = 0; i < this->choices.size(); ++i)
+                if (key.isNotEmpty() && key == typed::choiceKey (this->choices[i]))
+                    return this->convertTo0to1 (static_cast<float> (i));
 
             for (int i = 0; i < this->choices.size(); ++i)
                 if (typedText.isNotEmpty() && (typedText.containsIgnoreCase (this->choices[i]) || this->choices[i].containsIgnoreCase (typedText)))
@@ -476,6 +485,25 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     // Bypass: only the dry sound, in time. It is the host's bypass switch too, so the
     // interface's button and the host's are one. Off is how every earlier version played.
     layout.add (std::make_unique<Bool> ("Bypass", ParameterID { ParamIDs::bypass, 1 }, "Bypass", false));
+
+    // The note pre-delay sync plays. Its default, "Nearest 1/64", is how sync played before
+    // note values: the pre-delay in ms rounded to the nearest 64th note.
+    StringArray noteNames;
+
+    for (const auto& note : tempoSync::notes)
+        noteNames.add (note.name);
+
+    const auto noteText = AudioParameterChoiceAttributes().withStringFromValueFunction ([noteNames] (int index, int maximumStringLength)
+    {
+        const auto i = jlimit (0, noteNames.size() - 1, index);
+        const auto text = i == tempoSync::nearest64th && maximumStringLength > 0 && maximumStringLength < noteNames[i].length()
+                              ? String ("~1/64")
+                              : noteNames[i];
+        return maximumStringLength > 0 ? text.substring (0, maximumStringLength) : text;
+    });
+
+    layout.add (std::make_unique<Choice> ("PD note", ParameterID { ParamIDs::predelayNote, 1 }, "Pre-delay note",
+                                          noteNames, tempoSync::nearest64th, noteText));
 
     return layout;
 }

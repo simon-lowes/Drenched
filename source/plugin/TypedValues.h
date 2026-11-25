@@ -181,6 +181,24 @@ namespace typed
         const auto values = numbers (word, false);
         return ! values.isEmpty() && (values.getLast() < 0.0f || values.getLast() > 0.0f);
     }
+
+    /** A choice's name reduced to compare with what was typed: no case or spaces, and a note
+        value's "dotted" (or a dot after it) and "triplet" as its D and T, so "1/8 dotted",
+        "1/8." and "1/8D" are one name, and "~1/64" (as a host with little room shows it) is
+        "Nearest 1/64". The interface's typedNote reads notes the same way. */
+    inline juce::String choiceKey (const juce::String& text)
+    {
+        auto key = text.toLowerCase().removeCharacters (" \t")
+                       .replace (juce::String::charToString (0x00a0), {})
+                       .replace ("~", "nearest").replace (juce::String::charToString (0x2248), "nearest")
+                       .replace ("dotted", "d").replace ("dot", "d")
+                       .replace ("triplets", "t").replace ("triplet", "t").replace ("trip", "t");
+
+        if (key.endsWithChar ('.'))
+            key = key.dropLastCharacters (1) + "d";
+
+        return key;
+    }
 }
 
 } // namespace drenched
