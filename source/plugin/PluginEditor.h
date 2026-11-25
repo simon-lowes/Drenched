@@ -95,6 +95,7 @@ private:
     std::uint64_t analysedVersion = 0;
     bool analysedAny = false;
     double sentShortened = 0.0;
+    double sentTempo = 0.0;
     juce::String sentLayout;
     juce::String lastCaptureStatus;
 

@@ -236,6 +236,8 @@ juce::var DrenchedEditor::uiValues()
     object->setProperty ("scenes", processor.sceneList());
     sentShortened = processor.shortenedSeconds();
     object->setProperty ("shortened", sentShortened);
+    sentTempo = std::round (processor.hostTempoBpm() * 100.0) / 100.0;
+    object->setProperty ("bpm", sentTempo);
 
     return juce::var (object.release());
 }
@@ -500,6 +502,16 @@ void DrenchedEditor::timerCallback()
     // Host automation, presets and the processor's own changes (a scene, a file's decay).
     if (watch.anyChanged())
         handleAsyncUpdate();
+
+    // The host's tempo, for a synced pre-delay's length; to a hundredth of a beat a minute,
+    // so a tempo ramp sends a little, not every block's rounding.
+    if (const auto bpm = std::round (processor.hostTempoBpm() * 100.0) / 100.0; bpm != sentTempo)
+    {
+        sentTempo = bpm;
+        auto tempo = std::make_unique<juce::DynamicObject>();
+        tempo->setProperty ("bpm", bpm);
+        web.emitEventIfBrowserIsVisible (PageEvents::tempo, juce::var (tempo.release()));
+    }
 
     // The host can change the output layout with the window open; the page's meters follow.
     if (processor.shortenedSeconds() != sentShortened || outputLayoutName (processor) != sentLayout)

@@ -145,12 +145,22 @@ The session remembers where the file is, not the audio. A dropped file is copied
 | --- | --- | --- | --- |
 | Mix | Balance of dry and wet | 0 to 100% | 30% |
 | Decay | Scales the whole decay curve; reads the average of 500 Hz and 1 kHz. Not a host parameter: hosts see the eight bands | 0.1 to 20 s, as the bands | The space's |
-| Pre-delay | Gap before the first reflection | 0 to 250 ms | The space's |
+| Pre-delay | Gap before the first reflection, or a note value when synced to tempo | 0 to 250 ms, or 1/64 to 1/2 note | The space's |
 | Size | Makes the room bigger or smaller by moving its reflections later or sooner, keeping its decay and tone | 50 to 150% | 100% |
 | Brightness | Tilts the wet tone darker or brighter | -12 to +12 dB | 0 dB |
 | Early/Late | Balances first reflections against the tail; shown as early / late | 0 to 100 | 55 (45 / 55) |
 | Distance | Moves the listener away from the source, shown in metres. Where a recording says where its microphones stood, the default lands there | 0 to 100% | 40% |
 | Freeze | Holds the tail until you release it | On, Off | Off |
+
+### Pre-delay in time with the song
+
+The small **note button** beside the Pre-delay value, in every look and in Stage, locks the pre-delay to your host's tempo. Lit, Pre-delay reads as a note instead of milliseconds, and turning it (dragging, the wheel or the arrow keys) steps through the note values, shortest to longest:
+
+1/64, 1/32T, 1/32, 1/16T, 1/32D, 1/16, 1/8T, 1/16D, 1/8, 1/4T, 1/8D, 1/4, 1/2T, 1/4D, 1/2
+
+T is a triplet (two thirds of the note) and D dotted (one and a half times it). Sync starts on the note nearest the milliseconds you had, and you can type a note into the value ("1/8", "1/8 dotted", "1/8.", "1/4T", "1/16 triplet"), or milliseconds to get the note nearest them. Hover over the value to see how long the note is at the current tempo. It follows tempo changes as the song plays, and in an offline bounce; a synced pre-delay can be up to 2 seconds, longer than the 250 ms you can set by hand. Click the note button again to go back to the milliseconds you had.
+
+With no tempo from the host (some standalone uses), Pre-delay plays the milliseconds set. Sessions from before note values, saved with sync on, show "≈1/64" and play as they did: the milliseconds rounded to the nearest 64th note. Turn the control to choose a note.
 
 ### All parameters
 
@@ -181,7 +191,7 @@ In the **Section** look, the plan is a room map: drag R1 (you) up and down for D
 | Reverse | Plays the room backwards, so it swells into each sound | On, Off | Off |
 | Gate | Cuts the room off after this long, like a gated drum room. The living tail rests while it's on | Off to 2000 ms | Off |
 | Attack | Fades the room in over this long, so it blooms behind the sound | Off to 500 ms | Off |
-| Pre-delay sync | Rounds Pre-delay to the nearest whole number of 64th notes at the host tempo | On, Off | Off |
+| Pre-delay sync | Locks Pre-delay to the host tempo as a note value (the note button beside Pre-delay does the same; see Pre-delay in time with the song) | On, Off | Off |
 
 **Direct sound** (the first sound to reach you, before any reflection)
 
@@ -373,7 +383,7 @@ IR file you loaded, and a screenshot or recording if you can.
 
 ## Parameter reference
 
-Names as your host shows them. 108 parameters.
+Names as your host shows them. 109 parameters.
 
 | Parameter | Range | Default |
 | --- | --- | --- |
@@ -420,5 +430,6 @@ Names as your host shows them. 108 parameters.
 | Decay linked | Off, On | On |
 | Right decay 63 Hz, Right decay 125 Hz, Right decay 250 Hz, Right decay 500 Hz, Right decay 1 kHz, Right decay 2 kHz, Right decay 4 kHz, Right decay 8 kHz | 0.1 to 20 s | The space's measured decay (heard only while Decay linked is off) |
 | Bypass | Off, On (your host's bypass switch) | Off |
+| Pre-delay note | Nearest 1/64, then 1/64 to 1/2 (as listed under Pre-delay in time with the song) | Nearest 1/64 (how sync played before note values) |
 
 On the graph and in the Wet EQ window the bands are Band 1 to Band 12: EQ low is Band 1 and EQ high is Band 6. A band that is off is flat whatever its gain; a shelf's Q is heard once it is made a bell. Solo is not a parameter.

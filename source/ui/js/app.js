@@ -9,7 +9,7 @@ var JUCE=(window.__JUCE__&&window.__JUCE__.backend)?window.__JUCE__.backend:null
 
 /* ---- parameters: UI keys on the left, plugin parameter ids on the right ---- */
 var PID={mix:'mix',pre:'predelay',size:'size',bright:'brightness',el:'earlyLate',dist:'distance',output:'output',freeze:'freeze',bypass:'bypass',
-         preSync:'predelaySync',xover:'crossover',locut:'wetLowCut',hicut:'wetHighCut',width:'width',duck:'ducking',mono:'monoBelow',
+         preSync:'predelaySync',preNote:'predelayNote',xover:'crossover',locut:'wetLowCut',hicut:'wetHighCut',width:'width',duck:'ducking',mono:'monoBelow',
          living:'living',move:'movement',moveRate:'movementRate',rev:'reverse',gate:'gate',attack:'attack',dLvl:'directLevel',dDel:'directDelay',dCol:'directColour',xfeed:'crossFeed',cpu:'lowCpu',cloud:'cloudSize',lx:'listenerX',sx:'sourceX'};
 for(var eb=1;eb<=EQ_N;eb++){PID['eq'+eb+'f']='eq'+eb+'Freq';PID['eq'+eb+'g']='eq'+eb+'Gain';PID['eq'+eb+'q']='eq'+eb+'Q';PID['eq'+eb+'s']='eq'+eb+'Shape';PID['eq'+eb+'o']='eq'+eb+'On';}
 var BAND_ID=['decay63','decay125','decay250','decay500','decay1k','decay2k','decay4k','decay8k'];
@@ -36,6 +36,7 @@ function gesture(ids,begin){if(JUCE)JUCE.emitEvent('gesture',{ids:ids,begin:!!be
    saved interface state (space, locks, view, skin) */
 var irEvent=null,shortened=0,sceneSeen=false;
 function applyFromHost(msg){if(!msg)return;var p=msg.params||{},u=msg.ui||{},from=twSnap(),settle=false;
+ if(u.bpm!=null)st.bpm=+u.bpm||0;
  if(u.shortened!=null){var sh=+u.shortened||0;if(sh>0&&sh!==shortened){st.hint=null;
    st.note='<b>Shortened to '+sh.toFixed(1)+' s.</b> The 32-bit version only has memory for this much of a surround reverb at this sample rate. The 64-bit version plays it in full.';}
   shortened=sh;}
@@ -65,6 +66,8 @@ function applyFromHost(msg){if(!msg)return;var p=msg.params||{},u=msg.ui||{},fro
    peak mark holds for a moment, then falls; a side that reaches full scale lights its lamp for
    two seconds. The held peaks and the lamps are kept in the state, so a redraw shows them too. */
 function heldPeak(k,v,now){var h=st.mh[k];if(!h||v>=h.v){st.mh[k]={v:v,t:now};return v;}var over=now-h.t-1200;if(over>0){h.v-=over*0.024;h.t=now-1200;if(h.v<=v){h.v=v;h.t=now;}}return h.v;}
+/* the host's tempo changed: a synced pre-delay shows its new length */
+function onTempo(m){if(!m)return;var b=+m.bpm||0;if(b===st.bpm)return;st.bpm=b;if(preSynced(st))schedule();}
 function onMeters(m){if(!m)return;st.inL=+m.inL;st.inR=+m.inR;st.outL=+m.outL;st.outR=+m.outR;
  var now=Date.now(),map={inL:st.inL,inR:st.inR,outL:st.outL,outR:st.outR},held={};
  for(var k in map){held[k]=heldPeak(k,map[k],now);if(map[k]>=-0.05)st.clip[k.slice(0,-1)]=now;}
@@ -535,7 +538,7 @@ function announce(){if(st.note!==saidNote){saidNote=st.note;if(st.note)say(plain
    The drawing is handed a view of the state whose numbers run from the old values to the new;
    the state itself, and what the host is told, change at once. A drag cuts it short, and
    reduced motion skips it. The old photograph lies over the new for a moment and fades. ---- */
-var tw=null,TW_KEYS=['bands','rbands'].concat(Object.keys(P).filter(function(k){return P[k].max>1&&!/^eq\d+[so]$/.test(k);}));
+var tw=null,TW_KEYS=['bands','rbands'].concat(Object.keys(P).filter(function(k){return P[k].max>1&&!/^eq\d+[so]$/.test(k)&&k!=='preNote';}));
 function reduced(){return !!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);}
 function twSnap(){var o={};TW_KEYS.forEach(function(k){var x=st[k];o[k]=Array.isArray(x)?x.slice():x;});return o;}
 function twStart(from){if(reduced()||drag)return;
@@ -575,9 +578,9 @@ live.addEventListener('pointerdown',function(e){var t=e.target;endDrag();tw=null
   if(gd.polar&&(at.r<gd.r0-20||at.r>gd.r1+20))return;
   if(eqTap&&eqTap.i===-1&&gnow-eqTap.t<400){eqTap=null;var ni=eqAdd(at.f,clamp(at.g,-EQ_DB,EQ_DB));if(ni>=0){st.hint=null;renderLive();sync();var nn=live.querySelector('[data-fid="eqn-'+ni+'"]');if(nn)nn.focus({preventScroll:true});}e.preventDefault();return;}
   eqTap={i:-1,t:gnow};if(st.eqCur!=null){st.eqCur=null;schedule();}return;}
- else if(kn){var k=kn.getAttribute('data-knob'),h=kn.getAttribute('data-h')==='1',know=Date.now();
+ else if(kn){var k0=kn.getAttribute('data-knob'),k=vk(st,k0),h=kn.getAttribute('data-h')==='1',know=Date.now();
   // a double click (the page is redrawn between the clicks, so it is counted here) opens the value to type
-  if(knTap&&knTap.k===k&&know-knTap.t<400&&Math.abs(e.clientX-knTap.x)<6&&Math.abs(e.clientY-knTap.y)<6){knTap=null;e.preventDefault();typeValue(k,kn);return;}
+  if(knTap&&knTap.k===k&&know-knTap.t<400&&Math.abs(e.clientX-knTap.x)<6&&Math.abs(e.clientY-knTap.y)<6){knTap=null;e.preventDefault();typeValue(k0,kn);return;}
   knTap={k:k,t:know,x:e.clientX,y:e.clientY};drag={type:'knob',k:k,h:h,x0:e.clientX,y0:e.clientY,n0:to01(k,getV(st,k)),w:kn.getBoundingClientRect().width*(W/live.firstElementChild.getBoundingClientRect().width),ids:k==='decay'?(st.link?BAND_ID.slice():BAND_ID.concat(RBAND_ID)):[PID[k]]};}
  else if(lis){var sv=lis.closest('svg');drag={type:'lis',rect:sv.getBoundingClientRect(),w:+sv.getAttribute('data-w'),mode:sv.getAttribute('data-mode'),ox:+sv.getAttribute('data-ox'),oy:+sv.getAttribute('data-oy'),sc:+sv.getAttribute('data-sc'),rw:+sv.getAttribute('data-rw'),ids:lis.getAttribute('data-drag')==='src'?[PID.sx]:[PID.dist,PID.lx],src:lis.getAttribute('data-drag')==='src'};}
  else if(dg){var r=dg.getBoundingClientRect(),d={rect:r,l:+dg.getAttribute('data-l'),t:+dg.getAttribute('data-t'),pw:+dg.getAttribute('data-pw'),ph:+dg.getAttribute('data-ph'),ymax:+dg.getAttribute('data-ymax'),w:+dg.getAttribute('data-w'),bars:dg.getAttribute('data-bars')==='1'};
@@ -631,7 +634,7 @@ function wheelTarget(t){if(!t||!t.closest)return null;var n=t.closest('[data-eqn
  if(n.matches('input')){if(n.disabled||n.readOnly||(document.activeElement===n&&n.value!==n.defaultValue))return null;if(inScroller(n)&&document.activeElement!==n)return null;
   var ty=n.getAttribute('data-type');if(ty==='band'){var fi=+n.getAttribute('data-i');return {id:'b'+fi,band:fi,ids:[bandId(st,fi)]};}return knobTarget(ty);}
  return knobTarget(n.getAttribute('data-knob'));}
-function knobTarget(k){var p=P[k];if(!p||p.max-p.min<=p.st||/^eq\d+[so]$/.test(k)||(k!=='decay'&&!PID[k]))return null;
+function knobTarget(k){k=vk(st,k);var p=P[k];if(!p||p.max-p.min<=p.st||/^eq\d+[so]$/.test(k)||(k!=='decay'&&!PID[k]))return null;
  return {id:'k'+k,k:k,ids:k==='decay'?(st.link?BAND_ID.slice():BAND_ID.concat(RBAND_ID)):[PID[k]]};}
 /* how far a wheel event turns, in hundredths of a notch: a wheel notch is about 100, a
    trackpad sends many small turns. Up or right is positive, whichever way the system scrolls. */
@@ -685,7 +688,7 @@ document.addEventListener('keydown',function(e){var t=e.target,keys={ArrowUp:1,A
  if(t.matches('.sk')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.click();return;}
  // a captured position marked on a drawing is an SVG button: Enter and Space press it
  if(t.matches('svg [data-act]')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));return;}
- if(t.matches('[data-knob]')){var k=t.getAttribute('data-knob'),p=P[k];if(e.key==='Home')setParam(st,k,p.min);else if(e.key==='End')setParam(st,k,p.max);else if(keys[e.key]){
+ if(t.matches('[data-knob]')){var k=vk(st,t.getAttribute('data-knob')),p=P[k];if(e.key==='Home')setParam(st,k,p.min);else if(e.key==='End')setParam(st,k,p.max);else if(keys[e.key]){
    // a step only ever moves the way it was pressed, even from a value rounding takes back
    var v0=getV(st,k),nv=from01(k,to01(k,v0)+keys[e.key]*(e.shiftKey?0.002:0.02));if(keys[e.key]>0?nv>v0:nv<v0)setParam(st,k,nv);}else return;e.preventDefault();schedule();}
  else if(t.matches('[data-eqn]')){var qi=+t.getAttribute('data-eqn'),fine=e.shiftKey,ek=e.key;st.eqCur=qi;
@@ -720,6 +723,8 @@ function onChange(e){var t=e.target;
  if(t.matches('input[data-scn]')){var rn=+t.getAttribute('data-scn'),nv=t.value.trim();if(nv)sceneAct('rename',rn,nv.slice(0,64));renderLive();return;}
  if(!t.matches('input[data-type]'))return;var ty=t.getAttribute('data-type'),raw=t.value,nums=typedNumbers(raw,!!P[ty]&&P[ty].max>=1000);
  if((ty==='lx'||ty==='sx')&&/cent/i.test(raw)){setParam(st,ty,50);st.note=null;renderLive();sync();return;}
+ // synced, the pre-delay takes a note ("1/8 dotted", "1/4T"), or milliseconds as the note nearest them
+ if(ty==='pre'&&preSynced(st)){var tn=typedNote(raw);if(tn<0&&nums.length)tn=preNearestNote(nums[nums.length-1]*typedScale('pre',raw,nums[nums.length-1]),st.bpm);if(tn>=0){st.preNote=tn;st.hint='preNote';}st.note=null;renderLive();sync();return;}
  if(!nums.length){if(/off/i.test(raw)&&P[ty]&&(P[ty].min===0||ty==='dLvl'))setParam(st,ty,P[ty].min);st.note=null;renderLive();sync();return;}var v=nums[nums.length-1];v*=typedScale(ty,raw,v);
  if(ty==='band'){var i=+t.getAttribute('data-i');curBands(st)[i]=clamp(v,0.1,20);st.lastBand=i;st.hint='decay';}
  else if(ty==='dist'){st.dist=Math.round(distFromM(st,v));st.hint='dist';}
@@ -758,7 +763,9 @@ live.addEventListener('click',function(e){var b=e.target.closest('[data-act]');
   case 'slot':if(v!==st.slot){st.slots[st.slot]=snap(st);var nx=st.slots[v]||snap(st);Object.keys(nx).forEach(function(k){st[k]=Array.isArray(nx[k])?nx[k].slice():nx[k];});st.slot=v;st.hint=null;st.note='<b>Snapshot '+v+'.</b> Changes now go to '+v+'. Switch back to compare.';}break;
   case 'freeze':st.freeze=!st.freeze;st.hint=null;st.note=null;break;
   case 'bypass':st.bypass=!st.bypass;st.hint=null;st.note=st.bypass?'<b>Bypassed.</b> Only the dry sound plays, in time.':'<b>Reverb back on.</b>';break;
-  case 'toggle':var tk=b.getAttribute('data-k');st[tk]=st[tk]>=0.5?0:1;st.hint=tk;st.note=null;break;
+  case 'toggle':var tk=b.getAttribute('data-k');st[tk]=st[tk]>=0.5?0:1;st.hint=tk;st.note=null;
+   // sync turned on from milliseconds starts on the note nearest them at this tempo
+   if(tk==='preSync'&&st.preSync>=0.5&&preNoteIdx(st)<1)st.preNote=preNearestNote(st.pre,st.bpm);break;
   case 'note':st.noteOpen=st.noteOpen===v?null:v;break;
   case 'adv':st.adv=!st.adv;st.hint=null;st.note=st.adv?'<b>All parameters</b> opens in place, so the space and graph stay in view.':null;break;
   case 'match':st.hint=null;if(JUCE){JUCE.emitEvent('match',{});st.note='<b>Match a room.</b> Choose a recording made in the room you want to match: a voice, a band or a drum kit, with pauses where the sound stops and the room rings on.';}else st.note='<b>Match a room</b> listens to a recording made in a room and sets the decay to match it.';break;
@@ -909,11 +916,11 @@ function sendDropped(f,keep){var id=Date.now()%1e9,at=0;dropping=f.name;
 var init=null;
 try{var d=window.__JUCE__&&window.__JUCE__.initialisationData&&window.__JUCE__.initialisationData.drenched;if(d&&d.length)init=d[0];}catch(_){}
 if(init){setLibrary(init.library);Object.assign(st,{sp:0,bands:SPACES[0].bands.slice(),rbands:SPACES[0].bands.slice(),pre:SPACES[0].pre});applyFromHost(init);if(init.licence)Object.assign(st.licence,init.licence);if(init.report){Object.assign(st.report,init.report);if(init.report.crash)st.rep=true;}st.bits=+init.bits||64;if(init.tipsSeen===false&&!st.rep)openTour(true);}
-else{setLibrary(PREVIEW_LIBRARY);Object.assign(st,{sp:0,bands:SPACES[0].bands.slice(),rbands:SPACES[0].bands.slice(),pre:SPACES[0].pre});}
+else{setLibrary(PREVIEW_LIBRARY);Object.assign(st,{bpm:120,sp:0,bands:SPACES[0].bands.slice(),rbands:SPACES[0].bands.slice(),pre:SPACES[0].pre});}
 try{var hs=(location.hash||'').slice(1);if(SKINS.some(function(x){return x.id===hs;}))st.skin=hs;if(/[?&]tips\b/.test(location.search))openTour(true);}catch(_){}
 Object.assign(lastSent,paramValues(st));Object.assign(lastUi,uiState(st));
 renderLive();
-if(JUCE){JUCE.addEventListener('state',applyFromHost);JUCE.addEventListener('meters',onMeters);JUCE.addEventListener('capture',onCapture);JUCE.addEventListener('licence',onLicence);JUCE.addEventListener('report',onReport);JUCE.addEventListener('pasted',onPasted);JUCE.addEventListener('matched',onMatched);JUCE.addEventListener('analysis',onAnalysis);JUCE.addEventListener('dropFailed',onDropFailed);JUCE.addEventListener('described',onDescribed);JUCE.addEventListener('spectrum',onSpectrum);JUCE.emitEvent('ready',{});if(st.rep)JUCE.emitEvent('reportOpen',{});
+if(JUCE){JUCE.addEventListener('state',applyFromHost);JUCE.addEventListener('meters',onMeters);JUCE.addEventListener('tempo',onTempo);JUCE.addEventListener('capture',onCapture);JUCE.addEventListener('licence',onLicence);JUCE.addEventListener('report',onReport);JUCE.addEventListener('pasted',onPasted);JUCE.addEventListener('matched',onMatched);JUCE.addEventListener('analysis',onAnalysis);JUCE.addEventListener('dropFailed',onDropFailed);JUCE.addEventListener('described',onDescribed);JUCE.addEventListener('spectrum',onSpectrum);JUCE.emitEvent('ready',{});if(st.rep)JUCE.emitEvent('reportOpen',{});
  // after a reload the plugin has forgotten which displays were open, so it is told again
  dispOpen=false;syncDisplays();}
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);

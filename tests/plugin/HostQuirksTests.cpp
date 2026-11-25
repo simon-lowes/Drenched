@@ -440,6 +440,81 @@ TEST_CASE ("A host tempo that can't be right leaves synced predelay playing", "[
     REQUIRE (energy (got, got.size() / 2) > 1.0e-6);
 }
 
+TEST_CASE ("Synced pre-delay plays its note at the host tempo, live and bouncing", "[plugin][host]")
+{
+    // A note plays exactly as that many milliseconds set by hand would (a 1/16 at 120 BPM
+    // is 125 ms, at 60 BPM 250 ms), and a half note at 60 BPM, past the milliseconds' own
+    // range, is the quarter note's sound a second later.
+    struct Head final : juce::AudioPlayHead
+    {
+        double bpm = 120.0;
+
+        juce::Optional<PositionInfo> getPosition() const override
+        {
+            PositionInfo info;
+            info.setBpm (bpm);
+            return info;
+        }
+    };
+
+    constexpr double rate = 48000.0;
+    constexpr int settle = 24000; // the pre-delay glides to where it is set; the impulse comes after
+    const auto bouncing = GENERATE (false, true);
+    INFO ((bouncing ? "bouncing" : "live"));
+
+    const auto render = [&] (double bpm, bool synced, float ms, int note, int length)
+    {
+        Head head;
+        head.bpm = bpm;
+        testing::Plugin p;
+        p->setPlayHead (&head);
+        testing::onMessageThread ([&] { p->setNonRealtime (bouncing); });
+        prepare (*p, rate, 512);
+        setParameter (*p, ParamIDs::mix, 100.0f);
+        setParameter (*p, ParamIDs::directLevel, -60.0f); // only the room, all of it after the pre-delay
+        setParameter (*p, ParamIDs::predelay, ms);
+        setParameter (*p, ParamIDs::predelaySync, synced ? 1.0f : 0.0f);
+        setParameter (*p, ParamIDs::predelayNote, static_cast<float> (note));
+
+        std::vector<float> input (static_cast<size_t> (settle + length), 0.0f);
+        input[static_cast<size_t> (settle)] = 1.0f;
+        auto out = play (*p, input, [] (int) { return 512; });
+        return std::vector<float> (out.begin() + settle, out.end());
+    };
+
+    const auto sixteenth = 6;
+    const auto quarter = 12;
+    const auto half = 15;
+    const auto close = [] (const std::vector<float>& a, const std::vector<float>& b, size_t shift)
+    {
+        double diff = 0.0, level = 0.0;
+
+        for (size_t i = 0; i + shift < a.size(); ++i)
+        {
+            diff += std::pow (static_cast<double> (a[i + shift]) - b[i], 2.0);
+            level += static_cast<double> (b[i]) * b[i];
+        }
+
+        INFO ("difference " << juce::Decibels::gainToDecibels (std::sqrt (diff / std::max (level, 1.0e-30))) << " dB");
+        CHECK (level > 1.0e-6);
+        CHECK (diff < 1.0e-8 * level);
+    };
+
+    close (render (120.0, true, 18.0f, sixteenth, 48000), render (120.0, false, 125.0f, 0, 48000), 0);
+    close (render (60.0, true, 18.0f, sixteenth, 48000), render (60.0, false, 250.0f, 0, 48000), 0);
+
+    const auto halfNote = render (60.0, true, 18.0f, half, 120000);
+    const auto quarterNote = render (60.0, true, 18.0f, quarter, 120000);
+    close (halfNote, quarterNote, 48000);
+
+    double early = 0.0;
+
+    for (size_t i = 0; i < 95000; ++i)
+        early += static_cast<double> (halfNote[i]) * halfNote[i];
+
+    CHECK (early < 1.0e-12);
+}
+
 TEST_CASE ("A block with fewer or more channels than the buses plays without harm", "[plugin][host]")
 {
     // Hosts hand over fewer channels than the buses have when a bus is switched off or a

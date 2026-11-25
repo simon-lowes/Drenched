@@ -83,7 +83,8 @@ var P={
  el:{l:'Early/Late',min:0,max:100,st:1,help:'balances first reflections against the tail.'},
  dist:{l:'Distance',min:0,max:100,st:1,help:'moves the listener away from the source.'},
  output:{l:'Output',min:-24,max:12,st:0.1,help:'trims the plugin output.'},
- preSync:{l:'Pre-delay sync',min:0,max:1,st:1,help:'locks pre-delay to the host tempo.'},
+ preSync:{l:'Pre-delay sync',min:0,max:1,st:1,help:'locks pre-delay to the host tempo as a note: straight, dotted (D) or triplet (T). Off, it plays the milliseconds set.'},
+ preNote:{l:'Pre-delay',min:1,max:15,st:1,help:'is the gap before the first reflection, as a note at the host tempo. Turn it for a longer or shorter note; the note button beside it goes back to milliseconds.'},
  rev:{l:'Reverse',min:0,max:1,st:1,help:'plays the room backwards, so it swells up into each sound.'},
  gate:{l:'Gate',min:0,max:2000,st:1,help:'cuts the room off after this long, like a gated drum room. The living tail rests while it is on.'},
  attack:{l:'Attack',min:0,max:500,st:1,help:'fades the room in over this long, so it blooms behind the sound instead of starting with it.'},
@@ -133,6 +134,30 @@ function eqFree(s){for(var i=0;i<EQ_N;i++)if(!eqOn(s,i))return i;return -1;}
 var DEEP=['lx','sx','output','preSync','rev','gate','attack','dLvl','dDel','dCol','xover','living','move','moveRate','locut','hicut','width','cloud','xfeed','duck','mono','cpu'];
 var TOGGLES=['preSync','rev','cpu'];
 var MAIN=['decay','pre','size','bright','el','dist'];
+/* Pre-delay synced to the host tempo plays a note value: the same table as tempoSync::notes in
+   source/plugin/TempoSync.h, shortest first, as [name, whole notes]. The first is how sync
+   played before note values (milliseconds rounded to the nearest 64th note), which old
+   sessions keep; the control itself turns through the notes. */
+var PRE_NOTES=[['Nearest 1/64',0],['1/64',1/64],['1/32T',1/48],['1/32',1/32],['1/16T',1/24],['1/32D',3/64],['1/16',1/16],['1/8T',1/12],['1/16D',3/32],['1/8',1/8],['1/4T',1/6],['1/8D',3/16],['1/4',1/4],['1/2T',1/3],['1/4D',3/8],['1/2',1/2]];
+var PRE_LONGEST=2000;
+function preSynced(s){return s.preSync>=0.5;}
+/* the control a value key drives: synced, the pre-delay control turns through note values */
+function vk(s,k){return k==='pre'&&preSynced(s)?'preNote':k;}
+function preNoteIdx(s){return clamp(Math.round(+s.preNote||0),0,PRE_NOTES.length-1);}
+function preNoteName(i,short){var n=PRE_NOTES[clamp(Math.round(i),0,PRE_NOTES.length-1)][0];return short&&i<1?'\u22481/64':n;}
+/* what a synced pre-delay plays at the host tempo, in ms, as the plugin works it out; null
+   with no tempo from the host, when it plays the milliseconds set */
+function preSyncedMs(s){var b=+s.bpm;if(!(b>1&&b<10000))return null;var i=preNoteIdx(s);
+ if(i<1){var step=60000/b/16;return clamp(Math.round(s.pre/step)*step,0,1000);}
+ return Math.min(240000/b*PRE_NOTES[i][1],PRE_LONGEST);}
+/* the note nearest a length in ms at a tempo, for turning sync on and for typed milliseconds */
+function preNearestNote(ms,bpm){var b=bpm>1&&bpm<10000?bpm:120,best=1,bd=1e9;for(var i=1;i<PRE_NOTES.length;i++){var d=Math.abs(Math.log(Math.max(ms,1)/(240000/b*PRE_NOTES[i][1])));if(d<bd){bd=d;best=i;}}return best;}
+/* a note value as typed: "1/8", "1/8 dotted", "1/8.", "1/4T", "1/16 triplet" (choiceKey in
+   source/plugin/TypedValues.h reads them the same way); -1 when it names none */
+function typedNote(raw){var k=String(raw).toLowerCase().replace(/[\s\u00a0]+/g,'').replace(/dotted|dot/g,'d').replace(/triplets|triplet|trip/g,'t');if(/\.$/.test(k))k=k.slice(0,-1)+'d';
+ for(var i=1;i<PRE_NOTES.length;i++)if(PRE_NOTES[i][0].toLowerCase()===k)return i;return /nearest|~|\u2248/.test(k)?0:-1;}
+/* the synced pre-delay's length in words, for the hint and screen readers */
+function preSyncedText(s){var ms=preSyncedMs(s);return ms==null?'no tempo from the host, so it plays '+Math.round(s.pre)+' ms':Math.round(ms)+' ms at '+(+(+s.bpm).toFixed(2))+' BPM';}
 function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
 function lerp(a,b,t){return a+(b-a)*t;}
 function f1(n){return (Math.round(n*10)/10).toFixed(1);}
@@ -152,7 +177,7 @@ function ghostBands(s){return s.link?null:s.side==='R'?s.bands:s.rbands;}
 function sideName(s){return s.side==='R'?'Right':'Left';}
 /* the aria label of a point or a typed band value, with its side while unlinked */
 function bandLabel(s,i){return (s.link?'':sideName(s)+' ')+(s.link?'Decay':'decay')+' at '+FREQ[i]+'Hz';}
-function newState(){var sp=SPACES[0];return eqDefaults({sp:0,bands:sp.bands.slice(),rbands:sp.bands.slice(),link:true,side:'L',mix:30,pre:sp.pre,size:100,bright:0,el:55,dist:40,lx:50,sx:50,output:0,preSync:0,xover:320,locut:80,hicut:14000,width:100,duck:0,mono:0,living:0,move:20,moveRate:0.7,rev:0,gate:0,attack:0,dLvl:0,dDel:0,dCol:0,xfeed:100,cloud:100,cpu:0,mode:'studio',slot:'A',slots:{A:null,B:null},freeze:false,bypass:false,adv:false,browse:false,view:'plan',locks:{},hint:null,note:null,peek:null,posOpen:false,fade:null,lastBand:4,skin:'aperture',skins:false,tour:null,tourList:null,inL:-60,inR:-60,outL:-60,outR:-60,mh:{},clip:{}});}
+function newState(){var sp=SPACES[0];return eqDefaults({sp:0,bands:sp.bands.slice(),rbands:sp.bands.slice(),link:true,side:'L',mix:30,pre:sp.pre,size:100,bright:0,el:55,dist:40,lx:50,sx:50,output:0,preSync:0,preNote:0,bpm:0,xover:320,locut:80,hicut:14000,width:100,duck:0,mono:0,living:0,move:20,moveRate:0.7,rev:0,gate:0,attack:0,dLvl:0,dDel:0,dCol:0,xfeed:100,cloud:100,cpu:0,mode:'studio',slot:'A',slots:{A:null,B:null},freeze:false,bypass:false,adv:false,browse:false,view:'plan',locks:{},hint:null,note:null,peek:null,posOpen:false,fade:null,lastBand:4,skin:'aperture',skins:false,tour:null,tourList:null,inL:-60,inR:-60,outL:-60,outR:-60,mh:{},clip:{}});}
 var st=newState();
 function spOf(s){return SPACES[s.sp];}
 function getV(s,k){return k==='decay'?decayOf(curBands(s)):s[k];}
@@ -200,10 +225,10 @@ function posFrac(s,g){if(g.atM==null)return null;var r=distRange(s);return clamp
 function eqp(el){var a=el/100*Math.PI/2;function d(x){return x<0.001?'\u2212\u221e':(20*Math.log10(x)).toFixed(1).replace('-','\u2212');}return {e:d(Math.cos(a)),t:d(Math.sin(a))};}
 function hzText(v){return v<1000?Math.round(v)+TS+'Hz':(+(v/1000).toFixed(2))+TS+'kHz';}
 function dbSigned(v){return (v>0?'+':v<0?'\u2212':'')+Math.abs(v).toFixed(1)+TS+'dB';}
-function fmt(s,k,v){if(v==null)v=getV(s,k);
+function fmt(s,k,v){if(v==null){k=vk(s,k);v=getV(s,k);}
  if(/^eq\d+[fgqso]$/.test(k)){var ek=k.charAt(k.length-1);return ek==='f'?hzText(v):ek==='g'?dbSigned(v):ek==='s'?EQ_SHAPES[clamp(Math.round(v),0,2)]:ek==='o'?(v>=0.5?'On':'Off'):v.toFixed(2);}
  switch(k){
- case 'mix':return Math.round(v)+'%';case 'decay':return f1(v)+TS+'s';case 'pre':return Math.round(v)+TS+'ms';case 'size':return Math.round(v)+'%';
+ case 'mix':return Math.round(v)+'%';case 'decay':return f1(v)+TS+'s';case 'pre':return Math.round(v)+TS+'ms';case 'preNote':return preNoteName(v,true);case 'size':return Math.round(v)+'%';
  case 'bright':return dbSigned(v);case 'el':return (100-Math.round(v))+' / '+Math.round(v);
  case 'dist':var old=s.dist;s.dist=v;var m=distM(s);s.dist=old;return f1(m)+TS+'m';
  case 'output':return dbSigned(v);case 'preSync':case 'rev':case 'cpu':return v>=0.5?'On':'Off';
@@ -228,15 +253,17 @@ function knobSVG(v01,size,sysId){var c=size/2,r=size/2-4,a0=135,a1=135+270*clamp
  if(sysId==='anodised'){var rb=rv*0.72;s+='<circle class="k-knurl" cx="'+c+'" cy="'+c+'" r="'+(rb-2).toFixed(1)+'"/><circle class="k-cap" cx="'+c+'" cy="'+c+'" r="'+(rb*0.74).toFixed(1)+'"/><path class="k-spec" d="'+arcD(c,rb-0.8,195,290)+'"/>';}
  var i0=sysId==='catalogue'?0.78:sysId==='anodised'?0.3:0.32,i1=sysId==='catalogue'?0.8:0.64;
  s+='<line class="k-ptr" x1="'+(c+Math.cos(pa)*rv*i0).toFixed(1)+'" y1="'+(c+Math.sin(pa)*rv*i0).toFixed(1)+'" x2="'+(c+Math.cos(pa)*rv*i1).toFixed(1)+'" y2="'+(c+Math.sin(pa)*rv*i1).toFixed(1)+'"/>';return s+'</svg>';}
-function ariaFor(s,k){var p=P[k];return 'role="slider" tabindex="0" aria-label="'+p.l+'" aria-valuemin="'+p.min+'" aria-valuemax="'+p.max+'" aria-valuenow="'+(+clamp(getV(s,k),p.min,p.max).toFixed(2))+'" aria-valuetext="'+esc(fmt(s,k))+'"';}
+function ariaFor(s,k){k=vk(s,k);var p=P[k];return 'role="slider" tabindex="0" aria-label="'+p.l+'" aria-valuemin="'+p.min+'" aria-valuemax="'+p.max+'" aria-valuenow="'+(+clamp(getV(s,k),p.min,p.max).toFixed(2))+'" aria-valuetext="'+esc(fmt(s,k)+(k==='preNote'?', '+preSyncedText(s):''))+'"';}
 /* the slider of a block that also holds the value field and a lock: a slider's children are
    presentational, so it lies over the block as a sibling of them, and the block takes the drag */
 function knobHit(s,k){return '<div class="kn-hit" data-knob="'+k+'" data-fid="kn-'+k+'" '+ariaFor(s,k)+'></div>';}
-function knobEl(s,k,size,sysId){return '<div class="kn" data-knob="'+k+'" data-fid="kn-'+k+'" '+ariaFor(s,k)+'>'+knobSVG(to01(k,getV(s,k)),size,sysId)+'</div>';}
-function slideEl(s,k){var n=(to01(k,getV(s,k))*100).toFixed(1);return '<div class="sl" data-knob="'+k+'" data-h="1" data-fid="kn-'+k+'" '+ariaFor(s,k)+'><div class="sl-t"></div><div class="sl-f" style="width:'+n+'%"></div><div class="sl-d" style="left:'+n+'%"></div></div>';}
-function roEl(s,k,cls){return '<input class="ro '+(cls||'')+'" data-type="'+k+'" data-fid="ro-'+k+'" value="'+esc(fmt(s,k))+'" aria-label="'+P[k].l+' value" spellcheck="false">';}
+function knobEl(s,k,size,sysId){return '<div class="kn" data-knob="'+k+'" data-fid="kn-'+k+'" '+ariaFor(s,k)+'>'+knobSVG(to01(vk(s,k),getV(s,vk(s,k))),size,sysId)+'</div>';}
+function slideEl(s,k){var n=(clamp(to01(vk(s,k),getV(s,vk(s,k))),0,1)*100).toFixed(1);return '<div class="sl" data-knob="'+k+'" data-h="1" data-fid="kn-'+k+'" '+ariaFor(s,k)+'><div class="sl-t"></div><div class="sl-f" style="width:'+n+'%"></div><div class="sl-d" style="left:'+n+'%"></div></div>';}
+function roEl(s,k,cls){return '<input class="ro '+(cls||'')+'" data-type="'+k+'" data-fid="ro-'+k+'" value="'+esc(fmt(s,k))+'" aria-label="'+P[k].l+' value" spellcheck="false">'+(k==='pre'?syncBtn(s):'');}
+/* the note button on every pre-delay control: on, the pre-delay follows the host tempo as a note */
+function syncBtn(s){var on=preSynced(s);return '<button class="psy" data-act="toggle" data-k="preSync" aria-pressed="'+on+'" aria-label="Sync pre-delay to tempo" title="'+(on?'Synced to tempo: '+esc(preSyncedText(s))+'. Click for milliseconds':'Sync pre-delay to the host tempo')+'">'+ICON.note+'</button>';}
 function ovrEl(s,k){return isOver(s,k)?'<span class="ovr" title="Changed from the captured space" aria-label="changed from captured"></span>':'';}
-var ICON={power:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M8 1.8v5.6"/><path d="M4.6 3.9a5.4 5.4 0 1 0 6.8 0"/></svg>',lockOn:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg>',
+var ICON={note:'<svg width="11" height="13" viewBox="0 0 11 13" fill="currentColor" aria-hidden="true"><ellipse cx="3.4" cy="10.4" rx="2.9" ry="2.1" transform="rotate(-20 3.4 10.4)"/><path d="M5.5 10V1h1.2c.3 1.7 1.4 2.6 2.6 3.4.9.6 1.2 1.8.9 3-.4-1.3-1.5-2.2-3.5-2.4V10z"/></svg>',power:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M8 1.8v5.6"/><path d="M4.6 3.9a5.4 5.4 0 1 0 6.8 0"/></svg>',lockOn:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg>',
  lockOff:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 014.9-.6"/></svg>',
  prev:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>',
  next:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg>',
@@ -577,6 +604,7 @@ var ACT_HELP={bypass:function(s){return s.bypass?'<b>Bypassed.</b> Only the dry 
 function peekText(s,p){if(!p)return '';
  if(p.band!=null){var i=p.band,b=curBands(s)[i],nb=spOf(s).bands[i];return '<b>'+bandLabel(s,i)+' '+b.toFixed(2)+TS+'s</b>'+(Math.abs(b-nb)>0.004?', captured '+nb.toFixed(2)+TS+'s':', as captured')+'. Drag the point up or down, or use the arrow keys.';}
  if(p.eq!=null){var n=p.eq+1,sh=EQ_SHAPES[eqShape(s,p.eq)].toLowerCase();return '<b>Wet EQ band '+n+', '+sh+'.</b> Drag it to set the frequency and gain'+(sh==='bell'?'; the wheel, or Alt and a drag, sets Q':'')+'. Double-click returns it to 0 dB; S listens to it alone, Delete removes it.';}
+ if(p.k==='preNote'||(p.k==='pre'&&preSynced(s)))return '<b>Pre-delay '+esc(preNoteName(preNoteIdx(s)))+'</b>, '+esc(preSyncedText(s))+'. Pre-delay '+P.preNote.help;
  if(p.k&&P[p.k]){var k=p.k,ov=isOver(s,k),nv=natV(s,k),lb=k==='decay'&&!s.link?sideName(s)+' decay':P[k].l;return '<b>'+lb+' '+esc(fmt(s,k))+'</b>'+(nv==null?'':ov?', captured '+esc(fmt(s,k,nv)):', as captured')+'. '+P[k].l+' '+P[k].help+(k==='decay'&&!s.link?' The other side shows faintly.':'');}
  if(p.act){var h=ACT_HELP[p.act];if(typeof h==='function')h=h(s,p);return h||'';}
  return '';}
@@ -699,7 +727,7 @@ var COMPOSE={
   var sched=CP?posCtl(s,CP,'se-cp'):'';
   var head='<div class="se-head">'+wordmark(s,'se-title','Drenched')+'<span class="se-sub" style="color:var(--tx);font-size:12px">'+esc(sp.name.toUpperCase())+'</span><span class="se-sub">PLAN AND SECTION, SHEET '+esc(sp.no.replace(/\D/g,''))+'</span>'+prevNext(s)+'<button class="ca-link" data-act="browse" aria-expanded="'+s.browse+'" style="font:11px var(--fnum);letter-spacing:.08em;color:var(--tx2)">CHANGE SPACE</button><span style="flex:1"></span><div class="se-box"><span class="cap">VIEW</span><button data-act="mode" data-v="studio" aria-pressed="'+(s.mode==='studio')+'">STUDIO</button><button data-act="mode" data-v="stage" aria-pressed="'+(s.mode==='stage')+'">STAGE</button></div><div class="se-box"><span class="cap">REV</span><button data-act="slot" data-v="A" aria-pressed="'+(s.slot==='A')+'">A</button><button data-act="slot" data-v="B" aria-pressed="'+(s.slot==='B')+'">B</button></div><div class="se-box se-byp"><button data-act="bypass" data-fid="bypass" aria-pressed="'+!!s.bypass+'">'+ICON.power+'BYPASS</button></div></div>';
   var plan='<div class="se-plan"><div class="legend"><div class="se-box" style="height:24px;margin-right:6px"><button data-act="view" data-v="plan" aria-pressed="'+(s.view==='plan')+'">PLAN</button><button data-act="view" data-v="section" aria-pressed="'+(s.view==='section')+'">SECTION</button></div><span><i></i>S1 source</span><span><i class="r"></i>R1 listener. Drag either to move it</span>'+(CP?'<span><i class="st"></i>Captured position, click to go</span>':'')+'</div>'+planView(s,664,620)+sched+'<div class="se-photo">'+photoEl(s,212,132)+'<span>SITE PHOTOGRAPH, '+esc(sp.date.toUpperCase())+'</span></div></div>';
-  var row=function(k){return '<div class="se-row"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+lockBtn(s,k,P[k].l)+'</div>';};
+  var row=function(k){return '<div class="se-row'+(k==='pre'?' pre':'')+'"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+lockBtn(s,k,P[k].l)+'</div>';};
   var right=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="se-right"><div><div class="se-h"><span>'+gt(s,'SECTION A-A, DECAY TIME BY FREQUENCY','SECTION B-B, WET EQ')+'</span><span>'+gt(s,'SOLID AS SET, DASHED AS CAPTURED','DRAG A POINT, DOUBLE-CLICK TO ADD')+'</span></div><div class="se-lk">'+(s.link||s.graph==='eq'?'':'<span>FAINT, THE OTHER SIDE</span>')+linkCtl(s)+'</div>'+graphSVG('section',s,454,214,{dims:true,m:[40,16,16,24]})+'</div>'+
    '<div class="se-sched"><div class="se-row hd"><span>Parameter</span><span>Value</span><span style="text-align:right">Typed</span><span></span></div>'+row('mix')+MAIN.map(row).join('')+'</div>'+
    '<div class="se-acts"><button data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button data-act="match">Match a room</button><button data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'')+wfBtn(s,'')+'</div>'+
@@ -707,7 +735,7 @@ var COMPOSE={
   return '<div class="se-grid"></div><div class="se-frame"></div><div class="se-ticks"></div>'+head+plan+right+'<div class="se-strip">'+hintText(s)+meters()+'</div>';},
 
  catalogue:function(s){var sp=spOf(s),e=eqp(s.el),parts=sp.name.split(' '),last=parts.pop(),CP=positionsOf(s);
-  var row=function(k){return '<div class="ca-row"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+'</div>';};
+  var row=function(k){return '<div class="ca-row'+(k==='pre'?' pre':'')+'"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+'</div>';};
   var wall=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="ca-wall"><div class="ca-top">'+wordmark(s,'ca-wm','Drenched')+'<button class="ca-link" data-act="mode" data-v="studio" aria-pressed="'+(s.mode==='studio')+'">Day</button><button class="ca-link" data-act="mode" data-v="stage" aria-pressed="'+(s.mode==='stage')+'">Night</button><span style="width:8px"></span><button class="ca-link" data-act="slot" data-v="A" aria-pressed="'+(s.slot==='A')+'">A</button><button class="ca-link" data-act="slot" data-v="B" aria-pressed="'+(s.slot==='B')+'">B</button><span style="width:8px"></span><button class="ca-link" data-act="bypass" data-fid="bypass" aria-pressed="'+!!s.bypass+'">Bypass</button></div>'+
    '<div class="ca-no">'+esc(sp.no)+'</div><h3 class="ca-name'+(sp.name.length>12?' ca-long':'')+'">'+esc(parts.join(' '))+(parts.length?' ':'')+'<em>'+esc(last)+'</em></h3>'+
    '<div class="ca-nav">'+prevNext(s)+'<button class="ca-link" data-act="browse" aria-expanded="'+s.browse+'">Browse the collection</button></div>'+
@@ -764,7 +792,7 @@ var COMPOSE={
 
  contact:function(s){var sp=spOf(s),e=eqp(s.el),CP=positionsOf(s);
   var strip=CP?posCtl(s,CP,'co-cp'):'';
-  var row=function(k){return '<div class="co-row"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+lockBtn(s,k,P[k].l)+'</div>';};
+  var row=function(k){return '<div class="co-row'+(k==='pre'?' pre':'')+'"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+lockBtn(s,k,P[k].l)+'</div>';};
   var right=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="co-right"><div class="co-h"><span>'+gt(s,'Decay by frequency, seconds','Wet EQ, dB')+'</span><span class="mr">'+linkCtl(s)+'<span>'+gt(s,s.link?'Ticks mark the capture':'Outlines, other side','The reverb alone')+'</span></span></div><div class="co-fad">'+graphSVG('contact',s,506,340,{bars:true,bw:18,track:true,m:[14,14,30,26]})+'</div>'+
    '<div class="co-list">'+MAIN.map(row).join('')+'</div>'+
    '<div class="co-mix">'+knobEl(s,'mix',48,'contact')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix '+lockBtn(s,'mix','Mix')+'</span></div><div class="co-acts"><button class="co-btn" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="co-btn" data-act="match">Match a room</button><button class="co-btn" data-act="adv" aria-expanded="'+s.adv+'">All parameters</button>'+eqBtn(s,'co-btn')+wfBtn(s,'co-btn')+'</div></div></div>';
@@ -801,7 +829,7 @@ var COMPOSE={
    '<div class="ma-strip">'+hintText(s)+meters()+'</div>';},
 
  folio:function(s){var sp=spOf(s),e=eqp(s.el),parts=sp.name.split(' '),last=parts.pop(),CP=positionsOf(s);
-  var row=function(k){return '<div class="fo-row"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+lockBtn(s,k,P[k].l)+'</div>';};
+  var row=function(k){return '<div class="fo-row'+(k==='pre'?' pre':'')+'"><span class="nm">'+P[k].l+ovrEl(s,k)+'</span>'+slideEl(s,k)+roEl(s,k)+lockBtn(s,k,P[k].l)+'</div>';};
   var page=s.adv?'<div class="adv">'+advRows(s)+'</div>':'<div class="fo-page"><div class="fo-col"><span class="hd">'+esc(sp.no)+'</span><p><b>'+esc(sp.place)+'.</b> '+esc(sp.mat)+', '+vol(sp)+'. Captured '+esc(sp.date)+' with '+esc(sp.rec.toLowerCase())+'.</p><div class="dl"><span>Listener</span><span>'+esc(fmt(s,'dist'))+' from the source</span><span>Early</span><span>'+e.e+' dB</span><span>Tail</span><span>'+e.t+' dB</span><span>Pre-delay</span><span>'+esc(fmt(s,'pre'))+'</span></div></div>'+
    '<div class="fo-col fo-fig"><span class="hd">'+gt(s,'Fig. 1, decay time by frequency','Fig. 1, wet EQ')+linkCtl(s,'end')+'</span>'+graphSVG('folio',s,468,236,{m:[48,14,12,24]})+'<p class="fc">'+gt(s,'Solid as set, dashed as captured'+(s.link?'':', faint the other side')+'. Drag a point to change one band.','The reverb alone, shaped band by band. Double-click to add a band.')+'</p></div>'+
    '<div class="fo-col"><span class="hd">Settings</span>'+MAIN.map(row).join('')+'<div class="fo-mix">'+knobEl(s,'mix',44,'folio')+'<div class="ml">'+roEl(s,'mix')+'<span>Mix, dry to wet '+lockBtn(s,'mix','Mix')+'</span></div><div class="fo-acts"><button class="fo-btn" data-act="freeze" aria-pressed="'+s.freeze+'">Freeze</button><button class="fo-btn" data-act="match">Match</button><button class="fo-btn" data-act="adv" aria-expanded="'+s.adv+'">More</button>'+eqBtn(s,'fo-btn','EQ')+wfBtn(s,'fo-btn')+'</div></div></div></div>';

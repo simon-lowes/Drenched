@@ -266,6 +266,10 @@ public:
     struct Peaks { float inL, inR, outL, outR; };
     Peaks takePeaks() noexcept;
 
+    /** The host's tempo in BPM at the last block played, or 0 when it gave none a host could
+        play at. Any thread; the editor sends it to the page for the synced pre-delay. */
+    double hostTempoBpm() const noexcept { return hostTempo.load (std::memory_order_relaxed); }
+
     /** Each output channel's peak since the last call, the same way, in the bus's order. */
     std::array<float, maxChannels> takeSpeakerPeaks() noexcept;
 
@@ -379,6 +383,7 @@ private:
         Setting output;
         Setting predelay;
         Setting predelaySync;
+        Setting predelayNote;
         Setting size;
         Setting brightness;
         Setting earlyLate;
@@ -414,6 +419,7 @@ private:
     // The EQ band the window is listening to alone (WetEqualiser::noSolo: none). Not a
     // parameter: it is a listening aid, never saved, and ignored while bouncing.
     std::atomic<int> eqSolo { -1 };
+    std::atomic<double> hostTempo { 0.0 }; // written by the audio thread (predelayMs)
 
     // The session as the message thread last saw it, for hosts that save from a thread of
     // their own: the state's value tree belongs to the message thread. The timer copies it

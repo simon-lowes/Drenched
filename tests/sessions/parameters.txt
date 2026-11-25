@@ -113,3 +113,4 @@ eq10On 0 0 1 0 1 1
 eq11On 0 0 1 0 1 1
 eq12On 0 0 1 0 1 1
 bypass 0 0 1 0 1 1
+predelayNote 0 0 15 4 8 11
