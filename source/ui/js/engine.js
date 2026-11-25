@@ -31,7 +31,7 @@ function phc(x){return 'ph-'+x.img+(x.pic?' pp-'+x.pic:'');}
 function setLibrary(list){LIBRARY=(list||[]).filter(function(x){return x&&x.id&&x.name;}).map(function(x){var k=KINDS[x.kind]?x.kind:'hall';
   return {id:String(x.id),name:String(x.name),no:String(x.no||'Recorded'),kind:k,img:KINDS[x.img]?x.img:k,pic:/^[a-z0-9-]+$/.test(x.pic||'')?x.pic:'',place:String(x.place||''),W:+x.W||14,D:+x.D||20,H:+x.H||8,
    mat:String(x.mat||''),bands:(x.bands||[2,2,2,2,2,2,2,2]).map(function(b){return clamp(+b||1,0.1,20);}),pre:+x.pre||0,rec:String(x.rec||''),date:String(x.date||''),
-   credit:String(x.credit||''),licence:String(x.licence||''),source:String(x.source||''),changes:String(x.changes||''),recorded:true,
+   credit:String(x.credit||''),licence:String(x.licence||''),source:String(x.source||''),changes:String(x.changes||''),words:String(x.words||''),recorded:true,
    room:x.room?String(x.room):'',position:x.position?String(x.position):'',mics:x.mics?String(x.mics):'',atM:isFinite(+x.atM)&&x.atM!=null?+x.atM:null};});
  composeSpaces();}
 /* The list in order: the recorded spaces, the modelled ones, a described room if there is
@@ -634,7 +634,7 @@ var BRW_KINDS=[['all','All'],['hall','Halls'],['chapel','Churches'],['room','Roo
 function brwKind(sp){return sp.kind==='user'?'user':sp.recorded?sp.kind:'modelled';}
 /* words a search finds a space by, beyond what its row says */
 var BRW_WORDS={hall:'hall',chapel:'church chapel cathedral',garage:'industrial garage car park concrete',room:'room',outdoor:'outdoor outdoors open air courtyard gorge',underground:'underground tunnel mine cave kiln',user:'your own impulse response file'};
-function brwText(sp){return (sp.name+' '+sp.place+' '+sp.mat+' '+sp.rec+' '+sp.date+' '+sp.no+' '+(BRW_WORDS[sp.kind]||'')+' '+(sp.recorded?'recorded':sp.kind==='user'?'':'modelled')+(sp.described?' described words photograph '+sp.words:'')).toLowerCase();}
+function brwText(sp){return (sp.name+' '+sp.place+' '+sp.mat+' '+sp.rec+' '+sp.date+' '+sp.no+' '+(BRW_WORDS[sp.kind]||'')+' '+(sp.recorded?'recorded':sp.kind==='user'?'':'modelled')+(sp.described?' described words photograph':'')+' '+(sp.words||'')).toLowerCase();}
 function brwMatch(sp,q){var t=brwText(sp),w=q.toLowerCase().split(/\s+/);for(var i=0;i<w.length;i++)if(w[i]&&t.indexOf(w[i])<0)return false;return true;}
 /* How far apart two spaces sound, for the Similar ordering. Each octave band's decay is
    compared on a log scale, so 1 s against 2 s counts as much as 4 s against 8 s, and the mid
